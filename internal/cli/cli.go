@@ -287,6 +287,7 @@ func printLeaderboardTable(stdout io.Writer, results []model.CandidateResult) {
 	cpuFormatter := newDynamicFloatFormatter(cpuValues, 2, 4)
 	baselinePrimary := leaderboardBaselinePrimary(results)
 	baselineMemory := leaderboardBaselineMemory(results)
+	showExternalCalls := leaderboardHasExternalCalls(results)
 
 	rows := make([][]string, 0, len(results))
 	for i, result := range results {
@@ -294,7 +295,7 @@ func printLeaderboardTable(stdout io.Writer, results []model.CandidateResult) {
 		if result.Status == "passed" {
 			rank = fmt.Sprintf("%d", i+1)
 		}
-		rows = append(rows, []string{
+		row := []string{
 			rank,
 			result.Candidate.ID,
 			result.Status,
@@ -305,11 +306,18 @@ func printLeaderboardTable(stdout io.Writer, results []model.CandidateResult) {
 			formatBytes(result.Metrics.MemoryPeakBytes),
 			formatRelativeUsage(scoring.MemoryMetric(result.Metrics), baselineMemory),
 			cpuFormatter.format(result.Metrics.CPUUserSeconds + result.Metrics.CPUSystemSeconds),
-			fmt.Sprintf("%d", result.Metrics.ExternalCallCount),
-		})
+		}
+		if showExternalCalls {
+			row = append(row, fmt.Sprintf("%d", leaderboardExternalCallCount(result)))
+		}
+		rows = append(rows, row)
 	}
 
-	printTable(stdout, []string{"Rank", "Candidate", "Status", "Score", "P95 ms", "ns/op", "Speedup", "Memory", "Mem/Base", "Eval CPU s", "Calls"}, rows)
+	headers := []string{"Rank", "Candidate", "Status", "Score", "P95 ms", "ns/op", "Speedup", "Memory", "Mem/Base", "Eval CPU s"}
+	if showExternalCalls {
+		headers = append(headers, "Ext Calls")
+	}
+	printTable(stdout, headers, rows)
 }
 
 func leaderboardBaselinePrimary(results []model.CandidateResult) float64 {
@@ -328,6 +336,22 @@ func leaderboardBaselineMemory(results []model.CandidateResult) float64 {
 		}
 	}
 	return 0
+}
+
+func leaderboardHasExternalCalls(results []model.CandidateResult) bool {
+	for _, result := range results {
+		if leaderboardExternalCallCount(result) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func leaderboardExternalCallCount(result model.CandidateResult) int {
+	if result.Metrics.ExternalCallCount > 0 {
+		return result.Metrics.ExternalCallCount
+	}
+	return result.External.RequestCount
 }
 
 type dynamicFloatFormatter struct {

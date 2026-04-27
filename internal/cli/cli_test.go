@@ -373,8 +373,56 @@ func TestLeaderboardTableShowsScoringDrivers(t *testing.T) {
 			t.Fatalf("leaderboard table missing %q:\n%s", want, table)
 		}
 	}
+	if strings.Contains(table, "Ext Calls") {
+		t.Fatalf("leaderboard table should omit external call column when all counts are zero:\n%s", table)
+	}
 	if !strings.Contains(table, "candidate-0000-baseline") || !strings.Contains(table, "  0 ") {
 		t.Fatalf("leaderboard table should show zero score for baseline:\n%s", table)
+	}
+}
+
+func TestLeaderboardTableShowsExternalCallsWhenPresent(t *testing.T) {
+	results := []model.CandidateResult{
+		{
+			Candidate: model.Candidate{ID: "candidate-0000-baseline", Baseline: true},
+			Status:    "passed",
+			Metrics: model.Metrics{
+				P95LatencyMS:     10,
+				BenchmarkNsPerOp: 10_000_000,
+				MemoryPeakBytes:  1024,
+			},
+		},
+		{
+			Candidate: model.Candidate{ID: "candidate-0001"},
+			Status:    "passed",
+			Metrics: model.Metrics{
+				P95LatencyMS:      5,
+				BenchmarkNsPerOp:  5_000_000,
+				MemoryPeakBytes:   512,
+				ExternalCallCount: 3,
+			},
+		},
+	}
+
+	var out bytes.Buffer
+	printLeaderboardTable(&out, results)
+	table := out.String()
+
+	for _, want := range []string{"Ext Calls", "candidate-0000-baseline", "candidate-0001", "  0", "  3"} {
+		if !strings.Contains(table, want) {
+			t.Fatalf("leaderboard table missing %q:\n%s", want, table)
+		}
+	}
+}
+
+func TestLeaderboardExternalCallCountFallsBackToTraceCount(t *testing.T) {
+	result := model.CandidateResult{
+		Metrics:  model.Metrics{ExternalCallCount: 0},
+		External: model.ExternalCallTrace{RequestCount: 4},
+	}
+
+	if got := leaderboardExternalCallCount(result); got != 4 {
+		t.Fatalf("external call count = %d, want trace request count fallback", got)
 	}
 }
 
