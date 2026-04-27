@@ -51,6 +51,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runTournament(args[1:], stdout, stderr)
 	case "generate":
 		return runGenerate(args[1:], stdout, stderr)
+	case "adopt":
+		return runAdopt(args[1:], stdout, stderr)
 	case "leaderboard":
 		return runLeaderboard(args[1:], stdout, stderr)
 	case "inspect":
@@ -211,6 +213,41 @@ func runLeaderboard(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runAdopt(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("adopt", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	runID := fs.String("run", "", "run ID; defaults to latest run")
+	model := fs.String("model", "", "model name to fill into adopted candidates when missing")
+	jsonOut := fs.Bool("json", false, "print raw adoption report JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	report, err := run.AdoptCandidates(run.AdoptionOptions{
+		ProjectDir: *projectDir,
+		RunID:      *runID,
+		Model:      *model,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "adopt failed: %v\n", err)
+		return 1
+	}
+
+	if *jsonOut {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "adopt failed: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%s\n", data)
+		return 0
+	}
+
+	printAdoptionReport(stdout, stderr, report)
+	return 0
+}
+
 func runGenerate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -324,7 +361,41 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "Stdout: %s\n", result.StdoutPath)
 	fmt.Fprintf(stdout, "Stderr: %s\n", result.StderrPath)
 	fmt.Fprintf(stdout, "Final message: %s\n", result.FinalPath)
+
+	report, err := run.AdoptCandidates(run.AdoptionOptions{
+		ProjectDir: opts.ProjectDir,
+		RunID:      cfg.ID,
+		Model:      opts.Model,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "adopt failed after generation: %v\n", err)
+		return 1
+	}
+	printAdoptionReport(stdout, stderr, report)
 	return 0
+}
+
+func printAdoptionReport(stdout, stderr io.Writer, report *run.AdoptionReport) {
+	fmt.Fprintf(stdout, "\nAdoption report for run %s\n", report.RunID)
+	fmt.Fprintf(stdout, "Leaderboard: %s\n", report.LeaderboardPath)
+	fmt.Fprintf(stdout, "Added: %s\n", formatIDList(report.Added))
+	fmt.Fprintf(stdout, "Already present: %s\n", formatIDList(report.Existing))
+	if len(report.Invalid) == 0 {
+		fmt.Fprintln(stdout, "Invalid: none")
+		return
+	}
+
+	fmt.Fprintf(stderr, "Invalid generated candidates:\n")
+	for _, issue := range report.Invalid {
+		fmt.Fprintf(stderr, "- %s: %s (%s)\n", issue.ID, issue.Reason, issue.Path)
+	}
+}
+
+func formatIDList(ids []string) string {
+	if len(ids) == 0 {
+		return "none"
+	}
+	return strings.Join(ids, ", ")
 }
 
 func runInspect(args []string, stdout, stderr io.Writer) int {
@@ -396,6 +467,7 @@ Usage:
   crucible init [--project DIR] [--name NAME]
   crucible run --optimize TEXT [--project DIR] [--target-path PATH] [--variants N] [--generate]
   crucible generate [--project DIR] [--run RUN_ID] [--agent codex]
+  crucible adopt [--project DIR] [--run RUN_ID]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]
   crucible inspect [--project DIR] [--run RUN_ID] [candidate-id]
   crucible version
@@ -405,7 +477,7 @@ Core workflow:
   2. Run "crucible run --optimize ..." to create a tournament workspace.
   3. Fill in docs/interfaces.md and evaluator/evaluator.sh.
   4. Run "crucible generate --agent codex" to ask Codex for competitors, or use "crucible run --generate" as an explicit shortcut.
-  5. Add competitor results to leaderboard.json as evaluation matures.
+  5. Run "crucible adopt" if competitors were created by hand or by an external agent.
 
 `)
 }

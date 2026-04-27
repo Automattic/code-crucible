@@ -54,10 +54,16 @@ round-0001/
     candidate.json
     design.md
     src/
+  candidate-0001/
+    candidate.json
+    design.md
+    src/
 leaderboard.json
 ```
 
 Future rounds will add `round-0002`, `round-0003`, and so on.
+
+Generated candidates are described in [candidate-format.md](candidate-format.md).
 
 ## Baseline Candidate
 
@@ -137,6 +143,8 @@ agents/
 Codex uses the host project as its working root. The prompt instructs it to write only under the current round directory and not to modify host project source outside `.crucible`.
 
 `crucible run --generate` is an explicit shortcut. It creates the run archive first, then calls the same Codex generation path with the newly-created run ID. The separate `run` and `generate` commands remain the safer default workflow when the operator wants to review or edit interface docs, evaluator scripts, or prompts before spending a model run.
+
+After successful generation, Code Crucible adopts valid `candidate-NNNN` directories into `leaderboard.json`. The same adoption step is available manually with `crucible adopt`.
 
 Future providers can use the same run metadata and prompt package through a common provider interface.
 

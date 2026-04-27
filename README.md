@@ -27,6 +27,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Evaluator shell scaffold
 - Agent generation prompt scaffold
 - Codex CLI generation adapter through `codex exec`
+- Candidate adoption from generated `candidate-NNNN` artifacts into `leaderboard.json`
 - File-backed leaderboard and candidate metadata
 - Core Go interfaces and types for agents, evaluation, scoring, metrics, and archive data
 
@@ -78,6 +79,8 @@ round-0001/candidate-0000-baseline/
 leaderboard.json
 ```
 
+Generated competitors must follow the [candidate format](docs/candidate-format.md).
+
 View the current standings:
 
 ```bash
@@ -94,6 +97,12 @@ Ask Codex to generate competitor implementations for the latest run:
 
 ```bash
 crucible generate --agent codex
+```
+
+`generate` automatically adopts valid generated candidates into `leaderboard.json`. If competitors are added by hand or an external agent, adopt them manually:
+
+```bash
+crucible adopt
 ```
 
 Preview the exact Codex invocation first:
@@ -150,6 +159,8 @@ Generation artifacts are stored under:
   codex-<timestamp>-invocation.json
   codex-final.md
 ```
+
+After Codex exits successfully, Code Crucible scans the current round directory for valid `candidate-NNNN` artifacts and adds them to `leaderboard.json` with status `generated`.
 
 Useful options:
 
@@ -224,7 +235,7 @@ Core packages:
 - `cmd/crucible`: CLI entrypoint
 - `internal/cli`: command parsing and user-facing commands
 - `internal/project`: `.crucible/` initialization and config
-- `internal/run`: tournament run archive creation
+- `internal/run`: tournament run creation and candidate adoption
 - `internal/discovery`: target path inspection and interface doc generation
 - `internal/agent`: agent prompt construction and Codex CLI provider
 - `internal/evaluator`: evaluator scaffold generation
@@ -240,7 +251,6 @@ See [docs/architecture.md](docs/architecture.md) for the current design.
 - Add Docker or Podman sandbox execution
 - Add proxy or mock gateway enforcement
 - Add SQLite index alongside filesystem artifacts
-- Promote Codex-generated competitors into leaderboard entries
 - Add replay fixture format and mock handler generator
 - Add multi-round evolution strategy
 - Add richer leaderboard views and HTML reports

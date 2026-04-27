@@ -33,6 +33,21 @@ done
 cat >/dev/null
 mkdir -p "$(dirname "$out")"
 printf 'fake codex complete\n' > "$out"
+round="$(find .crucible/runs -name round-0001 -type d | sort | tail -n1)"
+mkdir -p "$round/candidate-0001/src"
+printf 'package search\n\nfunc Rank() int { return 2 }\n' > "$round/candidate-0001/src/rank.go"
+printf '# Candidate\n' > "$round/candidate-0001/design.md"
+cat > "$round/candidate-0001/candidate.json" <<'JSON'
+{
+  "id": "candidate-0001",
+  "name": "fake generated candidate",
+  "round": 1,
+  "parent_ids": ["candidate-0000-baseline"],
+  "agent": "codex",
+  "source_path": "src",
+  "baseline": false
+}
+JSON
 `
 	if err := os.WriteFile(fakeCodex, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -54,6 +69,9 @@ printf 'fake codex complete\n' > "$out"
 
 	if !strings.Contains(stdout.String(), "Codex generation complete") {
 		t.Fatalf("stdout did not include generation completion:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Added: candidate-0001") {
+		t.Fatalf("stdout did not include adoption result:\n%s", stdout.String())
 	}
 
 	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "agents", "codex-final.md"))

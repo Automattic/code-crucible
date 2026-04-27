@@ -72,11 +72,25 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 
 For each competitor:
 
-1. Create a directory named candidate-NNNN under the current round directory.
+1. Create a directory named candidate-NNNN under the current round directory, starting with candidate-0001.
 2. Put replacement source under candidate-NNNN/src.
 3. Include candidate-NNNN/design.md explaining the approach, expected tradeoffs, and known risks.
-4. Do not modify baseline source, evaluator files, run metadata, or completed candidate artifacts.
-5. Do not introduce external services or protocols that violate the external policy.
+4. Include candidate-NNNN/candidate.json using this shape:
+
+   {
+     "id": "candidate-NNNN",
+     "name": "short descriptive name",
+     "round": 1,
+     "parent_ids": ["candidate-0000-baseline"],
+     "agent": "codex",
+     "model": "model name if known",
+     "source_path": "src",
+     "baseline": false,
+     "created_at": "RFC3339 UTC timestamp"
+   }
+
+5. Do not modify baseline source, evaluator files, run metadata, leaderboard.json, or completed candidate artifacts.
+6. Do not introduce external services or protocols that violate the external policy.
 
 Favor measurable changes. If a competitor is experimental, make the experiment explicit in design.md.
 `)
