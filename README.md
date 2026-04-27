@@ -62,6 +62,15 @@ crucible run \
   --external-mode deny
 ```
 
+For a full evaluator script instead of a short command, use `--evaluator-script`:
+
+```bash
+crucible run \
+  --optimize "reduce p95 latency of the search ranking function" \
+  --target-path internal/search/rank.go \
+  --evaluator-script ./crucible-evaluator.sh
+```
+
 This creates a run under:
 
 ```text
@@ -155,7 +164,7 @@ Code Crucible's first live provider targets Codex CLI.
 `crucible generate --agent codex` loads the selected run, reads `prompts/generation-round-0001.md`, and invokes:
 
 ```bash
-codex exec --cd <project> --sandbox workspace-write --ask-for-approval never --json --output-last-message <run>/agents/codex-final.md -
+codex --ask-for-approval never exec --cd <project> --sandbox workspace-write --json --output-last-message <run>/agents/codex-final.md -
 ```
 
 The prompt is sent through stdin. Codex runs with the host project as its working root so it can inspect source code and write competitor artifacts under `.crucible/runs/<run-id>/round-0001/`.
@@ -222,6 +231,34 @@ candidate-NNNN/
 ```
 
 If the evaluator fails or omits `verdict.json`, Code Crucible marks the candidate as failed. If `metrics.json` is missing or invalid, the candidate can still receive a failed verdict with a warning.
+
+## Proof Of Concept Fixture
+
+The repository includes a Go fixture at [examples/go-ranking-poc](examples/go-ranking-poc).
+
+It provides:
+
+- A deliberately slow `ranking.TopN` implementation
+- Golden tests and a benchmark
+- A reusable evaluator script
+- A task prompt for Codex generation
+
+Run the local baseline loop:
+
+```bash
+go build -o bin/crucible ./cmd/crucible
+
+./bin/crucible run \
+  --project examples/go-ranking-poc \
+  --optimize "$(cat examples/go-ranking-poc/task.md)" \
+  --target-path ranking/rank.go \
+  --evaluator-script evaluator.sh \
+  --variants 2 \
+  --external-mode deny
+
+./bin/crucible evaluate --project examples/go-ranking-poc
+./bin/crucible leaderboard --project examples/go-ranking-poc
+```
 
 ## External Call Policy
 

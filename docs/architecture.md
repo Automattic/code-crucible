@@ -127,7 +127,7 @@ That prompt contains:
 `crucible generate --agent codex` invokes Codex non-interactively with the prompt on stdin:
 
 ```text
-codex exec --cd <project> --sandbox workspace-write --ask-for-approval never --json --output-last-message <run>/agents/codex-final.md -
+codex --ask-for-approval never exec --cd <project> --sandbox workspace-write --json --output-last-message <run>/agents/codex-final.md -
 ```
 
 Codex artifacts are archived under:
@@ -152,7 +152,7 @@ Future providers can use the same run metadata and prompt package through a comm
 
 `evaluator/evaluator.sh` is generated for every run.
 
-If `--evaluator` is provided, the scaffold wraps that command and records minimal metrics. If no evaluator is provided, it writes a failing verdict with instructions to add deterministic correctness checks and benchmarks.
+If `--evaluator` is provided, the scaffold wraps that command and records minimal metrics. If `--evaluator-script` is provided, Code Crucible copies that script into the run archive as `evaluator/evaluator.sh`. If neither is provided, the generated script writes a failing verdict with instructions to add deterministic correctness checks and benchmarks.
 
 `crucible evaluate` executes the run evaluator for each candidate currently listed in `leaderboard.json`. It passes:
 

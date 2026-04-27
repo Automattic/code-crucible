@@ -36,3 +36,5 @@ Constraints:
 ## External Policy
 
 Use `replay` mode for payment, tax, and shipping API calls.
+
+For a runnable proof-of-concept fixture, see `examples/go-ranking-poc`.
