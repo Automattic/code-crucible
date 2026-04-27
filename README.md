@@ -1,7 +1,5 @@
 # Code Crucible
 
-[![CI](https://github.com/gaarai/code-crucible/actions/workflows/ci.yml/badge.svg)](https://github.com/gaarai/code-crucible/actions/workflows/ci.yml)
-
 Code Crucible is a model-agnostic CLI framework for generating, evaluating, benchmarking, and evolving competing implementations of selected project code.
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
