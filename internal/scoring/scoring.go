@@ -14,8 +14,8 @@ const (
 )
 
 func Score(result model.CandidateResult) float64 {
-	primary := primaryMetric(result.Metrics)
-	memory := memoryMetric(result.Metrics)
+	primary := PrimaryMetric(result.Metrics)
+	memory := MemoryMetric(result.Metrics)
 	return scoreWithReference(result, primary, memory)
 }
 
@@ -33,12 +33,12 @@ func scoreWithReference(result model.CandidateResult, bestPrimary, bestMemory fl
 	}
 
 	score := maxScore
-	primary := primaryMetric(result.Metrics)
+	primary := PrimaryMetric(result.Metrics)
 	if primary > 0 && bestPrimary > 0 {
 		score -= ratioPenalty(primary, bestPrimary, pointsLostPerDoubling)
 	}
 
-	memory := memoryMetric(result.Metrics)
+	memory := MemoryMetric(result.Metrics)
 	if memory > 0 && bestMemory > 0 {
 		score -= ratioPenalty(memory, bestMemory, pointsLostPerMemDoubling)
 	}
@@ -64,7 +64,7 @@ func bestPrimaryMetric(results []model.CandidateResult) float64 {
 		if !scoreable(result) {
 			continue
 		}
-		metric := primaryMetric(result.Metrics)
+		metric := PrimaryMetric(result.Metrics)
 		if metric <= 0 {
 			continue
 		}
@@ -81,7 +81,7 @@ func bestMemoryMetric(results []model.CandidateResult) float64 {
 		if !scoreable(result) {
 			continue
 		}
-		metric := memoryMetric(result.Metrics)
+		metric := MemoryMetric(result.Metrics)
 		if metric <= 0 {
 			continue
 		}
@@ -92,7 +92,7 @@ func bestMemoryMetric(results []model.CandidateResult) float64 {
 	return best
 }
 
-func primaryMetric(metrics model.Metrics) float64 {
+func PrimaryMetric(metrics model.Metrics) float64 {
 	switch {
 	case metrics.P95LatencyMS > 0:
 		return metrics.P95LatencyMS
@@ -109,7 +109,7 @@ func primaryMetric(metrics model.Metrics) float64 {
 	}
 }
 
-func memoryMetric(metrics model.Metrics) float64 {
+func MemoryMetric(metrics model.Metrics) float64 {
 	switch {
 	case metrics.MemoryPeakBytes > 0:
 		return float64(metrics.MemoryPeakBytes)

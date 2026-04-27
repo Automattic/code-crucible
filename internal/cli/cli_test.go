@@ -306,10 +306,132 @@ func TestDynamicFloatFormatterPreservesSmallDifferences(t *testing.T) {
 func TestDynamicFloatFormatterUsesScientificForVeryWideColumns(t *testing.T) {
 	formatter := newDynamicFloatFormatter([]float64{0.00000012, 4_200_000}, 2, 6)
 
-	if got := formatter.format(0.00000012); !strings.Contains(got, "e") {
+	if got := formatter.format(0.00000012); got != "1.200000e-07" {
 		t.Fatalf("formatted wide-range tiny value = %q, want scientific notation", got)
 	}
-	if got := formatter.format(4_200_000); !strings.Contains(got, "e") {
+	if got := formatter.format(4_200_000); got != "4.200000e+06" {
 		t.Fatalf("formatted wide-range large value = %q, want scientific notation", got)
+	}
+}
+
+func TestDynamicFloatFormatterUsesSamePresentationWithinColumn(t *testing.T) {
+	formatter := newDynamicFloatFormatter([]float64{1910, 166832, 8193865}, 0, 4)
+
+	for _, value := range []float64{1910, 166832, 8193865} {
+		if got := formatter.format(value); !strings.Contains(got, "e") {
+			t.Fatalf("formatted %f as %q, want scientific notation for every value in scientific column", value, got)
+		}
+	}
+}
+
+func TestLeaderboardTableShowsScoringDrivers(t *testing.T) {
+	results := []model.CandidateResult{
+		{
+			Candidate: model.Candidate{ID: "candidate-0002"},
+			Status:    "passed",
+			Score:     1000,
+			Metrics: model.Metrics{
+				P95LatencyMS:     0.001914,
+				BenchmarkNsPerOp: 1910,
+				MemoryPeakBytes:  208,
+				CPUUserSeconds:   6,
+				CPUSystemSeconds: 0.18,
+			},
+		},
+		{
+			Candidate: model.Candidate{ID: "candidate-0001"},
+			Status:    "passed",
+			Score:     282.2153,
+			Metrics: model.Metrics{
+				P95LatencyMS:     0.16709,
+				BenchmarkNsPerOp: 166832,
+				MemoryPeakBytes:  32768,
+				CPUUserSeconds:   5.9,
+				CPUSystemSeconds: 0.1,
+			},
+		},
+		{
+			Candidate: model.Candidate{ID: "candidate-0000-baseline", Baseline: true},
+			Status:    "passed",
+			Score:     0,
+			Metrics: model.Metrics{
+				P95LatencyMS:     8.206311,
+				BenchmarkNsPerOp: 8193865,
+				MemoryPeakBytes:  32976,
+				CPUUserSeconds:   10,
+				CPUSystemSeconds: 0.4,
+			},
+		},
+	}
+
+	var out bytes.Buffer
+	printLeaderboardTable(&out, results)
+	table := out.String()
+
+	for _, want := range []string{"Speedup", "Memory", "Mem/Base", "Eval CPU s", "ns/op", "1.9100e+03", "1.6683e+05", "8.1939e+06", "4288x", "49.1x", "0.0063x", "0.99x", "1x", "208 B", "32 KiB"} {
+		if !strings.Contains(table, want) {
+			t.Fatalf("leaderboard table missing %q:\n%s", want, table)
+		}
+	}
+	if !strings.Contains(table, "candidate-0000-baseline") || !strings.Contains(table, "  0 ") {
+		t.Fatalf("leaderboard table should show zero score for baseline:\n%s", table)
+	}
+}
+
+func TestFormatMultiplier(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		baseline float64
+		value    float64
+		want     string
+	}{
+		{name: "same", baseline: 100, value: 100, want: "1x"},
+		{name: "large improvement", baseline: 32976, value: 208, want: "159x"},
+		{name: "small improvement", baseline: 32976, value: 32768, want: "1.01x"},
+		{name: "regression", baseline: 100, value: 200, want: "0.50x"},
+		{name: "missing", baseline: 0, value: 200, want: "-"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatMultiplier(tt.baseline, tt.value); got != tt.want {
+				t.Fatalf("formatMultiplier(%f, %f) = %q, want %q", tt.baseline, tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatRelativeUsage(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		value    float64
+		baseline float64
+		want     string
+	}{
+		{name: "same", value: 100, baseline: 100, want: "1x"},
+		{name: "much less", value: 208, baseline: 32976, want: "0.0063x"},
+		{name: "slightly less", value: 32768, baseline: 32976, want: "0.99x"},
+		{name: "regression", value: 200, baseline: 100, want: "2.00x"},
+		{name: "missing", value: 200, baseline: 0, want: "-"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatRelativeUsage(tt.value, tt.baseline); got != tt.want {
+				t.Fatalf("formatRelativeUsage(%f, %f) = %q, want %q", tt.value, tt.baseline, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatBytes(t *testing.T) {
+	for _, tt := range []struct {
+		value int64
+		want  string
+	}{
+		{value: 0, want: "-"},
+		{value: 208, want: "208 B"},
+		{value: 32768, want: "32 KiB"},
+		{value: 1048576, want: "1 MiB"},
+	} {
+		if got := formatBytes(tt.value); got != tt.want {
+			t.Fatalf("formatBytes(%d) = %q, want %q", tt.value, got, tt.want)
+		}
 	}
 }

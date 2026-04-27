@@ -115,7 +115,7 @@ View the current standings:
 crucible leaderboard
 ```
 
-The human-readable leaderboard ranks passed candidates by score, then p95 latency. Numeric columns use adaptive precision so close results remain distinguishable and very wide ranges stay readable. Use `--json` when you need archive order and raw result data.
+The human-readable leaderboard ranks passed candidates by score, then p95 latency. It includes the score-driving metrics such as p95 latency, `ns/op`, speedup versus the baseline, memory, memory usage relative to the baseline, and evaluator CPU time. Numeric columns use adaptive precision so close results remain distinguishable and very wide ranges stay readable. Use `--json` when you need archive order and raw result data.
 
 Inspect a candidate:
 

@@ -18,6 +18,7 @@ import (
 	"github.com/Automattic/code-crucible/internal/model"
 	"github.com/Automattic/code-crucible/internal/project"
 	"github.com/Automattic/code-crucible/internal/run"
+	"github.com/Automattic/code-crucible/internal/scoring"
 )
 
 const version = "0.1.0"
@@ -271,16 +272,21 @@ func leaderboardStatusPriority(status string) int {
 func printLeaderboardTable(stdout io.Writer, results []model.CandidateResult) {
 	scoreValues := make([]float64, 0, len(results))
 	p95Values := make([]float64, 0, len(results))
+	nsPerOpValues := make([]float64, 0, len(results))
 	cpuValues := make([]float64, 0, len(results))
 	for _, result := range results {
 		scoreValues = append(scoreValues, result.Score)
 		p95Values = append(p95Values, result.Metrics.P95LatencyMS)
+		nsPerOpValues = append(nsPerOpValues, result.Metrics.BenchmarkNsPerOp)
 		cpuValues = append(cpuValues, result.Metrics.CPUUserSeconds+result.Metrics.CPUSystemSeconds)
 	}
 
 	scoreFormatter := newDynamicFloatFormatter(scoreValues, 2, 4)
 	p95Formatter := newDynamicFloatFormatter(p95Values, 2, 6)
+	nsPerOpFormatter := newDynamicFloatFormatter(nsPerOpValues, 0, 4)
 	cpuFormatter := newDynamicFloatFormatter(cpuValues, 2, 4)
+	baselinePrimary := leaderboardBaselinePrimary(results)
+	baselineMemory := leaderboardBaselineMemory(results)
 
 	rows := make([][]string, 0, len(results))
 	for i, result := range results {
@@ -293,13 +299,35 @@ func printLeaderboardTable(stdout io.Writer, results []model.CandidateResult) {
 			result.Candidate.ID,
 			result.Status,
 			scoreFormatter.format(result.Score),
-			p95Formatter.format(result.Metrics.P95LatencyMS),
+			formatOptionalFloat(p95Formatter, result.Metrics.P95LatencyMS),
+			formatOptionalFloat(nsPerOpFormatter, result.Metrics.BenchmarkNsPerOp),
+			formatSpeedup(baselinePrimary, scoring.PrimaryMetric(result.Metrics)),
+			formatBytes(result.Metrics.MemoryPeakBytes),
+			formatRelativeUsage(scoring.MemoryMetric(result.Metrics), baselineMemory),
 			cpuFormatter.format(result.Metrics.CPUUserSeconds + result.Metrics.CPUSystemSeconds),
 			fmt.Sprintf("%d", result.Metrics.ExternalCallCount),
 		})
 	}
 
-	printTable(stdout, []string{"Rank", "Candidate", "Status", "Score", "P95 ms", "CPU s", "Calls"}, rows)
+	printTable(stdout, []string{"Rank", "Candidate", "Status", "Score", "P95 ms", "ns/op", "Speedup", "Memory", "Mem/Base", "Eval CPU s", "Calls"}, rows)
+}
+
+func leaderboardBaselinePrimary(results []model.CandidateResult) float64 {
+	for _, result := range results {
+		if result.Candidate.Baseline {
+			return scoring.PrimaryMetric(result.Metrics)
+		}
+	}
+	return 0
+}
+
+func leaderboardBaselineMemory(results []model.CandidateResult) float64 {
+	for _, result := range results {
+		if result.Candidate.Baseline {
+			return scoring.MemoryMetric(result.Metrics)
+		}
+	}
+	return 0
 }
 
 type dynamicFloatFormatter struct {
@@ -367,7 +395,7 @@ func (f dynamicFloatFormatter) format(value float64) string {
 		return "-"
 	}
 	if f.scientific && value != 0 {
-		return fmt.Sprintf("%.4e", value)
+		return fmt.Sprintf("%.*e", maxInt(3, f.decimals), value)
 	}
 	formatted := fmt.Sprintf("%.*f", f.decimals, value)
 	formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
@@ -375,6 +403,84 @@ func (f dynamicFloatFormatter) format(value float64) string {
 		return "0"
 	}
 	return formatted
+}
+
+func formatOptionalFloat(formatter dynamicFloatFormatter, value float64) string {
+	if value <= 0 {
+		return "-"
+	}
+	return formatter.format(value)
+}
+
+func formatSpeedup(baseline, value float64) string {
+	return formatMultiplier(baseline, value)
+}
+
+func formatMultiplier(baseline, value float64) string {
+	if baseline <= 0 || value <= 0 || math.IsNaN(baseline) || math.IsNaN(value) || math.IsInf(baseline, 0) || math.IsInf(value, 0) {
+		return "-"
+	}
+	multiplier := baseline / value
+	if math.Abs(multiplier-1) < 0.005 {
+		return "1x"
+	}
+	switch {
+	case multiplier >= 100:
+		return fmt.Sprintf("%.0fx", multiplier)
+	case multiplier >= 10:
+		return fmt.Sprintf("%.1fx", multiplier)
+	default:
+		return fmt.Sprintf("%.2fx", multiplier)
+	}
+}
+
+func formatRelativeUsage(value, baseline float64) string {
+	if baseline <= 0 || value <= 0 || math.IsNaN(baseline) || math.IsNaN(value) || math.IsInf(baseline, 0) || math.IsInf(value, 0) {
+		return "-"
+	}
+	ratio := value / baseline
+	if math.Abs(ratio-1) < 0.005 {
+		return "1x"
+	}
+	switch {
+	case ratio < 0.01:
+		return fmt.Sprintf("%.4fx", ratio)
+	case ratio < 0.1:
+		return fmt.Sprintf("%.3fx", ratio)
+	case ratio < 10:
+		return fmt.Sprintf("%.2fx", ratio)
+	case ratio < 100:
+		return fmt.Sprintf("%.1fx", ratio)
+	default:
+		return fmt.Sprintf("%.0fx", ratio)
+	}
+}
+
+func formatBytes(value int64) string {
+	if value <= 0 {
+		return "-"
+	}
+	const unit = 1024
+	if value < unit {
+		return fmt.Sprintf("%d B", value)
+	}
+	units := []string{"KiB", "MiB", "GiB", "TiB"}
+	scaled := float64(value)
+	unitIndex := -1
+	for scaled >= unit && unitIndex < len(units)-1 {
+		scaled /= unit
+		unitIndex++
+	}
+	if math.Abs(scaled-math.Round(scaled)) < 0.005 {
+		return fmt.Sprintf("%.0f %s", scaled, units[unitIndex])
+	}
+	if scaled >= 100 {
+		return fmt.Sprintf("%.0f %s", scaled, units[unitIndex])
+	}
+	if scaled >= 10 {
+		return fmt.Sprintf("%.1f %s", scaled, units[unitIndex])
+	}
+	return fmt.Sprintf("%.2f %s", scaled, units[unitIndex])
 }
 
 func printTable(stdout io.Writer, headers []string, rows [][]string) {
