@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gaarai/code-crucible/internal/agent"
 	"github.com/gaarai/code-crucible/internal/archive"
 	"github.com/gaarai/code-crucible/internal/project"
 	"github.com/gaarai/code-crucible/internal/run"
@@ -32,6 +34,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runInit(args[1:], stdout, stderr)
 	case "run":
 		return runTournament(args[1:], stdout, stderr)
+	case "generate":
+		return runGenerate(args[1:], stdout, stderr)
 	case "leaderboard":
 		return runLeaderboard(args[1:], stdout, stderr)
 	case "inspect":
@@ -154,6 +158,102 @@ func runLeaderboard(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runGenerate(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	runID := fs.String("run", "", "run ID; defaults to latest run")
+	agentName := fs.String("agent", "codex", "agent provider to run")
+	codexBin := fs.String("codex-bin", agent.DefaultCodexBinary, "Codex CLI binary")
+	model := fs.String("model", "", "Codex model override")
+	profile := fs.String("profile", "", "Codex config profile")
+	sandbox := fs.String("sandbox", agent.DefaultCodexSandbox, "Codex sandbox mode")
+	approval := fs.String("approval", agent.DefaultApprovalPolicy, "Codex approval policy")
+	eventJSON := fs.Bool("event-json", true, "ask Codex to emit JSONL events")
+	skipGitRepoCheck := fs.Bool("skip-git-repo-check", true, "allow Codex to run when the host project is not a git repository")
+	outputLastMessage := fs.String("output-last-message", "", "path for Codex final response; defaults to timestamped run artifact")
+	dryRun := fs.Bool("dry-run", false, "print the Codex invocation without running it")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if *agentName != "codex" {
+		fmt.Fprintf(stderr, "generate currently supports only --agent codex\n")
+		return 2
+	}
+
+	configPath, err := archive.RunConfigPath(*projectDir, *runID)
+	if err != nil {
+		fmt.Fprintf(stderr, "generate failed: %v\n", err)
+		return 1
+	}
+	cfg, err := archive.LoadRunConfig(configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "generate failed: %v\n", err)
+		return 1
+	}
+	if cfg.ProjectDir == "" {
+		cfg.ProjectDir, _ = filepath.Abs(*projectDir)
+	}
+
+	runDir := cfg.RunDir
+	if runDir == "" {
+		runDir = filepath.Dir(configPath)
+	}
+	promptPath := cfg.PromptPath
+	if promptPath == "" {
+		promptPath = filepath.Join(runDir, "prompts", "generation-round-0001.md")
+	}
+	if *outputLastMessage == "" {
+		*outputLastMessage = filepath.Join(runDir, "agents", "codex-final.md")
+	}
+
+	opts := agent.CodexOptions{
+		Binary:            *codexBin,
+		ProjectDir:        cfg.ProjectDir,
+		RunDir:            runDir,
+		PromptPath:        promptPath,
+		Model:             *model,
+		Profile:           *profile,
+		Sandbox:           *sandbox,
+		ApprovalPolicy:    *approval,
+		OutputLastMessage: *outputLastMessage,
+		JSONEvents:        *eventJSON,
+		SkipGitRepoCheck:  *skipGitRepoCheck,
+	}
+
+	command := agent.BuildCodexExecCommand(opts)
+	if *dryRun {
+		fmt.Fprintf(stdout, "Codex command:\n%s\n\n", agent.FormatCommand(command))
+		fmt.Fprintf(stdout, "Prompt stdin: %s\n", promptPath)
+		fmt.Fprintf(stdout, "Project root: %s\n", cfg.ProjectDir)
+		fmt.Fprintf(stdout, "Run archive: %s\n", runDir)
+		fmt.Fprintf(stdout, "Final message: %s\n", *outputLastMessage)
+		return 0
+	}
+
+	fmt.Fprintf(stdout, "Running Codex for run %s\n", cfg.ID)
+	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
+	result, err := agent.RunCodex(context.Background(), opts, stdout, stderr)
+	if err != nil {
+		if result != nil {
+			fmt.Fprintf(stderr, "Codex exited with status %d\n", result.ExitCode)
+			fmt.Fprintf(stderr, "Invocation: %s\n", result.InvocationPath)
+			fmt.Fprintf(stderr, "Stdout: %s\n", result.StdoutPath)
+			fmt.Fprintf(stderr, "Stderr: %s\n", result.StderrPath)
+		}
+		fmt.Fprintf(stderr, "generate failed: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "\nCodex generation complete\n")
+	fmt.Fprintf(stdout, "Invocation: %s\n", result.InvocationPath)
+	fmt.Fprintf(stdout, "Stdout: %s\n", result.StdoutPath)
+	fmt.Fprintf(stdout, "Stderr: %s\n", result.StderrPath)
+	fmt.Fprintf(stdout, "Final message: %s\n", result.FinalPath)
+	return 0
+}
+
 func runInspect(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -222,6 +322,7 @@ func printHelp(w io.Writer) {
 Usage:
   crucible init [--project DIR] [--name NAME]
   crucible run --optimize TEXT [--project DIR] [--target-path PATH] [--variants N]
+  crucible generate [--project DIR] [--run RUN_ID] [--agent codex]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]
   crucible inspect [--project DIR] [--run RUN_ID] [candidate-id]
   crucible version
@@ -230,7 +331,7 @@ Core workflow:
   1. Run "crucible init" inside an existing project.
   2. Run "crucible run --optimize ..." to create a tournament workspace.
   3. Fill in docs/interfaces.md and evaluator/evaluator.sh.
-  4. Feed prompts/generation-round-0001.md to the selected agent.
+  4. Run "crucible generate --agent codex" to ask Codex for competitors.
   5. Add competitor results to leaderboard.json as evaluation matures.
 
 `)

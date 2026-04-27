@@ -90,6 +90,7 @@ func Create(opts Options) (*CreatedRun, error) {
 		roundDir,
 		baselineSrc,
 		filepath.Join(runDir, "docs"),
+		filepath.Join(runDir, "agents"),
 		filepath.Join(runDir, "evaluator"),
 		filepath.Join(runDir, "external"),
 		filepath.Join(runDir, "prompts"),
@@ -118,9 +119,12 @@ func Create(opts Options) (*CreatedRun, error) {
 		Allowlist: opts.AllowHosts,
 		Fixtures:  opts.Fixtures,
 	}
+	promptPath := filepath.Join(runDir, "prompts", "generation-round-0001.md")
 	runConfig := model.RunConfig{
 		ID:            runID,
 		ProjectDir:    absProject,
+		RunDir:        runDir,
+		RoundDir:      roundDir,
 		Optimize:      opts.Optimize,
 		TargetPath:    opts.TargetPath,
 		Agent:         opts.Agent,
@@ -131,6 +135,7 @@ func Create(opts Options) (*CreatedRun, error) {
 		External:      external,
 		CreatedAt:     now,
 		InterfaceDocs: filepath.ToSlash(interfacePath),
+		PromptPath:    filepath.ToSlash(promptPath),
 	}
 
 	if err := archive.SaveJSON(filepath.Join(runDir, "run.json"), runConfig); err != nil {
@@ -190,11 +195,13 @@ func Create(opts Options) (*CreatedRun, error) {
 	}
 
 	prompt := agent.BuildGenerationPrompt(agent.GenerationPromptRequest{
-		RunConfig:        runConfig,
-		InterfaceDocPath: filepath.ToSlash(interfacePath),
-		History:          board.Results,
+		RunConfig:         runConfig,
+		InterfaceDocPath:  filepath.ToSlash(interfacePath),
+		RunDir:            filepath.ToSlash(runDir),
+		RoundDir:          filepath.ToSlash(roundDir),
+		BaselineSourceDir: filepath.ToSlash(baselineSrc),
+		History:           board.Results,
 	})
-	promptPath := filepath.Join(runDir, "prompts", "generation-round-0001.md")
 	if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {
 		return nil, err
 	}
@@ -260,6 +267,7 @@ func runReadme(cfg model.RunConfig) string {
 	fmt.Fprintf(&b, "- `evaluator/evaluator.sh` stores the generated evaluator scaffold.\n")
 	fmt.Fprintf(&b, "- `external/policy.json` stores external call policy.\n")
 	fmt.Fprintf(&b, "- `prompts/generation-round-0001.md` stores the prompt package for the selected agent.\n")
+	fmt.Fprintf(&b, "- `agents/` stores Codex invocation logs and final messages.\n")
 	fmt.Fprintf(&b, "- `leaderboard.json` stores current candidate standings.\n")
 	return b.String()
 }

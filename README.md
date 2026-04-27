@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects and create reproducible run archives, but container execution, proxy enforcement, and live agent adapters are still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, and invoke Codex CLI as the first concrete agent provider. Container execution, proxy enforcement, and automated evaluation loops are still under active development.
 
 ## Why
 
@@ -26,6 +26,7 @@ The goal is not just "does it work", but which implementation works best under m
 - External policy scaffold for `deny`, `allowlist`, `mock`, `replay`, and `record`
 - Evaluator shell scaffold
 - Agent generation prompt scaffold
+- Codex CLI generation adapter through `codex exec`
 - File-backed leaderboard and candidate metadata
 - Core Go interfaces and types for agents, evaluation, scoring, metrics, and archive data
 
@@ -89,6 +90,18 @@ Inspect a candidate:
 crucible inspect candidate-0000-baseline
 ```
 
+Ask Codex to generate competitor implementations for the latest run:
+
+```bash
+crucible generate --agent codex
+```
+
+Preview the exact Codex invocation first:
+
+```bash
+crucible generate --agent codex --dry-run
+```
+
 ## Running Without a Known Target Path
 
 If you do not know where the relevant code lives yet, omit `--target-path`:
@@ -105,6 +118,41 @@ The run archive will include:
 - External communication documentation requirements
 
 This supports the intended workflow where the framework runs inside a project and asks an agent to locate the code involved with the requested optimization target.
+
+## Codex Agent Provider
+
+Code Crucible's first live provider targets Codex CLI.
+
+`crucible generate --agent codex` loads the selected run, reads `prompts/generation-round-0001.md`, and invokes:
+
+```bash
+codex exec --cd <project> --sandbox workspace-write --ask-for-approval never --json --output-last-message <run>/agents/codex-final.md -
+```
+
+The prompt is sent through stdin. Codex runs with the host project as its working root so it can inspect source code and write competitor artifacts under `.crucible/runs/<run-id>/round-0001/`.
+
+Generation artifacts are stored under:
+
+```text
+.crucible/runs/<run-id>/agents/
+  codex-<timestamp>-events.jsonl
+  codex-<timestamp>-stderr.log
+  codex-<timestamp>-invocation.json
+  codex-final.md
+```
+
+Useful options:
+
+```bash
+crucible generate \
+  --agent codex \
+  --model gpt-5.5 \
+  --sandbox workspace-write \
+  --approval never \
+  --event-json=true
+```
+
+The generated prompt explicitly tells Codex to avoid modifying host project source outside `.crucible`. Sandbox enforcement currently allows workspace writes; stricter write isolation is planned with container execution.
 
 ## External Call Policy
 
@@ -157,7 +205,7 @@ Core packages:
 - `internal/project`: `.crucible/` initialization and config
 - `internal/run`: tournament run archive creation
 - `internal/discovery`: target path inspection and interface doc generation
-- `internal/agent`: agent prompt construction and future provider interfaces
+- `internal/agent`: agent prompt construction and Codex CLI provider
 - `internal/evaluator`: evaluator scaffold generation
 - `internal/archive`: JSON archive helpers and baseline copying
 - `internal/model`: shared data model
@@ -171,7 +219,7 @@ See [docs/architecture.md](docs/architecture.md) for the current design.
 - Add Docker or Podman sandbox execution
 - Add proxy or mock gateway enforcement
 - Add SQLite index alongside filesystem artifacts
-- Add Codex CLI agent adapter
+- Promote Codex-generated competitors into leaderboard entries
 - Add replay fixture format and mock handler generator
 - Add multi-round evolution strategy
 - Add richer leaderboard views and HTML reports

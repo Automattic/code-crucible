@@ -8,9 +8,12 @@ import (
 )
 
 type GenerationPromptRequest struct {
-	RunConfig        model.RunConfig
-	InterfaceDocPath string
-	History          []model.CandidateResult
+	RunConfig         model.RunConfig
+	InterfaceDocPath  string
+	RunDir            string
+	RoundDir          string
+	BaselineSourceDir string
+	History           []model.CandidateResult
 }
 
 func BuildGenerationPrompt(req GenerationPromptRequest) string {
@@ -20,6 +23,13 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 	fmt.Fprintf(&b, "# Code Crucible Candidate Generation Prompt\n\n")
 	fmt.Fprintf(&b, "Optimization request: %s\n\n", cfg.Optimize)
 	fmt.Fprintf(&b, "Generate %d competitor implementations for round 1.\n\n", cfg.Variants)
+
+	fmt.Fprintf(&b, "## Workspace\n\n")
+	fmt.Fprintf(&b, "- Host project directory: `%s`\n", cfg.ProjectDir)
+	fmt.Fprintf(&b, "- Code Crucible run directory: `%s`\n", req.RunDir)
+	fmt.Fprintf(&b, "- Current round directory: `%s`\n", req.RoundDir)
+	fmt.Fprintf(&b, "- Baseline source directory: `%s`\n\n", req.BaselineSourceDir)
+	fmt.Fprintf(&b, "Only write generated competitor artifacts under the current round directory. Do not modify host project source files outside `.crucible`.\n\n")
 
 	fmt.Fprintf(&b, "## Required Contract\n\n")
 	fmt.Fprintf(&b, "Read and follow `%s`. Every generated competitor must be a drop-in replacement for the documented baseline interface.\n\n", req.InterfaceDocPath)

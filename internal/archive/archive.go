@@ -35,6 +35,19 @@ func LoadLeaderboard(path string) (*model.Leaderboard, error) {
 	return &board, nil
 }
 
+func LoadRunConfig(path string) (*model.RunConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg model.RunConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
 func LatestRunDir(projectDir string) (string, error) {
 	runsDir := filepath.Join(project.WorkDir(projectDir), "runs")
 	entries, err := os.ReadDir(runsDir)
@@ -55,15 +68,27 @@ func LatestRunDir(projectDir string) (string, error) {
 	return runs[len(runs)-1], nil
 }
 
-func LeaderboardPath(projectDir, runID string) (string, error) {
+func RunDir(projectDir, runID string) (string, error) {
 	if strings.TrimSpace(runID) == "" {
-		runDir, err := LatestRunDir(projectDir)
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(runDir, "leaderboard.json"), nil
+		return LatestRunDir(projectDir)
 	}
-	return filepath.Join(project.WorkDir(projectDir), "runs", runID, "leaderboard.json"), nil
+	return filepath.Join(project.WorkDir(projectDir), "runs", runID), nil
+}
+
+func RunConfigPath(projectDir, runID string) (string, error) {
+	runDir, err := RunDir(projectDir, runID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(runDir, "run.json"), nil
+}
+
+func LeaderboardPath(projectDir, runID string) (string, error) {
+	runDir, err := RunDir(projectDir, runID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(runDir, "leaderboard.json"), nil
 }
 
 func Slug(input string, maxLen int) string {

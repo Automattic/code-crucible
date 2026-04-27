@@ -48,7 +48,7 @@ func Init(projectDir, name string) (*Config, error) {
 		Version:      1,
 		ProjectName:  name,
 		CreatedAt:    time.Now().UTC(),
-		DefaultAgent: "prompt",
+		DefaultAgent: "codex",
 		DefaultExternalPolicy: model.ExternalPolicy{
 			Mode: model.ExternalModeDeny,
 		},

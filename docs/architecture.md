@@ -102,7 +102,7 @@ The current implementation records and communicates the policy. A later executio
 
 ## Agent Integration
 
-The first agent integration is prompt-based. Code Crucible writes:
+The first live agent integration is Codex CLI. Code Crucible still writes a prompt package:
 
 ```text
 prompts/generation-round-0001.md
@@ -118,7 +118,25 @@ That prompt contains:
 - Baseline and historical metric context
 - Output requirements for competitors
 
-Future providers will execute agent CLIs directly through a common provider interface.
+`crucible generate --agent codex` invokes Codex non-interactively with the prompt on stdin:
+
+```text
+codex exec --cd <project> --sandbox workspace-write --ask-for-approval never --json --output-last-message <run>/agents/codex-final.md -
+```
+
+Codex artifacts are archived under:
+
+```text
+agents/
+  codex-<timestamp>-events.jsonl
+  codex-<timestamp>-stderr.log
+  codex-<timestamp>-invocation.json
+  codex-final.md
+```
+
+Codex uses the host project as its working root. The prompt instructs it to write only under the current round directory and not to modify host project source outside `.crucible`.
+
+Future providers can use the same run metadata and prompt package through a common provider interface.
 
 ## Evaluation
 

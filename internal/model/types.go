@@ -30,6 +30,8 @@ type ExternalPolicy struct {
 type RunConfig struct {
 	ID            string         `json:"id"`
 	ProjectDir    string         `json:"project_dir"`
+	RunDir        string         `json:"run_dir"`
+	RoundDir      string         `json:"round_dir"`
 	Optimize      string         `json:"optimize"`
 	TargetPath    string         `json:"target_path,omitempty"`
 	Agent         string         `json:"agent"`
@@ -40,6 +42,7 @@ type RunConfig struct {
 	External      ExternalPolicy `json:"external"`
 	CreatedAt     time.Time      `json:"created_at"`
 	InterfaceDocs string         `json:"interface_docs"`
+	PromptPath    string         `json:"prompt_path"`
 }
 
 type Candidate struct {
