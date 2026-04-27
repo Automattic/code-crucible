@@ -104,3 +104,43 @@ func TestRunGenerateRejectsUnsupportedAgentBeforeCreatingRun(t *testing.T) {
 		t.Fatalf("expected no run archive to be created, stat err: %v", err)
 	}
 }
+
+func TestEvaluateCommandUpdatesLeaderboard(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--optimize", "make ranking faster",
+		"--target-path", "internal/search/rank.go",
+		"--evaluator", "true",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"evaluate",
+		"--project", projectDir,
+		"--candidate", "candidate-0000-baseline",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("evaluate returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "candidate-0000-baseline") {
+		t.Fatalf("stdout did not include evaluated candidate:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "passed") {
+		t.Fatalf("stdout did not include passed status:\n%s", stdout.String())
+	}
+}

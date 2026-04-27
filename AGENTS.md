@@ -6,7 +6,9 @@ Code Crucible is a Go CLI project.
 
 - Format: `gofmt -w ./cmd ./internal`
 - Test: `go test ./...`
+- Vet: `go vet ./...`
 - Build: `go build -o bin/crucible ./cmd/crucible`
+- Full check: `make check`
 - Smoke Codex command construction: `bin/crucible generate --project /tmp/crucible-sample --dry-run`
 
 ## Project Intent

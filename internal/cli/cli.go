@@ -8,6 +8,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gaarai/code-crucible/internal/agent"
 	"github.com/gaarai/code-crucible/internal/archive"
@@ -53,6 +54,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runGenerate(args[1:], stdout, stderr)
 	case "adopt":
 		return runAdopt(args[1:], stdout, stderr)
+	case "evaluate":
+		return runEvaluate(args[1:], stdout, stderr)
 	case "leaderboard":
 		return runLeaderboard(args[1:], stdout, stderr)
 	case "inspect":
@@ -248,6 +251,58 @@ func runAdopt(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runEvaluate(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("evaluate", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	runID := fs.String("run", "", "run ID; defaults to latest run")
+	candidateID := fs.String("candidate", "", "candidate ID to evaluate; defaults to all leaderboard candidates")
+	timeoutValue := fs.String("timeout", "", "optional evaluator timeout, such as 30s or 2m")
+	adoptBefore := fs.Bool("adopt", true, "adopt generated candidates before evaluation")
+	jsonOut := fs.Bool("json", false, "print raw evaluation report JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	timeout := time.Duration(0)
+	if strings.TrimSpace(*timeoutValue) != "" {
+		parsed, err := time.ParseDuration(*timeoutValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "evaluate failed: invalid --timeout %q: %v\n", *timeoutValue, err)
+			return 2
+		}
+		timeout = parsed
+	}
+
+	report, err := run.EvaluateCandidates(run.EvaluationOptions{
+		ProjectDir:  *projectDir,
+		RunID:       *runID,
+		CandidateID: *candidateID,
+		Timeout:     timeout,
+		Adopt:       *adoptBefore,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "evaluate failed: %v\n", err)
+		return 1
+	}
+
+	if *jsonOut {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "evaluate failed: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%s\n", data)
+		return 0
+	}
+
+	if report.Adoption != nil {
+		printAdoptionReport(stdout, stderr, report.Adoption)
+	}
+	printEvaluationReport(stdout, report)
+	return 0
+}
+
 func runGenerate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -398,6 +453,21 @@ func formatIDList(ids []string) string {
 	return strings.Join(ids, ", ")
 }
 
+func printEvaluationReport(stdout io.Writer, report *run.EvaluationReport) {
+	fmt.Fprintf(stdout, "\nEvaluation report for run %s\n", report.RunID)
+	fmt.Fprintf(stdout, "Evaluator: %s\n", report.EvaluatorPath)
+	fmt.Fprintf(stdout, "Leaderboard: %s\n", report.LeaderboardPath)
+	if len(report.Results) == 0 {
+		fmt.Fprintln(stdout, "No candidates evaluated.")
+		return
+	}
+
+	fmt.Fprintf(stdout, "%-28s %-10s %-10s\n", "Candidate", "Status", "Score")
+	for _, result := range report.Results {
+		fmt.Fprintf(stdout, "%-28s %-10s %-10.2f\n", result.ID, result.Status, result.Score)
+	}
+}
+
 func runInspect(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -468,6 +538,7 @@ Usage:
   crucible run --optimize TEXT [--project DIR] [--target-path PATH] [--variants N] [--generate]
   crucible generate [--project DIR] [--run RUN_ID] [--agent codex]
   crucible adopt [--project DIR] [--run RUN_ID]
+  crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]
   crucible inspect [--project DIR] [--run RUN_ID] [candidate-id]
   crucible version
@@ -477,7 +548,7 @@ Core workflow:
   2. Run "crucible run --optimize ..." to create a tournament workspace.
   3. Fill in docs/interfaces.md and evaluator/evaluator.sh.
   4. Run "crucible generate --agent codex" to ask Codex for competitors, or use "crucible run --generate" as an explicit shortcut.
-  5. Run "crucible adopt" if competitors were created by hand or by an external agent.
+  5. Run "crucible evaluate" to execute the run evaluator and update leaderboard results.
 
 `)
 }

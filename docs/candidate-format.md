@@ -71,3 +71,29 @@ Adoption validates:
 - Generated candidates are not marked as baseline
 
 Malformed candidates are reported and skipped. Adoption does not silently repair candidate artifacts.
+
+## Evaluation Artifacts
+
+After `crucible evaluate`, each evaluated candidate may also contain:
+
+```text
+candidate-NNNN/
+  evaluation.stdout.log
+  evaluation.stderr.log
+  metrics.json
+  verdict.json
+```
+
+`metrics.json` uses the shared `Metrics` shape from `internal/model`.
+
+`verdict.json` must include:
+
+```json
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+```
+
+If `verdict.json` is missing or invalid, Code Crucible marks the candidate as failed.

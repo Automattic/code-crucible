@@ -18,7 +18,7 @@ optimization request
   -> next generation prompt
 ```
 
-The initial implementation creates the archive and prompt package. Execution, proxy enforcement, and live agent adapters are planned next.
+The initial implementation creates the archive, prompt package, Codex generation path, candidate adoption path, and local evaluator execution. Proxy enforcement and containerized execution are planned next.
 
 ## Project Mode
 
@@ -153,6 +153,14 @@ Future providers can use the same run metadata and prompt package through a comm
 `evaluator/evaluator.sh` is generated for every run.
 
 If `--evaluator` is provided, the scaffold wraps that command and records minimal metrics. If no evaluator is provided, it writes a failing verdict with instructions to add deterministic correctness checks and benchmarks.
+
+`crucible evaluate` executes the run evaluator for each candidate currently listed in `leaderboard.json`. It passes:
+
+```text
+evaluator.sh <candidate-dir> <run-dir> <metrics-out> <verdict-out>
+```
+
+The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads both files, updates `leaderboard.json`, computes a starter score, and marks candidates as `passed` only when correctness, benchmark, and external policy verdicts all pass. Missing or malformed verdicts fail closed.
 
 The planned evaluator layer will add:
 

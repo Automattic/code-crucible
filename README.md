@@ -28,6 +28,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Agent generation prompt scaffold
 - Codex CLI generation adapter through `codex exec`
 - Candidate adoption from generated `candidate-NNNN` artifacts into `leaderboard.json`
+- Local evaluator execution through `crucible evaluate`
 - File-backed leaderboard and candidate metadata
 - Core Go interfaces and types for agents, evaluation, scoring, metrics, and archive data
 
@@ -103,6 +104,12 @@ crucible generate --agent codex
 
 ```bash
 crucible adopt
+```
+
+Run the evaluator against adopted candidates and update leaderboard metrics, verdicts, status, and score:
+
+```bash
+crucible evaluate
 ```
 
 Preview the exact Codex invocation first:
@@ -186,6 +193,33 @@ crucible run \
 
 The generated prompt explicitly tells Codex to avoid modifying host project source outside `.crucible`. Sandbox enforcement currently allows workspace writes; stricter write isolation is planned with container execution.
 
+## Evaluation
+
+Every run includes `evaluator/evaluator.sh`. `crucible evaluate` executes that script once per candidate currently listed in `leaderboard.json`.
+
+The evaluator script receives:
+
+```text
+evaluator.sh <candidate-dir> <run-dir> <metrics-out> <verdict-out>
+```
+
+It must write:
+
+- `metrics.json`
+- `verdict.json`
+
+Evaluation artifacts are stored beside each candidate:
+
+```text
+candidate-NNNN/
+  evaluation.stdout.log
+  evaluation.stderr.log
+  metrics.json
+  verdict.json
+```
+
+If the evaluator fails or omits `verdict.json`, Code Crucible marks the candidate as failed. If `metrics.json` is missing or invalid, the candidate can still receive a failed verdict with a warning.
+
 ## External Call Policy
 
 Code Crucible treats external communication as a first-class part of evaluation.
@@ -247,7 +281,6 @@ See [docs/architecture.md](docs/architecture.md) for the current design.
 
 ## Roadmap
 
-- Execute evaluators for baseline and generated competitors
 - Add Docker or Podman sandbox execution
 - Add proxy or mock gateway enforcement
 - Add SQLite index alongside filesystem artifacts
