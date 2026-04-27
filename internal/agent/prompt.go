@@ -1,0 +1,75 @@
+package agent
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/gaarai/code-crucible/internal/model"
+)
+
+type GenerationPromptRequest struct {
+	RunConfig        model.RunConfig
+	InterfaceDocPath string
+	History          []model.CandidateResult
+}
+
+func BuildGenerationPrompt(req GenerationPromptRequest) string {
+	var b strings.Builder
+	cfg := req.RunConfig
+
+	fmt.Fprintf(&b, "# Code Crucible Candidate Generation Prompt\n\n")
+	fmt.Fprintf(&b, "Optimization request: %s\n\n", cfg.Optimize)
+	fmt.Fprintf(&b, "Generate %d competitor implementations for round 1.\n\n", cfg.Variants)
+
+	fmt.Fprintf(&b, "## Required Contract\n\n")
+	fmt.Fprintf(&b, "Read and follow `%s`. Every generated competitor must be a drop-in replacement for the documented baseline interface.\n\n", req.InterfaceDocPath)
+
+	fmt.Fprintf(&b, "## External Policy\n\n")
+	fmt.Fprintf(&b, "- Mode: `%s`\n", cfg.External.Mode)
+	if len(cfg.External.Allowlist) > 0 {
+		fmt.Fprintf(&b, "- Allowlist: `%s`\n", strings.Join(cfg.External.Allowlist, "`, `"))
+	}
+	if cfg.External.Fixtures != "" {
+		fmt.Fprintf(&b, "- Fixtures: `%s`\n", cfg.External.Fixtures)
+	}
+	fmt.Fprintf(&b, "\n")
+
+	fmt.Fprintf(&b, "## Generation Balance\n\n")
+	fmt.Fprintf(&b, "Exploration setting: %.2f\n\n", cfg.Exploration)
+	fmt.Fprintf(&b, "- Lower values should favor incremental improvements to known-good approaches.\n")
+	fmt.Fprintf(&b, "- Higher values should reserve more variants for structurally different approaches.\n")
+	fmt.Fprintf(&b, "- Keep all competitors compatible with the evaluator and external policy.\n\n")
+
+	fmt.Fprintf(&b, "## Historical Context\n\n")
+	if len(req.History) == 0 {
+		fmt.Fprintf(&b, "No prior competitor metrics exist yet. Use the baseline source as candidate-0000 and create new competitors beside it.\n\n")
+	} else {
+		for _, result := range req.History {
+			fmt.Fprintf(&b, "- %s: status=%s score=%.4f runtime_mean_ms=%.2f p95_latency_ms=%.2f memory_peak_bytes=%d external_calls=%d\n",
+				result.Candidate.ID,
+				result.Status,
+				result.Score,
+				result.Metrics.RuntimeMeanMS,
+				result.Metrics.P95LatencyMS,
+				result.Metrics.MemoryPeakBytes,
+				result.Metrics.ExternalCallCount,
+			)
+		}
+		fmt.Fprintf(&b, "\n")
+	}
+
+	fmt.Fprintf(&b, `## Output Requirements
+
+For each competitor:
+
+1. Create a directory named candidate-NNNN under the current round directory.
+2. Put replacement source under candidate-NNNN/src.
+3. Include candidate-NNNN/design.md explaining the approach, expected tradeoffs, and known risks.
+4. Do not modify baseline source, evaluator files, run metadata, or completed candidate artifacts.
+5. Do not introduce external services or protocols that violate the external policy.
+
+Favor measurable changes. If a competitor is experimental, make the experiment explicit in design.md.
+`)
+
+	return b.String()
+}

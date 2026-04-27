@@ -1,0 +1,182 @@
+# Code Crucible
+
+Code Crucible is a model-agnostic CLI framework for generating, evaluating, benchmarking, and evolving competing implementations of selected project code.
+
+It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
+
+Status: early scaffold. The CLI can initialize projects and create reproducible run archives, but container execution, proxy enforcement, and live agent adapters are still under active development.
+
+## Why
+
+AI coding tools are good at producing one implementation. Code Crucible treats code as a competitive artifact:
+
+```text
+Generate -> Execute -> Benchmark -> Score -> Archive -> Evolve -> Repeat
+```
+
+The goal is not just "does it work", but which implementation works best under measured constraints such as latency, memory, CPU, I/O, external calls, and cost.
+
+## Current Features
+
+- Local git-friendly Go CLI
+- `crucible init` for adding a `.crucible/` work area to an existing project
+- `crucible run --optimize ...` for creating a tournament archive
+- Baseline competitor extraction from an optional `--target-path`
+- Interface discovery document scaffold
+- External policy scaffold for `deny`, `allowlist`, `mock`, `replay`, and `record`
+- Evaluator shell scaffold
+- Agent generation prompt scaffold
+- File-backed leaderboard and candidate metadata
+- Core Go interfaces and types for agents, evaluation, scoring, metrics, and archive data
+
+## Install From Source
+
+```bash
+git clone https://github.com/gaarai/code-crucible.git
+cd code-crucible
+go build -o bin/crucible ./cmd/crucible
+```
+
+## Quick Start
+
+Initialize Code Crucible inside an existing project:
+
+```bash
+cd /path/to/your/project
+crucible init
+```
+
+Create a tournament run for a feature, function, handler, or module you want to optimize:
+
+```bash
+crucible run \
+  --optimize "reduce p95 latency of the search ranking function" \
+  --target-path internal/search/rank.go \
+  --variants 5 \
+  --rounds 3 \
+  --exploration 0.35 \
+  --external-mode deny
+```
+
+This creates a run under:
+
+```text
+.crucible/runs/<run-id>/
+```
+
+Key files in each run:
+
+```text
+run.json
+README.md
+docs/interfaces.md
+evaluator/evaluator.sh
+external/policy.json
+prompts/generation-round-0001.md
+round-0001/candidate-0000-baseline/
+leaderboard.json
+```
+
+View the current standings:
+
+```bash
+crucible leaderboard
+```
+
+Inspect a candidate:
+
+```bash
+crucible inspect candidate-0000-baseline
+```
+
+## Running Without a Known Target Path
+
+If you do not know where the relevant code lives yet, omit `--target-path`:
+
+```bash
+crucible run --optimize "reduce checkout API external calls"
+```
+
+The run archive will include:
+
+- A baseline placeholder
+- Interface documentation prompts
+- An agent prompt instructing the selected agent to discover involved code
+- External communication documentation requirements
+
+This supports the intended workflow where the framework runs inside a project and asks an agent to locate the code involved with the requested optimization target.
+
+## External Call Policy
+
+Code Crucible treats external communication as a first-class part of evaluation.
+
+Supported policy modes:
+
+- `deny`: no external network access should be required
+- `allowlist`: only configured hosts are allowed
+- `mock`: local mock handlers should serve deterministic responses
+- `replay`: recorded fixtures should serve deterministic responses
+- `record`: live responses may be captured for future replay
+
+Example:
+
+```bash
+crucible run \
+  --optimize "reduce API cost in enrichment pipeline" \
+  --external-mode allowlist \
+  --allow-hosts api.example.com,auth.example.com
+```
+
+Proxy and container enforcement are not implemented yet. The current scaffold records the policy and requires generated competitors and evaluators to respect it.
+
+## Project Work Area
+
+`crucible init` creates:
+
+```text
+.crucible/
+  agents/
+  competitors/
+  evaluators/
+  fixtures/http/
+  interfaces/
+  runs/
+  tasks/
+  config.json
+  README.md
+```
+
+The work area is intended to be local project metadata. Completed run directories should be reproducible archives containing source, prompts, metrics, external traces, and verdicts.
+
+## Architecture
+
+Core packages:
+
+- `cmd/crucible`: CLI entrypoint
+- `internal/cli`: command parsing and user-facing commands
+- `internal/project`: `.crucible/` initialization and config
+- `internal/run`: tournament run archive creation
+- `internal/discovery`: target path inspection and interface doc generation
+- `internal/agent`: agent prompt construction and future provider interfaces
+- `internal/evaluator`: evaluator scaffold generation
+- `internal/archive`: JSON archive helpers and baseline copying
+- `internal/model`: shared data model
+- `internal/scoring`: starter scoring logic
+
+See [docs/architecture.md](docs/architecture.md) for the current design.
+
+## Roadmap
+
+- Execute evaluators for baseline and generated competitors
+- Add Docker or Podman sandbox execution
+- Add proxy or mock gateway enforcement
+- Add SQLite index alongside filesystem artifacts
+- Add Codex CLI agent adapter
+- Add replay fixture format and mock handler generator
+- Add multi-round evolution strategy
+- Add richer leaderboard views and HTML reports
+- Add CI integration for regression tournaments
+
+## License
+
+No license has been selected yet.
