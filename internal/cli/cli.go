@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/gaarai/code-crucible/internal/agent"
 	"github.com/gaarai/code-crucible/internal/archive"
+	"github.com/gaarai/code-crucible/internal/model"
 	"github.com/gaarai/code-crucible/internal/project"
 	"github.com/gaarai/code-crucible/internal/run"
 )
@@ -203,9 +205,14 @@ func runLeaderboard(args []string, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "Run: %s\n", board.RunID)
 	fmt.Fprintf(stdout, "Optimize: %s\n\n", board.Optimize)
-	fmt.Fprintf(stdout, "%-28s %-10s %-10s %-12s %-10s\n", "Candidate", "Status", "Score", "P95 ms", "Calls")
-	for _, result := range board.Results {
-		fmt.Fprintf(stdout, "%-28s %-10s %-10.2f %-12.2f %-10d\n",
+	fmt.Fprintf(stdout, "%-5s %-28s %-10s %-10s %-12s %-10s\n", "Rank", "Candidate", "Status", "Score", "P95 ms", "Calls")
+	for i, result := range rankedResults(board.Results) {
+		rank := "-"
+		if result.Status == "passed" {
+			rank = fmt.Sprintf("%d", i+1)
+		}
+		fmt.Fprintf(stdout, "%-5s %-28s %-10s %-10.2f %-12.2f %-10d\n",
+			rank,
 			result.Candidate.ID,
 			result.Status,
 			result.Score,
@@ -214,6 +221,42 @@ func runLeaderboard(args []string, stdout, stderr io.Writer) int {
 		)
 	}
 	return 0
+}
+
+func rankedResults(results []model.CandidateResult) []model.CandidateResult {
+	ranked := append([]model.CandidateResult(nil), results...)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		left := ranked[i]
+		right := ranked[j]
+		leftPriority := leaderboardStatusPriority(left.Status)
+		rightPriority := leaderboardStatusPriority(right.Status)
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+		if left.Score != right.Score {
+			return left.Score > right.Score
+		}
+		if left.Metrics.P95LatencyMS != right.Metrics.P95LatencyMS {
+			return left.Metrics.P95LatencyMS < right.Metrics.P95LatencyMS
+		}
+		return left.Candidate.ID < right.Candidate.ID
+	})
+	return ranked
+}
+
+func leaderboardStatusPriority(status string) int {
+	switch status {
+	case "passed":
+		return 0
+	case "failed":
+		return 1
+	case "generated":
+		return 2
+	case "pending":
+		return 3
+	default:
+		return 4
+	}
 }
 
 func runAdopt(args []string, stdout, stderr io.Writer) int {

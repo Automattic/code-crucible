@@ -184,3 +184,5 @@ The Go data model currently includes:
 - `Leaderboard`
 
 The filesystem archive is the source of truth for now. SQLite indexing is planned once the artifact format stabilizes.
+
+The human-readable leaderboard view sorts passed candidates by score, then p95 latency. The JSON output preserves the archived result data for automation.

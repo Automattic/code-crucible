@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gaarai/code-crucible/internal/model"
 )
 
 func TestRunGenerateShortcutInvokesCodex(t *testing.T) {
@@ -142,5 +144,46 @@ func TestEvaluateCommandUpdatesLeaderboard(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "passed") {
 		t.Fatalf("stdout did not include passed status:\n%s", stdout.String())
+	}
+}
+
+func TestRankedResultsPrioritizesPassedScoreThenLatency(t *testing.T) {
+	results := []model.CandidateResult{
+		{
+			Candidate: model.Candidate{ID: "candidate-0003"},
+			Status:    "generated",
+			Score:     9999,
+		},
+		{
+			Candidate: model.Candidate{ID: "candidate-0002"},
+			Status:    "passed",
+			Score:     900,
+			Metrics:   model.Metrics{P95LatencyMS: 30},
+		},
+		{
+			Candidate: model.Candidate{ID: "candidate-0001"},
+			Status:    "passed",
+			Score:     900,
+			Metrics:   model.Metrics{P95LatencyMS: 20},
+		},
+		{
+			Candidate: model.Candidate{ID: "candidate-0004"},
+			Status:    "failed",
+			Score:     1000,
+		},
+	}
+
+	ranked := rankedResults(results)
+	got := []string{
+		ranked[0].Candidate.ID,
+		ranked[1].Candidate.ID,
+		ranked[2].Candidate.ID,
+		ranked[3].Candidate.ID,
+	}
+	want := []string{"candidate-0001", "candidate-0002", "candidate-0004", "candidate-0003"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ranked order = %#v, want %#v", got, want)
+		}
 	}
 }

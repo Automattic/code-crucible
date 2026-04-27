@@ -29,6 +29,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Codex CLI generation adapter through `codex exec`
 - Candidate adoption from generated `candidate-NNNN` artifacts into `leaderboard.json`
 - Local evaluator execution through `crucible evaluate`
+- Ranked human-readable leaderboard output for passed candidates
 - File-backed leaderboard and candidate metadata
 - Core Go interfaces and types for agents, evaluation, scoring, metrics, and archive data
 
@@ -87,6 +88,8 @@ View the current standings:
 ```bash
 crucible leaderboard
 ```
+
+The human-readable leaderboard ranks passed candidates by score, then p95 latency. Use `--json` when you need archive order and raw result data.
 
 Inspect a candidate:
 
@@ -286,7 +289,7 @@ See [docs/architecture.md](docs/architecture.md) for the current design.
 - Add SQLite index alongside filesystem artifacts
 - Add replay fixture format and mock handler generator
 - Add multi-round evolution strategy
-- Add richer leaderboard views and HTML reports
+- Add HTML reports
 - Add CI integration for regression tournaments
 
 ## License
