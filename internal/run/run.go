@@ -16,17 +16,18 @@ import (
 )
 
 type Options struct {
-	ProjectDir   string
-	Optimize     string
-	TargetPath   string
-	Agent        string
-	Variants     int
-	Rounds       int
-	Exploration  float64
-	Evaluator    string
-	ExternalMode string
-	Fixtures     string
-	AllowHosts   []string
+	ProjectDir      string
+	Optimize        string
+	TargetPath      string
+	Agent           string
+	Variants        int
+	Rounds          int
+	Exploration     float64
+	Evaluator       string
+	EvaluatorScript string
+	ExternalMode    string
+	Fixtures        string
+	AllowHosts      []string
 }
 
 type CreatedRun struct {
@@ -121,21 +122,22 @@ func Create(opts Options) (*CreatedRun, error) {
 	}
 	promptPath := filepath.Join(runDir, "prompts", "generation-round-0001.md")
 	runConfig := model.RunConfig{
-		ID:            runID,
-		ProjectDir:    absProject,
-		RunDir:        runDir,
-		RoundDir:      roundDir,
-		Optimize:      opts.Optimize,
-		TargetPath:    opts.TargetPath,
-		Agent:         opts.Agent,
-		Variants:      opts.Variants,
-		Rounds:        opts.Rounds,
-		Exploration:   opts.Exploration,
-		Evaluator:     opts.Evaluator,
-		External:      external,
-		CreatedAt:     now,
-		InterfaceDocs: filepath.ToSlash(interfacePath),
-		PromptPath:    filepath.ToSlash(promptPath),
+		ID:              runID,
+		ProjectDir:      absProject,
+		RunDir:          runDir,
+		RoundDir:        roundDir,
+		Optimize:        opts.Optimize,
+		TargetPath:      opts.TargetPath,
+		Agent:           opts.Agent,
+		Variants:        opts.Variants,
+		Rounds:          opts.Rounds,
+		Exploration:     opts.Exploration,
+		Evaluator:       opts.Evaluator,
+		EvaluatorScript: opts.EvaluatorScript,
+		External:        external,
+		CreatedAt:       now,
+		InterfaceDocs:   filepath.ToSlash(interfacePath),
+		PromptPath:      filepath.ToSlash(promptPath),
 	}
 
 	if err := archive.SaveJSON(filepath.Join(runDir, "run.json"), runConfig); err != nil {
@@ -188,10 +190,23 @@ func Create(opts Options) (*CreatedRun, error) {
 		return nil, err
 	}
 
-	evaluatorScript := evaluator.DefaultScript(opts.Evaluator)
 	evaluatorPath := filepath.Join(runDir, "evaluator", "evaluator.sh")
-	if err := os.WriteFile(evaluatorPath, []byte(evaluatorScript), 0o755); err != nil {
-		return nil, err
+	if opts.EvaluatorScript != "" {
+		source := opts.EvaluatorScript
+		if !filepath.IsAbs(source) {
+			source = filepath.Join(absProject, source)
+		}
+		if err := archive.CopyPath(source, evaluatorPath); err != nil {
+			return nil, fmt.Errorf("copy evaluator script: %w", err)
+		}
+		if err := os.Chmod(evaluatorPath, 0o755); err != nil {
+			return nil, err
+		}
+	} else {
+		evaluatorScript := evaluator.DefaultScript(opts.Evaluator)
+		if err := os.WriteFile(evaluatorPath, []byte(evaluatorScript), 0o755); err != nil {
+			return nil, err
+		}
 	}
 
 	prompt := agent.BuildGenerationPrompt(agent.GenerationPromptRequest{

@@ -101,6 +101,7 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	rounds := fs.Int("rounds", 1, "number of tournament rounds to prepare")
 	exploration := fs.Float64("exploration", 0.35, "0..1 balance between iterative improvement and creative alternatives")
 	evaluator := fs.String("evaluator", "", "deterministic evaluator command to run from each candidate src directory")
+	evaluatorScript := fs.String("evaluator-script", "", "path to a full evaluator script copied into the run archive")
 	externalMode := fs.String("external-mode", "deny", "external call mode: deny, allowlist, mock, replay, record")
 	fixtures := fs.String("external-fixtures", "", "fixtures path for mock or replay mode")
 	allowHosts := fs.String("allow-hosts", "", "comma-separated host allowlist")
@@ -129,17 +130,18 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	}
 
 	created, err := run.Create(run.Options{
-		ProjectDir:   *projectDir,
-		Optimize:     *optimize,
-		TargetPath:   *targetPath,
-		Agent:        runAgent,
-		Variants:     *variants,
-		Rounds:       *rounds,
-		Exploration:  *exploration,
-		Evaluator:    *evaluator,
-		ExternalMode: *externalMode,
-		Fixtures:     *fixtures,
-		AllowHosts:   splitCSV(*allowHosts),
+		ProjectDir:      *projectDir,
+		Optimize:        *optimize,
+		TargetPath:      *targetPath,
+		Agent:           runAgent,
+		Variants:        *variants,
+		Rounds:          *rounds,
+		Exploration:     *exploration,
+		Evaluator:       *evaluator,
+		EvaluatorScript: *evaluatorScript,
+		ExternalMode:    *externalMode,
+		Fixtures:        *fixtures,
+		AllowHosts:      splitCSV(*allowHosts),
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "run setup failed: %v\n", err)

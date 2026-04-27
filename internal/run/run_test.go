@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gaarai/code-crucible/internal/archive"
 )
 
 func TestCreateRunCopiesFileBaseline(t *testing.T) {
@@ -85,5 +87,58 @@ func TestCreateRunWithoutTargetPathCreatesDiscoveryPrompt(t *testing.T) {
 	}
 	if !strings.Contains(string(prompt), "Generate 3 competitor implementations") {
 		t.Fatalf("generation prompt did not include requested variant count")
+	}
+}
+
+func TestCreateRunCopiesEvaluatorScript(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	script := "#!/usr/bin/env bash\nprintf 'custom evaluator\\n'\n"
+	if err := os.WriteFile(filepath.Join(projectDir, "custom-evaluator.sh"), []byte(script), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := Create(Options{
+		ProjectDir:      projectDir,
+		Optimize:        "make ranking faster",
+		TargetPath:      "internal/search/rank.go",
+		Variants:        2,
+		Rounds:          1,
+		ExternalMode:    "deny",
+		EvaluatorScript: "custom-evaluator.sh",
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	evaluatorPath := filepath.Join(created.RunDir, "evaluator", "evaluator.sh")
+	copied, err := os.ReadFile(evaluatorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(copied) != script {
+		t.Fatalf("evaluator script was not copied correctly")
+	}
+	info, err := os.Stat(evaluatorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("evaluator script mode = %v, want 0755", info.Mode().Perm())
+	}
+
+	cfg, err := archive.LoadRunConfig(filepath.Join(created.RunDir, "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EvaluatorScript != "custom-evaluator.sh" {
+		t.Fatalf("EvaluatorScript = %q, want custom-evaluator.sh", cfg.EvaluatorScript)
 	}
 }
