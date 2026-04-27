@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gaarai/code-crucible/internal/archive"
-	"github.com/gaarai/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/archive"
+	"github.com/Automattic/code-crucible/internal/model"
 )
 
 func TestEvaluateCandidatesUpdatesLeaderboard(t *testing.T) {

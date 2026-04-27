@@ -1,6 +1,6 @@
 package scoring
 
-import "github.com/gaarai/code-crucible/internal/model"
+import "github.com/Automattic/code-crucible/internal/model"
 
 func Score(result model.CandidateResult) float64 {
 	if !result.Verdict.CorrectnessPassed || !result.Verdict.ExternalPolicyPassed {

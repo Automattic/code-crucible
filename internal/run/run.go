@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gaarai/code-crucible/internal/agent"
-	"github.com/gaarai/code-crucible/internal/archive"
-	"github.com/gaarai/code-crucible/internal/discovery"
-	"github.com/gaarai/code-crucible/internal/evaluator"
-	"github.com/gaarai/code-crucible/internal/model"
-	"github.com/gaarai/code-crucible/internal/project"
+	"github.com/Automattic/code-crucible/internal/agent"
+	"github.com/Automattic/code-crucible/internal/archive"
+	"github.com/Automattic/code-crucible/internal/discovery"
+	"github.com/Automattic/code-crucible/internal/evaluator"
+	"github.com/Automattic/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/project"
 )
 
 type Options struct {

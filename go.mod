@@ -1,3 +1,3 @@
-module github.com/gaarai/code-crucible
+module github.com/Automattic/code-crucible
 
 go 1.22

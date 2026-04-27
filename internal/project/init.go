@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gaarai/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/model"
 )
 
 const DirName = ".crucible"

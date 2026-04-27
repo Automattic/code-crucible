@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gaarai/code-crucible/internal/archive"
+	"github.com/Automattic/code-crucible/internal/archive"
 )
 
 func TestCreateRunCopiesFileBaseline(t *testing.T) {

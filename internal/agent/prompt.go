@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gaarai/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/model"
 )
 
 type GenerationPromptRequest struct {

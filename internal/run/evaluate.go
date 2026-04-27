@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gaarai/code-crucible/internal/archive"
-	"github.com/gaarai/code-crucible/internal/model"
-	"github.com/gaarai/code-crucible/internal/scoring"
+	"github.com/Automattic/code-crucible/internal/archive"
+	"github.com/Automattic/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/scoring"
 )
 
 type EvaluationOptions struct {

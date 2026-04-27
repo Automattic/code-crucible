@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/gaarai/code-crucible/internal/cli"
+	"github.com/Automattic/code-crucible/internal/cli"
 )
 
 func main() {

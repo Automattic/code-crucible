@@ -36,7 +36,7 @@ The goal is not just "does it work", but which implementation works best under m
 ## Install From Source
 
 ```bash
-git clone https://github.com/gaarai/code-crucible.git
+git clone https://github.com/Automattic/code-crucible.git
 cd code-crucible
 go build -o bin/crucible ./cmd/crucible
 ```

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/gaarai/code-crucible/internal/model"
-	"github.com/gaarai/code-crucible/internal/project"
+	"github.com/Automattic/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/project"
 )
 
 func SaveJSON(path string, value any) error {
