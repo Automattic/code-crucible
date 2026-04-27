@@ -31,15 +31,16 @@ type EvaluationOptions struct {
 }
 
 type CandidateEvaluation struct {
-	ID          string   `json:"id"`
-	Status      string   `json:"status"`
-	Score       float64  `json:"score"`
-	MetricsPath string   `json:"metrics_path"`
-	VerdictPath string   `json:"verdict_path"`
-	StdoutPath  string   `json:"stdout_path"`
-	StderrPath  string   `json:"stderr_path"`
-	Errors      []string `json:"errors,omitempty"`
-	Warnings    []string `json:"warnings,omitempty"`
+	ID               string                  `json:"id"`
+	Status           string                  `json:"status"`
+	Score            float64                 `json:"score"`
+	ScoreExplanation *model.ScoreExplanation `json:"score_explanation,omitempty"`
+	MetricsPath      string                  `json:"metrics_path"`
+	VerdictPath      string                  `json:"verdict_path"`
+	StdoutPath       string                  `json:"stdout_path"`
+	StderrPath       string                  `json:"stderr_path"`
+	Errors           []string                `json:"errors,omitempty"`
+	Warnings         []string                `json:"warnings,omitempty"`
 }
 
 type EvaluationReport struct {
@@ -179,6 +180,7 @@ func syncEvaluationReportScores(report *EvaluationReport, results []model.Candid
 	for i := range report.Results {
 		if result, ok := byID[report.Results[i].ID]; ok {
 			report.Results[i].Score = result.Score
+			report.Results[i].ScoreExplanation = result.ScoreExplanation
 			report.Results[i].Status = result.Status
 		}
 	}

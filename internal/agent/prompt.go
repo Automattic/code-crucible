@@ -59,7 +59,8 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 		fmt.Fprintf(&b, "No prior competitor metrics exist yet. Use the baseline source as candidate-0000 and create new competitors beside it.\n\n")
 	} else {
 		for _, result := range req.History {
-			fmt.Fprintf(&b, "- %s: status=%s score=%.4g runtime_mean_ms=%.6g p95_latency_ms=%.6g cpu_seconds=%.6g memory_peak_bytes=%d external_calls=%d\n",
+			externalCalls := historicalExternalCallCount(result)
+			fmt.Fprintf(&b, "- %s: status=%s score=%.4g runtime_mean_ms=%.6g p95_latency_ms=%.6g cpu_seconds=%.6g memory_peak_bytes=%d external_calls=%d",
 				result.Candidate.ID,
 				result.Status,
 				result.Score,
@@ -67,8 +68,19 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 				result.Metrics.P95LatencyMS,
 				result.Metrics.CPUUserSeconds+result.Metrics.CPUSystemSeconds,
 				result.Metrics.MemoryPeakBytes,
-				result.Metrics.ExternalCallCount,
+				externalCalls,
 			)
+			if result.ScoreExplanation != nil {
+				fmt.Fprintf(&b, " score_penalties={primary:%.4g memory:%.4g external_calls:%.4g external_latency:%.4g external_cost:%.4g total:%.4g}",
+					result.ScoreExplanation.PrimaryPenalty,
+					result.ScoreExplanation.MemoryPenalty,
+					result.ScoreExplanation.ExternalCallPenalty,
+					result.ScoreExplanation.ExternalLatencyPenalty,
+					result.ScoreExplanation.ExternalCostPenalty,
+					result.ScoreExplanation.TotalPenalty,
+				)
+			}
+			fmt.Fprintf(&b, "\n")
 		}
 		fmt.Fprintf(&b, "\n")
 	}
@@ -102,4 +114,14 @@ Favor measurable changes. If a competitor is experimental, make the experiment e
 `)
 
 	return b.String()
+}
+
+func historicalExternalCallCount(result model.CandidateResult) int {
+	if result.ScoreExplanation != nil && result.ScoreExplanation.ExternalCallCount > 0 {
+		return result.ScoreExplanation.ExternalCallCount
+	}
+	if result.Metrics.ExternalCallCount > 0 {
+		return result.Metrics.ExternalCallCount
+	}
+	return result.External.RequestCount
 }

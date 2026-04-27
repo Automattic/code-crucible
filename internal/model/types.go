@@ -102,12 +102,41 @@ type Verdict struct {
 }
 
 type CandidateResult struct {
-	Candidate Candidate         `json:"candidate"`
-	Metrics   Metrics           `json:"metrics"`
-	External  ExternalCallTrace `json:"external"`
-	Verdict   Verdict           `json:"verdict"`
-	Score     float64           `json:"score"`
-	Status    string            `json:"status"`
+	Candidate        Candidate         `json:"candidate"`
+	Metrics          Metrics           `json:"metrics"`
+	External         ExternalCallTrace `json:"external"`
+	Verdict          Verdict           `json:"verdict"`
+	Score            float64           `json:"score"`
+	ScoreExplanation *ScoreExplanation `json:"score_explanation,omitempty"`
+	Status           string            `json:"status"`
+}
+
+type ScoreExplanation struct {
+	Scoreable bool   `json:"scoreable"`
+	Reason    string `json:"reason,omitempty"`
+
+	BaseScore  float64 `json:"base_score"`
+	FinalScore float64 `json:"final_score"`
+	Clamped    bool    `json:"clamped,omitempty"`
+
+	BestPrimaryMetricMS      float64 `json:"best_primary_metric_ms,omitempty"`
+	CandidatePrimaryMetricMS float64 `json:"candidate_primary_metric_ms,omitempty"`
+	PrimaryMetricRatio       float64 `json:"primary_metric_ratio,omitempty"`
+	PrimaryPenalty           float64 `json:"primary_penalty,omitempty"`
+
+	BestMemoryBytes      float64 `json:"best_memory_bytes,omitempty"`
+	CandidateMemoryBytes float64 `json:"candidate_memory_bytes,omitempty"`
+	MemoryRatio          float64 `json:"memory_ratio,omitempty"`
+	MemoryPenalty        float64 `json:"memory_penalty,omitempty"`
+
+	ExternalCallCount      int     `json:"external_call_count,omitempty"`
+	ExternalCallPenalty    float64 `json:"external_call_penalty,omitempty"`
+	ExternalLatencyMS      float64 `json:"external_latency_ms,omitempty"`
+	ExternalLatencyPenalty float64 `json:"external_latency_penalty,omitempty"`
+	ExternalCostCents      float64 `json:"external_cost_cents,omitempty"`
+	ExternalCostPenalty    float64 `json:"external_cost_penalty,omitempty"`
+
+	TotalPenalty float64 `json:"total_penalty,omitempty"`
 }
 
 type Leaderboard struct {

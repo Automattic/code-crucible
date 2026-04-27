@@ -16,46 +16,93 @@ const (
 func Score(result model.CandidateResult) float64 {
 	primary := PrimaryMetric(result.Metrics)
 	memory := MemoryMetric(result.Metrics)
-	return scoreWithReference(result, primary, memory)
+	explanation := Explain(result, primary, memory)
+	return explanation.FinalScore
 }
 
 func ScoreResults(results []model.CandidateResult) {
 	bestPrimary := bestPrimaryMetric(results)
 	bestMemory := bestMemoryMetric(results)
 	for i := range results {
-		results[i].Score = scoreWithReference(results[i], bestPrimary, bestMemory)
+		explanation := Explain(results[i], bestPrimary, bestMemory)
+		results[i].Score = explanation.FinalScore
+		results[i].ScoreExplanation = &explanation
 	}
 }
 
-func scoreWithReference(result model.CandidateResult, bestPrimary, bestMemory float64) float64 {
-	if !scoreable(result) {
-		return 0
+func Explain(result model.CandidateResult, bestPrimary, bestMemory float64) model.ScoreExplanation {
+	explanation := model.ScoreExplanation{
+		Scoreable: scoreable(result),
+		BaseScore: maxScore,
 	}
 
-	score := maxScore
 	primary := PrimaryMetric(result.Metrics)
-	if primary > 0 && bestPrimary > 0 {
-		score -= ratioPenalty(primary, bestPrimary, pointsLostPerDoubling)
-	}
-
 	memory := MemoryMetric(result.Metrics)
+	explanation.BestPrimaryMetricMS = bestPrimary
+	explanation.CandidatePrimaryMetricMS = primary
+	explanation.BestMemoryBytes = bestMemory
+	explanation.CandidateMemoryBytes = memory
+	explanation.ExternalCallCount = externalCallCount(result)
+	explanation.ExternalLatencyMS = result.Metrics.ExternalLatencyMS
+	explanation.ExternalCostCents = result.Metrics.ExternalCostCents
+
+	if !scoreable(result) {
+		explanation.Reason = unscoreableReason(result)
+		explanation.FinalScore = 0
+		return explanation
+	}
+
+	if primary > 0 && bestPrimary > 0 {
+		explanation.PrimaryMetricRatio = primary / bestPrimary
+		explanation.PrimaryPenalty = ratioPenalty(primary, bestPrimary, pointsLostPerDoubling)
+	}
+
 	if memory > 0 && bestMemory > 0 {
-		score -= ratioPenalty(memory, bestMemory, pointsLostPerMemDoubling)
+		explanation.MemoryRatio = memory / bestMemory
+		explanation.MemoryPenalty = ratioPenalty(memory, bestMemory, pointsLostPerMemDoubling)
 	}
 
-	score -= float64(result.Metrics.ExternalCallCount) * pointsLostPerExternalCall
-	score -= result.Metrics.ExternalCostCents
+	explanation.ExternalCallPenalty = float64(explanation.ExternalCallCount) * pointsLostPerExternalCall
+	explanation.ExternalCostPenalty = result.Metrics.ExternalCostCents
 	if result.Metrics.ExternalLatencyMS > 0 {
-		score -= result.Metrics.ExternalLatencyMS * 0.1
+		explanation.ExternalLatencyPenalty = result.Metrics.ExternalLatencyMS * 0.1
 	}
 
-	return clampScore(score)
+	explanation.TotalPenalty = explanation.PrimaryPenalty +
+		explanation.MemoryPenalty +
+		explanation.ExternalCallPenalty +
+		explanation.ExternalCostPenalty +
+		explanation.ExternalLatencyPenalty
+	unclamped := maxScore - explanation.TotalPenalty
+	explanation.FinalScore = clampScore(unclamped)
+	explanation.Clamped = explanation.FinalScore != unclamped
+	return explanation
 }
 
 func scoreable(result model.CandidateResult) bool {
 	return result.Verdict.CorrectnessPassed &&
 		result.Verdict.BenchmarkPassed &&
 		result.Verdict.ExternalPolicyPassed
+}
+
+func unscoreableReason(result model.CandidateResult) string {
+	switch {
+	case !result.Verdict.CorrectnessPassed:
+		return "correctness failed"
+	case !result.Verdict.BenchmarkPassed:
+		return "benchmark failed"
+	case !result.Verdict.ExternalPolicyPassed:
+		return "external policy failed"
+	default:
+		return "candidate is not scoreable"
+	}
+}
+
+func externalCallCount(result model.CandidateResult) int {
+	if result.Metrics.ExternalCallCount > 0 {
+		return result.Metrics.ExternalCallCount
+	}
+	return result.External.RequestCount
 }
 
 func bestPrimaryMetric(results []model.CandidateResult) float64 {

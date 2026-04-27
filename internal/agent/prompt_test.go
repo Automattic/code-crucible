@@ -1,0 +1,70 @@
+package agent
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/Automattic/code-crucible/internal/model"
+)
+
+func TestBuildGenerationPromptIncludesScoreExplanation(t *testing.T) {
+	prompt := BuildGenerationPrompt(GenerationPromptRequest{
+		RunConfig: model.RunConfig{
+			Optimize: "optimize ranking",
+			Variants: 1,
+			External: model.ExternalPolicy{
+				Mode: "deny",
+			},
+		},
+		InterfaceDocPath:  "interfaces/contract.md",
+		RunDir:            ".crucible/runs/run",
+		RoundDir:          ".crucible/runs/run/round-0001",
+		BaselineSourceDir: ".crucible/runs/run/round-0001/candidate-0000-baseline/src",
+		History: []model.CandidateResult{
+			{
+				Candidate: model.Candidate{
+					ID: "candidate-0001",
+				},
+				Metrics: model.Metrics{
+					RuntimeMeanMS:   1,
+					P95LatencyMS:    2,
+					MemoryPeakBytes: 128,
+				},
+				External: model.ExternalCallTrace{
+					RequestCount: 3,
+				},
+				Verdict: model.Verdict{
+					CorrectnessPassed:    true,
+					BenchmarkPassed:      true,
+					ExternalPolicyPassed: true,
+				},
+				Score:  900,
+				Status: "passed",
+				ScoreExplanation: &model.ScoreExplanation{
+					ExternalCallCount:      3,
+					PrimaryPenalty:         10,
+					MemoryPenalty:          2,
+					ExternalCallPenalty:    75,
+					ExternalLatencyPenalty: 1.5,
+					ExternalCostPenalty:    0.25,
+					TotalPenalty:           88.75,
+				},
+			},
+		},
+	})
+
+	for _, want := range []string{
+		"external_calls=3",
+		"score_penalties={",
+		"primary:10",
+		"memory:2",
+		"external_calls:75",
+		"external_latency:1.5",
+		"external_cost:0.25",
+		"total:88.75",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("generation prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}

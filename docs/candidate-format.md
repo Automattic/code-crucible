@@ -122,3 +122,7 @@ Code Crucible augments those script-provided values with process-level resource 
 If `verdict.json` is missing or invalid, Code Crucible marks the candidate as failed.
 
 `p95_latency_ms` should be a true 95th percentile over the evaluator's sampled timings. Use `runtime_mean_ms` for averages and `benchmark_ns_per_op` for the mean `go test -bench` style operation time.
+
+## Score Explanation
+
+After evaluation, `leaderboard.json` stores a `score_explanation` object beside each candidate's `score`. It records the run-relative primary metric and memory references, candidate ratios, penalty components, final score, and fail-closed reason for unscoreable candidates. This makes score decisions available to future rounds, reports, and agents without reverse-engineering the scoring code.

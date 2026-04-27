@@ -76,6 +76,15 @@ JSON
 		if result.Score <= 0 {
 			t.Fatalf("%s score = %f, want positive", result.Candidate.ID, result.Score)
 		}
+		if result.ScoreExplanation == nil {
+			t.Fatalf("%s score explanation is nil", result.Candidate.ID)
+		}
+		if result.ScoreExplanation.FinalScore != result.Score {
+			t.Fatalf("%s explanation final score = %f, score = %f", result.Candidate.ID, result.ScoreExplanation.FinalScore, result.Score)
+		}
+		if result.ScoreExplanation.ExternalCallPenalty != 50 {
+			t.Fatalf("%s external call penalty = %f, want 50", result.Candidate.ID, result.ScoreExplanation.ExternalCallPenalty)
+		}
 		if result.Metrics.P95LatencyMS != 40 {
 			t.Fatalf("%s p95 = %f, want 40", result.Candidate.ID, result.Metrics.P95LatencyMS)
 		}
@@ -208,6 +217,12 @@ JSON
 	}
 	if result.Score != 0 {
 		t.Fatalf("score = %f, want 0", result.Score)
+	}
+	if result.ScoreExplanation == nil {
+		t.Fatal("score explanation is nil")
+	}
+	if result.ScoreExplanation.Reason != "correctness failed" {
+		t.Fatalf("score explanation reason = %q, want correctness failed", result.ScoreExplanation.Reason)
 	}
 }
 
