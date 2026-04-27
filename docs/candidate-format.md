@@ -84,7 +84,30 @@ candidate-NNNN/
   verdict.json
 ```
 
-`metrics.json` uses the shared `Metrics` shape from `internal/model`.
+`metrics.json` uses the shared `Metrics` shape from `internal/model`. Evaluator scripts should write benchmark and domain metrics such as:
+
+```json
+{
+  "runtime_mean_ms": 3.2,
+  "p95_latency_ms": 4.8,
+  "benchmark_ns_per_op": 4800000,
+  "benchmark_runs": 5,
+  "memory_peak_bytes": 32768,
+  "external_call_count": 0
+}
+```
+
+Code Crucible augments those script-provided values with process-level resource metrics from the evaluator invocation:
+
+- `wall_time_ms`
+- `cpu_user_seconds`
+- `cpu_system_seconds`
+- `cpu_percent`
+- `max_rss_bytes`
+- `voluntary_context_switches`
+- `involuntary_context_switches`
+- `io_bytes_read`
+- `io_bytes_written`
 
 `verdict.json` must include:
 

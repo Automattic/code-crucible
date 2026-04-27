@@ -227,18 +227,20 @@ func runLeaderboard(args []string, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "Run: %s\n", board.RunID)
 	fmt.Fprintf(stdout, "Optimize: %s\n\n", board.Optimize)
-	fmt.Fprintf(stdout, "%-5s %-28s %-10s %-10s %-12s %-10s\n", "Rank", "Candidate", "Status", "Score", "P95 ms", "Calls")
+	fmt.Fprintf(stdout, "%-5s %-28s %-10s %-10s %-12s %-10s %-10s\n", "Rank", "Candidate", "Status", "Score", "P95 ms", "CPU s", "Calls")
 	for i, result := range rankedResults(board.Results) {
 		rank := "-"
 		if result.Status == "passed" {
 			rank = fmt.Sprintf("%d", i+1)
 		}
-		fmt.Fprintf(stdout, "%-5s %-28s %-10s %-10.2f %-12.2f %-10d\n",
+		cpuSeconds := result.Metrics.CPUUserSeconds + result.Metrics.CPUSystemSeconds
+		fmt.Fprintf(stdout, "%-5s %-28s %-10s %-10.2f %-12.2f %-10.2f %-10d\n",
 			rank,
 			result.Candidate.ID,
 			result.Status,
 			result.Score,
 			result.Metrics.P95LatencyMS,
+			cpuSeconds,
 			result.Metrics.ExternalCallCount,
 		)
 	}
@@ -323,9 +325,27 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	runID := fs.String("run", "", "run ID; defaults to latest run")
 	candidateID := fs.String("candidate", "", "candidate ID to evaluate; defaults to all leaderboard candidates")
 	timeoutValue := fs.String("timeout", "", "optional evaluator timeout, such as 30s or 2m")
+	jobs := fs.Int("jobs", 1, "maximum number of candidates to evaluate concurrently")
+	nice := fs.Int("nice", 10, "nice priority for evaluator processes; 0 disables priority adjustment")
+	cpuLimit := fs.Int("cpu-limit", 0, "optional CPU affinity limit for evaluator processes; 0 disables affinity control")
+	var env repeatedStrings
+	fs.Var(&env, "env", "environment variable for evaluators in KEY=VALUE form; may be repeated")
 	adoptBefore := fs.Bool("adopt", true, "adopt generated candidates before evaluation")
 	jsonOut := fs.Bool("json", false, "print raw evaluation report JSON")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if *jobs < 1 {
+		fmt.Fprintf(stderr, "evaluate failed: --jobs must be at least 1\n")
+		return 2
+	}
+	if *nice < 0 || *nice > 19 {
+		fmt.Fprintf(stderr, "evaluate failed: --nice must be between 0 and 19\n")
+		return 2
+	}
+	if *cpuLimit < 0 {
+		fmt.Fprintf(stderr, "evaluate failed: --cpu-limit must be at least 0\n")
 		return 2
 	}
 
@@ -345,6 +365,10 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 		CandidateID: *candidateID,
 		Timeout:     timeout,
 		Adopt:       *adoptBefore,
+		Jobs:        *jobs,
+		Nice:        *nice,
+		CPULimit:    *cpuLimit,
+		Env:         []string(env),
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "evaluate failed: %v\n", err)
@@ -595,6 +619,24 @@ func splitCSV(value string) []string {
 	return out
 }
 
+type repeatedStrings []string
+
+func (v *repeatedStrings) String() string {
+	return strings.Join(*v, ",")
+}
+
+func (v *repeatedStrings) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("value cannot be empty")
+	}
+	if !strings.Contains(value, "=") {
+		return fmt.Errorf("value must use KEY=VALUE form")
+	}
+	*v = append(*v, value)
+	return nil
+}
+
 func printHelp(w io.Writer) {
 	fmt.Fprint(w, `Code Crucible
 
@@ -603,7 +645,7 @@ Usage:
   crucible run (--optimize TEXT | --task-file PATH) [--project DIR] [--target-path PATH] [--variants N] [--generate]
   crucible generate [--project DIR] [--run RUN_ID] [--agent codex]
   crucible adopt [--project DIR] [--run RUN_ID]
-  crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID]
+  crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--nice N] [--cpu-limit N]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]
   crucible inspect [--project DIR] [--run RUN_ID] [candidate-id]
   crucible version

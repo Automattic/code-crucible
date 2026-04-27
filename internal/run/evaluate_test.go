@@ -56,6 +56,7 @@ JSON
 		ProjectDir: projectDir,
 		RunID:      created.ID,
 		Adopt:      false,
+		Jobs:       2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -77,6 +78,90 @@ JSON
 		}
 		if result.Metrics.P95LatencyMS != 40 {
 			t.Fatalf("%s p95 = %f, want 40", result.Candidate.ID, result.Metrics.P95LatencyMS)
+		}
+		if result.Metrics.WallTimeMS <= 0 {
+			t.Fatalf("%s wall time = %f, want positive", result.Candidate.ID, result.Metrics.WallTimeMS)
+		}
+	}
+
+	metricsPath := filepath.Join(created.RunDir, "round-0001", "candidate-0000-baseline", "metrics.json")
+	metrics, err := loadMetrics(metricsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metrics.WallTimeMS <= 0 {
+		t.Fatalf("metrics artifact wall time = %f, want positive", metrics.WallTimeMS)
+	}
+}
+
+func TestEvaluateCandidatesAppliesEnvironment(t *testing.T) {
+	projectDir, created := createEvaluationFixture(t)
+
+	evaluator := `#!/usr/bin/env bash
+set -euo pipefail
+metrics_out="$3"
+verdict_out="$4"
+if [[ "${CRUCIBLE_TEST_ENV:-}" != "ok" ]]; then
+  echo "missing CRUCIBLE_TEST_ENV" >&2
+  exit 3
+fi
+sleep 0.01
+cat > "$metrics_out" <<'JSON'
+{
+  "runtime_mean_ms": 1
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+`
+	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluator), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCandidates(EvaluationOptions{
+		ProjectDir:  projectDir,
+		RunID:       created.ID,
+		CandidateID: "candidate-0000-baseline",
+		Adopt:       false,
+		Env:         []string{"CRUCIBLE_TEST_ENV=ok"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("evaluated results = %d, want one", len(report.Results))
+	}
+
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := board.Results[0]
+	if result.Status != "passed" {
+		t.Fatalf("status = %q, want passed", result.Status)
+	}
+	if result.Metrics.WallTimeMS <= 0 {
+		t.Fatalf("wall time = %f, want positive", result.Metrics.WallTimeMS)
+	}
+}
+
+func TestWrapTasksetCommand(t *testing.T) {
+	name, args := wrapTasksetCommand("bash", []string{"evaluator.sh"}, 2)
+	if name != "taskset" {
+		t.Fatalf("name = %q, want taskset", name)
+	}
+	want := []string{"-c", "0-1", "bash", "evaluator.sh"}
+	if len(args) != len(want) {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Fatalf("args = %#v, want %#v", args, want)
 		}
 	}
 }

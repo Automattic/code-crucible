@@ -55,12 +55,13 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 		fmt.Fprintf(&b, "No prior competitor metrics exist yet. Use the baseline source as candidate-0000 and create new competitors beside it.\n\n")
 	} else {
 		for _, result := range req.History {
-			fmt.Fprintf(&b, "- %s: status=%s score=%.4f runtime_mean_ms=%.2f p95_latency_ms=%.2f memory_peak_bytes=%d external_calls=%d\n",
+			fmt.Fprintf(&b, "- %s: status=%s score=%.4f runtime_mean_ms=%.2f p95_latency_ms=%.2f cpu_seconds=%.3f memory_peak_bytes=%d external_calls=%d\n",
 				result.Candidate.ID,
 				result.Status,
 				result.Score,
 				result.Metrics.RuntimeMeanMS,
 				result.Metrics.P95LatencyMS,
+				result.Metrics.CPUUserSeconds+result.Metrics.CPUSystemSeconds,
 				result.Metrics.MemoryPeakBytes,
 				result.Metrics.ExternalCallCount,
 			)

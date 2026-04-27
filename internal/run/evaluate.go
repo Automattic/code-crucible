@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gaarai/code-crucible/internal/archive"
@@ -22,6 +24,10 @@ type EvaluationOptions struct {
 	CandidateID string
 	Timeout     time.Duration
 	Adopt       bool
+	Jobs        int
+	Nice        int
+	CPULimit    int
+	Env         []string
 }
 
 type CandidateEvaluation struct {
@@ -92,14 +98,37 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 		return nil, err
 	}
 
-	for i := range board.Results {
-		result := &board.Results[i]
-		if opts.CandidateID != "" && result.Candidate.ID != opts.CandidateID {
-			continue
-		}
+	indexes := evaluationIndexes(board.Results, opts.CandidateID)
+	jobs := opts.Jobs
+	if jobs <= 0 {
+		jobs = 1
+	}
+	if jobs > len(indexes) && len(indexes) > 0 {
+		jobs = len(indexes)
+	}
 
-		evaluation := evaluateOne(cfg, evaluatorPath, runDir, result, opts.Timeout)
-		report.Results = append(report.Results, evaluation)
+	if jobs <= 1 {
+		for _, index := range indexes {
+			evaluation, updated := evaluateOne(cfg, evaluatorPath, runDir, board.Results[index], evaluatorExecutionOptions{
+				Timeout:  opts.Timeout,
+				Nice:     opts.Nice,
+				CPULimit: opts.CPULimit,
+				Env:      opts.Env,
+			})
+			board.Results[index] = updated
+			report.Results = append(report.Results, evaluation)
+		}
+	} else {
+		results := evaluateParallel(cfg, evaluatorPath, runDir, board.Results, indexes, jobs, evaluatorExecutionOptions{
+			Timeout:  opts.Timeout,
+			Nice:     opts.Nice,
+			CPULimit: opts.CPULimit,
+			Env:      opts.Env,
+		})
+		for _, result := range results {
+			board.Results[result.index] = result.updated
+			report.Results = append(report.Results, result.CandidateEvaluation)
+		}
 	}
 
 	if opts.CandidateID != "" && len(report.Results) == 0 {
@@ -112,7 +141,69 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 	return report, nil
 }
 
-func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result *model.CandidateResult, timeout time.Duration) CandidateEvaluation {
+type evaluatorExecutionOptions struct {
+	Timeout  time.Duration
+	Nice     int
+	CPULimit int
+	Env      []string
+}
+
+type evaluationResult struct {
+	CandidateEvaluation
+	updated model.CandidateResult
+	index   int
+}
+
+func evaluationIndexes(results []model.CandidateResult, candidateID string) []int {
+	var indexes []int
+	for i, result := range results {
+		if candidateID != "" && result.Candidate.ID != candidateID {
+			continue
+		}
+		indexes = append(indexes, i)
+	}
+	return indexes
+}
+
+func evaluateParallel(cfg *model.RunConfig, evaluatorPath, runDir string, results []model.CandidateResult, indexes []int, jobs int, execOpts evaluatorExecutionOptions) []evaluationResult {
+	tasks := make(chan int)
+	complete := make(chan evaluationResult)
+
+	for i := 0; i < jobs; i++ {
+		go func() {
+			for index := range tasks {
+				evaluation, updated := evaluateOne(cfg, evaluatorPath, runDir, results[index], execOpts)
+				complete <- evaluationResult{
+					CandidateEvaluation: evaluation,
+					updated:             updated,
+					index:               index,
+				}
+			}
+		}()
+	}
+
+	go func() {
+		for _, index := range indexes {
+			tasks <- index
+		}
+		close(tasks)
+	}()
+
+	byIndex := make(map[int]evaluationResult, len(indexes))
+	for range indexes {
+		result := <-complete
+		byIndex[result.index] = result
+	}
+
+	evaluations := make([]evaluationResult, 0, len(indexes))
+	for _, index := range indexes {
+		result := byIndex[index]
+		evaluations = append(evaluations, result)
+	}
+	return evaluations
+}
+
+func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result model.CandidateResult, execOpts evaluatorExecutionOptions) (CandidateEvaluation, model.CandidateResult) {
 	candidateDir := candidateDirectory(result.Candidate)
 	metricsPath := filepath.Join(candidateDir, "metrics.json")
 	verdictPath := filepath.Join(candidateDir, "verdict.json")
@@ -127,7 +218,8 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result *mod
 		StderrPath:  filepath.ToSlash(stderrPath),
 	}
 
-	if err := runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, verdictPath, stdoutPath, stderrPath, timeout); err != nil {
+	resourceMetrics, err := runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, verdictPath, stdoutPath, stderrPath, execOpts)
+	if err != nil {
 		evaluation.Errors = append(evaluation.Errors, err.Error())
 	}
 
@@ -147,6 +239,10 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result *mod
 			},
 		}
 	}
+	metrics = mergeResourceMetrics(metrics, resourceMetrics)
+	if err := archive.SaveJSON(metricsPath, metrics); err != nil {
+		evaluation.Warnings = append(evaluation.Warnings, fmt.Sprintf("save merged metrics: %v", err))
+	}
 	if len(evaluation.Errors) > 0 {
 		verdict.Errors = append(verdict.Errors, evaluation.Errors...)
 	}
@@ -158,56 +254,138 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result *mod
 	result.Verdict = verdict
 	result.External.Mode = cfg.External.Mode
 	result.External.PolicyPassed = verdict.ExternalPolicyPassed
-	result.Score = scoring.Score(*result)
+	result.Score = scoring.Score(result)
 	result.Status = statusForVerdict(verdict)
 
 	evaluation.Status = result.Status
 	evaluation.Score = result.Score
-	return evaluation
+	return evaluation, result
 }
 
-func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, verdictPath, stdoutPath, stderrPath string, timeout time.Duration) error {
+func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, verdictPath, stdoutPath, stderrPath string, opts evaluatorExecutionOptions) (model.Metrics, error) {
 	if info, err := os.Stat(evaluatorPath); err != nil || info.IsDir() {
-		return fmt.Errorf("evaluator script is missing: %s", evaluatorPath)
+		return model.Metrics{}, fmt.Errorf("evaluator script is missing: %s", evaluatorPath)
 	}
 	if info, err := os.Stat(candidateDir); err != nil || !info.IsDir() {
-		return fmt.Errorf("candidate directory is missing: %s", candidateDir)
+		return model.Metrics{}, fmt.Errorf("candidate directory is missing: %s", candidateDir)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(stdoutPath), 0o755); err != nil {
-		return err
+		return model.Metrics{}, err
 	}
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
-		return err
+		return model.Metrics{}, err
 	}
 	defer stdoutFile.Close()
 
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
-		return err
+		return model.Metrics{}, err
 	}
 	defer stderrFile.Close()
 
 	ctx := context.Background()
 	cancel := func() {}
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, timeout)
+	if opts.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
 	}
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "bash", evaluatorPath, candidateDir, runDir, metricsPath, verdictPath)
+	name := "bash"
+	args := []string{evaluatorPath, candidateDir, runDir, metricsPath, verdictPath}
+	if opts.CPULimit > 0 {
+		name, args = wrapTasksetCommand(name, args, opts.CPULimit)
+	}
+	if opts.Nice > 0 {
+		args = append([]string{"-n", strconv.Itoa(opts.Nice), name}, args...)
+		name = "nice"
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = runDir
+	if len(opts.Env) > 0 {
+		cmd.Env = append(os.Environ(), opts.Env...)
+	}
 	cmd.Stdout = stdoutFile
 	cmd.Stderr = stderrFile
+	start := time.Now()
 	err = cmd.Run()
+	resourceMetrics := processMetrics(cmd.ProcessState, time.Since(start))
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("evaluator timed out after %s", timeout)
+		return resourceMetrics, fmt.Errorf("evaluator timed out after %s", opts.Timeout)
 	}
 	if err != nil {
-		return fmt.Errorf("evaluator failed: %w", err)
+		return resourceMetrics, fmt.Errorf("evaluator failed: %w", err)
 	}
-	return nil
+	return resourceMetrics, nil
+}
+
+func wrapTasksetCommand(name string, args []string, cpuLimit int) (string, []string) {
+	mask := "0"
+	if cpuLimit > 1 {
+		mask = fmt.Sprintf("0-%d", cpuLimit-1)
+	}
+	wrapped := []string{"-c", mask, name}
+	wrapped = append(wrapped, args...)
+	return "taskset", wrapped
+}
+
+func processMetrics(state *os.ProcessState, wall time.Duration) model.Metrics {
+	metrics := model.Metrics{
+		WallTimeMS: float64(wall.Microseconds()) / 1000,
+	}
+	if state == nil {
+		return metrics
+	}
+
+	metrics.CPUUserSeconds = state.UserTime().Seconds()
+	metrics.CPUSystemSeconds = state.SystemTime().Seconds()
+	totalCPUSeconds := metrics.CPUUserSeconds + metrics.CPUSystemSeconds
+	if wall > 0 {
+		metrics.CPUPercent = totalCPUSeconds / wall.Seconds() * 100
+	}
+
+	if usage, ok := state.SysUsage().(*syscall.Rusage); ok && usage != nil {
+		// Linux reports Maxrss in kilobytes.
+		metrics.MaxRSSBytes = usage.Maxrss * 1024
+		metrics.VoluntaryContextSwitches = usage.Nvcsw
+		metrics.InvoluntaryContextSwitches = usage.Nivcsw
+		metrics.IOBytesRead = usage.Inblock * 512
+		metrics.IOBytesWritten = usage.Oublock * 512
+	}
+
+	return metrics
+}
+
+func mergeResourceMetrics(metrics, resource model.Metrics) model.Metrics {
+	if resource.WallTimeMS > 0 {
+		metrics.WallTimeMS = resource.WallTimeMS
+	}
+	if resource.CPUUserSeconds > 0 {
+		metrics.CPUUserSeconds = resource.CPUUserSeconds
+	}
+	if resource.CPUSystemSeconds > 0 {
+		metrics.CPUSystemSeconds = resource.CPUSystemSeconds
+	}
+	if resource.CPUPercent > 0 {
+		metrics.CPUPercent = resource.CPUPercent
+	}
+	if resource.MaxRSSBytes > 0 {
+		metrics.MaxRSSBytes = resource.MaxRSSBytes
+	}
+	if resource.VoluntaryContextSwitches > 0 {
+		metrics.VoluntaryContextSwitches = resource.VoluntaryContextSwitches
+	}
+	if resource.InvoluntaryContextSwitches > 0 {
+		metrics.InvoluntaryContextSwitches = resource.InvoluntaryContextSwitches
+	}
+	if resource.IOBytesRead > 0 {
+		metrics.IOBytesRead = resource.IOBytesRead
+	}
+	if resource.IOBytesWritten > 0 {
+		metrics.IOBytesWritten = resource.IOBytesWritten
+	}
+	return metrics
 }
 
 func loadMetrics(path string) (model.Metrics, error) {

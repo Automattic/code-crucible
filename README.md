@@ -1,5 +1,7 @@
 # Code Crucible
 
+[![CI](https://github.com/gaarai/code-crucible/actions/workflows/ci.yml/badge.svg)](https://github.com/gaarai/code-crucible/actions/workflows/ci.yml)
+
 Code Crucible is a model-agnostic CLI framework for generating, evaluating, benchmarking, and evolving competing implementations of selected project code.
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
@@ -40,6 +42,15 @@ git clone https://github.com/gaarai/code-crucible.git
 cd code-crucible
 go build -o bin/crucible ./cmd/crucible
 ```
+
+## Requirements
+
+- Go 1.22 or newer
+- Linux for process resource metrics and `--cpu-limit` CPU affinity behavior
+- `taskset` when using `crucible evaluate --cpu-limit`
+- Codex CLI when using `crucible generate --agent codex`
+
+Core run creation, adoption, inspection, and filesystem archive workflows use only the Go standard library.
 
 ## Quick Start
 
@@ -130,6 +141,12 @@ Run the evaluator against adopted candidates and update leaderboard metrics, ver
 
 ```bash
 crucible evaluate
+```
+
+Evaluation runs one candidate at a time by default and starts evaluator processes with `nice -n 10` so tournaments are less likely to overburden the host machine. Use `--jobs` only when you explicitly want parallel candidate evaluation, use `--cpu-limit` when you want CPU affinity control, and use `--nice 0` to disable priority adjustment.
+
+```bash
+crucible evaluate --jobs 1 --nice 10 --cpu-limit 2 --env GOMAXPROCS=1
 ```
 
 Preview the exact Codex invocation first:
@@ -240,6 +257,8 @@ candidate-NNNN/
 
 If the evaluator fails or omits `verdict.json`, Code Crucible marks the candidate as failed. If `metrics.json` is missing or invalid, the candidate can still receive a failed verdict with a warning.
 
+Code Crucible also records process-level resource metrics around each evaluator invocation and merges them into `metrics.json` before updating `leaderboard.json`. These include wall time, user CPU time, system CPU time, CPU percent, max RSS, context switches, and block I/O counts. Evaluator scripts should still emit domain-specific metrics such as benchmark latency, allocations, external calls, and correctness verdicts.
+
 ## Proof Of Concept Fixture
 
 The repository includes a Go fixture at [examples/go-ranking-poc](examples/go-ranking-poc).
@@ -310,6 +329,8 @@ Proxy and container enforcement are not implemented yet. The current scaffold re
 
 The work area is intended to be local project metadata. Completed run directories should be reproducible archives containing source, prompts, metrics, external traces, and verdicts.
 
+Do not commit `.crucible/` run archives from private projects unless you have reviewed them. They may contain source code, prompts, logs, generated competitors, hostnames, fixtures, or project-specific context.
+
 ## Architecture
 
 Core packages:
@@ -327,6 +348,24 @@ Core packages:
 
 See [docs/architecture.md](docs/architecture.md) for the current design.
 
+## Development
+
+Run the standard validation suite:
+
+```bash
+make check
+```
+
+Run the end-to-end proof-of-concept smoke test:
+
+```bash
+make smoke
+```
+
+The smoke test creates ignored artifacts under `examples/go-ranking-poc/.crucible/`.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](SECURITY.md) for security notes, and [docs/release-checklist.md](docs/release-checklist.md) before publishing or tagging.
+
 ## Roadmap
 
 - Add Docker or Podman sandbox execution
@@ -335,8 +374,8 @@ See [docs/architecture.md](docs/architecture.md) for the current design.
 - Add replay fixture format and mock handler generator
 - Add multi-round evolution strategy
 - Add HTML reports
-- Add CI integration for regression tournaments
+- Add CI regression tournament jobs
 
 ## License
 
-No license has been selected yet.
+Code Crucible is licensed under the GNU General Public License version 2. See [LICENSE](LICENSE).

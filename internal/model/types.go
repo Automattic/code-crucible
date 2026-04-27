@@ -59,16 +59,23 @@ type Candidate struct {
 }
 
 type Metrics struct {
-	RuntimeMeanMS     float64 `json:"runtime_mean_ms,omitempty"`
-	P95LatencyMS      float64 `json:"p95_latency_ms,omitempty"`
-	MemoryPeakBytes   int64   `json:"memory_peak_bytes,omitempty"`
-	CPUUserSeconds    float64 `json:"cpu_user_seconds,omitempty"`
-	CPUSystemSeconds  float64 `json:"cpu_system_seconds,omitempty"`
-	IOBytesRead       int64   `json:"io_bytes_read,omitempty"`
-	IOBytesWritten    int64   `json:"io_bytes_written,omitempty"`
-	ExternalCallCount int     `json:"external_call_count,omitempty"`
-	ExternalLatencyMS float64 `json:"external_latency_ms,omitempty"`
-	ExternalCostCents float64 `json:"external_cost_cents,omitempty"`
+	RuntimeMeanMS              float64 `json:"runtime_mean_ms,omitempty"`
+	P95LatencyMS               float64 `json:"p95_latency_ms,omitempty"`
+	BenchmarkNsPerOp           float64 `json:"benchmark_ns_per_op,omitempty"`
+	BenchmarkRuns              int     `json:"benchmark_runs,omitempty"`
+	MemoryPeakBytes            int64   `json:"memory_peak_bytes,omitempty"`
+	WallTimeMS                 float64 `json:"wall_time_ms,omitempty"`
+	CPUUserSeconds             float64 `json:"cpu_user_seconds,omitempty"`
+	CPUSystemSeconds           float64 `json:"cpu_system_seconds,omitempty"`
+	CPUPercent                 float64 `json:"cpu_percent,omitempty"`
+	MaxRSSBytes                int64   `json:"max_rss_bytes,omitempty"`
+	VoluntaryContextSwitches   int64   `json:"voluntary_context_switches,omitempty"`
+	InvoluntaryContextSwitches int64   `json:"involuntary_context_switches,omitempty"`
+	IOBytesRead                int64   `json:"io_bytes_read,omitempty"`
+	IOBytesWritten             int64   `json:"io_bytes_written,omitempty"`
+	ExternalCallCount          int     `json:"external_call_count,omitempty"`
+	ExternalLatencyMS          float64 `json:"external_latency_ms,omitempty"`
+	ExternalCostCents          float64 `json:"external_cost_cents,omitempty"`
 }
 
 type ExternalCallTrace struct {

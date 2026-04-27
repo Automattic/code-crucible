@@ -216,6 +216,41 @@ func TestEvaluateCommandUpdatesLeaderboard(t *testing.T) {
 	}
 }
 
+func TestEvaluateRejectsInvalidResourceOptions(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "jobs",
+			args: []string{"evaluate", "--jobs", "0"},
+			want: "--jobs must be at least 1",
+		},
+		{
+			name: "nice",
+			args: []string{"evaluate", "--nice", "20"},
+			want: "--nice must be between 0 and 19",
+		},
+		{
+			name: "cpu limit",
+			args: []string{"evaluate", "--cpu-limit", "-1"},
+			want: "--cpu-limit must be at least 0",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(tt.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("Run returned %d, want 2", code)
+			}
+			if !strings.Contains(stderr.String(), tt.want) {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), tt.want)
+			}
+		})
+	}
+}
+
 func TestRankedResultsPrioritizesPassedScoreThenLatency(t *testing.T) {
 	results := []model.CandidateResult{
 		{

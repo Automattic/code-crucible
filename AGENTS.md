@@ -9,6 +9,7 @@ Code Crucible is a Go CLI project.
 - Vet: `go vet ./...`
 - Build: `go build -o bin/crucible ./cmd/crucible`
 - Full check: `make check` includes the root module plus the Go PoC example module
+- Smoke test: `make smoke` runs the Go PoC through `crucible run`, `evaluate`, and `leaderboard`
 - Smoke Codex command construction: `bin/crucible generate --project /tmp/crucible-sample --dry-run`
 
 ## Project Intent

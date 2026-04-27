@@ -8,13 +8,13 @@ It contains a deliberately inefficient implementation of:
 func TopN(scores []int, n int) []int
 ```
 
-The evaluator copies each candidate implementation into a temporary Go module, runs golden tests, runs a benchmark, writes `metrics.json` and `verdict.json`, and lets Code Crucible update the leaderboard.
+The evaluator copies each candidate implementation into a temporary Go module, runs golden tests, runs the benchmark five times with `GOMAXPROCS=1`, writes `metrics.json` and `verdict.json`, and lets Code Crucible update the leaderboard.
 
 ## Manual Baseline Test
 
 ```bash
 go test ./...
-go test -bench=. -benchmem ./...
+GOMAXPROCS=1 go test -cpu=1 -bench=. -benchmem -count=5 ./...
 ```
 
 ## Code Crucible Flow

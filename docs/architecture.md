@@ -156,22 +156,21 @@ Future providers can use the same run metadata and prompt package through a comm
 
 If `--evaluator` is provided, the scaffold wraps that command and records minimal metrics. If `--evaluator-script` is provided, Code Crucible copies that script into the run archive as `evaluator/evaluator.sh`. If neither is provided, the generated script writes a failing verdict with instructions to add deterministic correctness checks and benchmarks.
 
-`crucible evaluate` executes the run evaluator for each candidate currently listed in `leaderboard.json`. It passes:
+`crucible evaluate` executes the run evaluator for each candidate currently listed in `leaderboard.json`. The default CLI behavior is sequential (`--jobs 1`) and lower-priority (`--nice 10`) so tournaments do not monopolize an interactive workstation. CPU affinity can be constrained with `--cpu-limit N` on systems with `taskset`. Additional evaluator environment variables can be passed with repeated `--env KEY=VALUE` flags.
+
+It passes:
 
 ```text
 evaluator.sh <candidate-dir> <run-dir> <metrics-out> <verdict-out>
 ```
 
-The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads both files, updates `leaderboard.json`, computes a starter score, and marks candidates as `passed` only when correctness, benchmark, and external policy verdicts all pass. Missing or malformed verdicts fail closed.
+The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads both files, adds process-level resource metrics collected around the evaluator invocation, updates `leaderboard.json`, computes a starter score, and marks candidates as `passed` only when correctness, benchmark, and external policy verdicts all pass. Missing or malformed verdicts fail closed.
 
 The planned evaluator layer will add:
 
 - Containerized execution
-- Stable environment variables
 - Resource limits
-- Structured metrics collection
 - External trace collection
-- Fail-closed verdict handling
 
 ## Data Model
 

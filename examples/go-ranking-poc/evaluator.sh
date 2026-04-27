@@ -16,6 +16,10 @@ work_dir="$run_dir/tmp/eval-$(basename "$candidate_dir")"
 rm -rf "$work_dir"
 mkdir -p "$work_dir/ranking"
 
+export GOMAXPROCS="${GOMAXPROCS:-1}"
+go_test_cpu="${GO_TEST_CPU:-1}"
+benchmark_count="${GO_BENCH_COUNT:-5}"
+
 cp "$project_dir/go.mod" "$work_dir/go.mod"
 cp "$project_dir/ranking/rank_test.go" "$work_dir/ranking/rank_test.go"
 
@@ -31,17 +35,18 @@ benchmark_log="$candidate_dir/benchmark.log"
 correctness_passed=false
 benchmark_passed=false
 
-if (cd "$work_dir" && go test ./... >"$correctness_log" 2>&1); then
+if (cd "$work_dir" && go test -cpu="$go_test_cpu" ./... >"$correctness_log" 2>&1); then
   correctness_passed=true
 fi
 
-if [[ "$correctness_passed" == true ]] && (cd "$work_dir" && go test -bench=. -benchmem -run=^$ ./... >"$benchmark_log" 2>&1); then
+if [[ "$correctness_passed" == true ]] && (cd "$work_dir" && go test -cpu="$go_test_cpu" -bench=. -benchmem -count="$benchmark_count" -run=^$ ./... >"$benchmark_log" 2>&1); then
   benchmark_passed=true
 fi
 
-runtime_ns="$(awk '/BenchmarkTopN/ && /ns\/op/ { for (i = 1; i <= NF; i++) if ($(i + 1) == "ns/op") value = $i } END { if (value == "") value = 0; print value }' "$benchmark_log" 2>/dev/null || printf '0')"
-allocs_per_op="$(awk '/BenchmarkTopN/ && /allocs\/op/ { for (i = 1; i <= NF; i++) if ($(i + 1) == "allocs/op") value = $i } END { if (value == "") value = 0; print value }' "$benchmark_log" 2>/dev/null || printf '0')"
-bytes_per_op="$(awk '/BenchmarkTopN/ && /B\/op/ { for (i = 1; i <= NF; i++) if ($(i + 1) == "B/op") value = $i } END { if (value == "") value = 0; print value }' "$benchmark_log" 2>/dev/null || printf '0')"
+runtime_ns="$(awk '/BenchmarkTopN/ && /ns\/op/ { for (i = 1; i <= NF; i++) if ($(i + 1) == "ns/op") values[++n] = $i } END { print median(values, n) } function median(values, n, i, j, tmp) { if (n == 0) return 0; for (i = 1; i <= n; i++) for (j = i + 1; j <= n; j++) if (values[j] < values[i]) { tmp = values[i]; values[i] = values[j]; values[j] = tmp } if (n % 2) return values[(n + 1) / 2]; return (values[n / 2] + values[n / 2 + 1]) / 2 }' "$benchmark_log" 2>/dev/null || printf '0')"
+allocs_per_op="$(awk '/BenchmarkTopN/ && /allocs\/op/ { for (i = 1; i <= NF; i++) if ($(i + 1) == "allocs/op") values[++n] = $i } END { print median(values, n) } function median(values, n, i, j, tmp) { if (n == 0) return 0; for (i = 1; i <= n; i++) for (j = i + 1; j <= n; j++) if (values[j] < values[i]) { tmp = values[i]; values[i] = values[j]; values[j] = tmp } if (n % 2) return values[(n + 1) / 2]; return (values[n / 2] + values[n / 2 + 1]) / 2 }' "$benchmark_log" 2>/dev/null || printf '0')"
+bytes_per_op="$(awk '/BenchmarkTopN/ && /B\/op/ { for (i = 1; i <= NF; i++) if ($(i + 1) == "B/op") values[++n] = $i } END { print median(values, n) } function median(values, n, i, j, tmp) { if (n == 0) return 0; for (i = 1; i <= n; i++) for (j = i + 1; j <= n; j++) if (values[j] < values[i]) { tmp = values[i]; values[i] = values[j]; values[j] = tmp } if (n % 2) return values[(n + 1) / 2]; return (values[n / 2] + values[n / 2 + 1]) / 2 }' "$benchmark_log" 2>/dev/null || printf '0')"
+benchmark_runs="$(awk '/BenchmarkTopN/ && /ns\/op/ { n++ } END { print n + 0 }' "$benchmark_log" 2>/dev/null || printf '0')"
 
 p95_latency_ms="$(awk -v ns="$runtime_ns" 'BEGIN { printf "%.6f", ns / 1000000 }')"
 
@@ -49,6 +54,8 @@ cat > "$metrics_out" <<JSON
 {
   "runtime_mean_ms": $p95_latency_ms,
   "p95_latency_ms": $p95_latency_ms,
+  "benchmark_ns_per_op": $runtime_ns,
+  "benchmark_runs": $benchmark_runs,
   "memory_peak_bytes": $bytes_per_op,
   "external_call_count": 0
 }
@@ -68,7 +75,10 @@ cat > "$verdict_out" <<JSON
   "external_policy_passed": true,
   "errors": $errors_json,
   "notes": [
-    "allocs_per_op=$allocs_per_op"
+    "allocs_per_op=$allocs_per_op",
+    "benchmark_runs=$benchmark_runs",
+    "gomaxprocs=$GOMAXPROCS",
+    "go_test_cpu=$go_test_cpu"
   ]
 }
 JSON
