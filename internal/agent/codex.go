@@ -71,10 +71,10 @@ func BuildCodexExecCommand(opts CodexOptions) []string {
 
 	args := []string{
 		binary,
+		"--ask-for-approval", approval,
 		"exec",
 		"--cd", opts.ProjectDir,
 		"--sandbox", sandbox,
-		"--ask-for-approval", approval,
 	}
 	if opts.SkipGitRepoCheck {
 		args = append(args, "--skip-git-repo-check")

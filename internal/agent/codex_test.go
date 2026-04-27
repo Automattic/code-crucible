@@ -12,10 +12,10 @@ func TestBuildCodexExecCommandDefaults(t *testing.T) {
 	})
 	want := []string{
 		"codex",
+		"--ask-for-approval", "never",
 		"exec",
 		"--cd", "/repo",
 		"--sandbox", "workspace-write",
-		"--ask-for-approval", "never",
 		"--skip-git-repo-check",
 		"-",
 	}
@@ -37,10 +37,10 @@ func TestBuildCodexExecCommandWithOverrides(t *testing.T) {
 	})
 	want := []string{
 		"/opt/bin/codex",
+		"--ask-for-approval", "on-request",
 		"exec",
 		"--cd", "/repo",
 		"--sandbox", "read-only",
-		"--ask-for-approval", "on-request",
 		"--model", "gpt-5.5",
 		"--profile", "work",
 		"--json",
