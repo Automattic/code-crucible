@@ -17,6 +17,21 @@ import (
 
 const version = "0.1.0"
 
+type generationOptions struct {
+	ProjectDir        string
+	RunID             string
+	AgentName         string
+	CodexBin          string
+	Model             string
+	Profile           string
+	Sandbox           string
+	Approval          string
+	EventJSON         bool
+	SkipGitRepoCheck  bool
+	OutputLastMessage string
+	DryRun            bool
+}
+
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		printHelp(stdout)
@@ -74,7 +89,7 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	projectDir := fs.String("project", ".", "project directory containing or receiving .crucible")
 	optimize := fs.String("optimize", "", "feature, function, or behavior to optimize")
 	targetPath := fs.String("target-path", "", "optional file or directory to use as the initial baseline source")
-	agent := fs.String("agent", "", "agent provider name")
+	agentName := fs.String("agent", "", "agent provider name")
 	variants := fs.Int("variants", 3, "number of new competitors to request per round")
 	rounds := fs.Int("rounds", 1, "number of tournament rounds to prepare")
 	exploration := fs.Float64("exploration", 0.35, "0..1 balance between iterative improvement and creative alternatives")
@@ -82,15 +97,35 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	externalMode := fs.String("external-mode", "deny", "external call mode: deny, allowlist, mock, replay, record")
 	fixtures := fs.String("external-fixtures", "", "fixtures path for mock or replay mode")
 	allowHosts := fs.String("allow-hosts", "", "comma-separated host allowlist")
+	generateNow := fs.Bool("generate", false, "run the selected agent immediately after creating the run")
+	codexBin := fs.String("codex-bin", agent.DefaultCodexBinary, "Codex CLI binary used with --generate")
+	model := fs.String("model", "", "Codex model override used with --generate")
+	profile := fs.String("profile", "", "Codex config profile used with --generate")
+	sandbox := fs.String("sandbox", agent.DefaultCodexSandbox, "Codex sandbox mode used with --generate")
+	approval := fs.String("approval", agent.DefaultApprovalPolicy, "Codex approval policy used with --generate")
+	eventJSON := fs.Bool("event-json", true, "ask Codex to emit JSONL events when used with --generate")
+	skipGitRepoCheck := fs.Bool("skip-git-repo-check", true, "allow Codex to run when the host project is not a git repository")
+	outputLastMessage := fs.String("output-last-message", "", "path for Codex final response; defaults to a run artifact")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+
+	runAgent := *agentName
+	if *generateNow {
+		if runAgent == "" {
+			runAgent = "codex"
+		}
+		if runAgent != "codex" {
+			fmt.Fprintf(stderr, "run --generate currently supports only --agent codex\n")
+			return 2
+		}
 	}
 
 	created, err := run.Create(run.Options{
 		ProjectDir:   *projectDir,
 		Optimize:     *optimize,
 		TargetPath:   *targetPath,
-		Agent:        *agent,
+		Agent:        runAgent,
 		Variants:     *variants,
 		Rounds:       *rounds,
 		Exploration:  *exploration,
@@ -109,6 +144,24 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "Interface docs: %s\n", created.InterfaceDocPath)
 	fmt.Fprintf(stdout, "Generation prompt: %s\n", created.PromptPath)
 	fmt.Fprintf(stdout, "Baseline source: %s\n", created.BaselineSourceDir)
+
+	if *generateNow {
+		fmt.Fprintln(stdout)
+		return generateWithOptions(generationOptions{
+			ProjectDir:        *projectDir,
+			RunID:             created.ID,
+			AgentName:         runAgent,
+			CodexBin:          *codexBin,
+			Model:             *model,
+			Profile:           *profile,
+			Sandbox:           *sandbox,
+			Approval:          *approval,
+			EventJSON:         *eventJSON,
+			SkipGitRepoCheck:  *skipGitRepoCheck,
+			OutputLastMessage: *outputLastMessage,
+		}, stdout, stderr)
+	}
+
 	return 0
 }
 
@@ -171,18 +224,38 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	approval := fs.String("approval", agent.DefaultApprovalPolicy, "Codex approval policy")
 	eventJSON := fs.Bool("event-json", true, "ask Codex to emit JSONL events")
 	skipGitRepoCheck := fs.Bool("skip-git-repo-check", true, "allow Codex to run when the host project is not a git repository")
-	outputLastMessage := fs.String("output-last-message", "", "path for Codex final response; defaults to timestamped run artifact")
+	outputLastMessage := fs.String("output-last-message", "", "path for Codex final response; defaults to a run artifact")
 	dryRun := fs.Bool("dry-run", false, "print the Codex invocation without running it")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	if *agentName != "codex" {
+	return generateWithOptions(generationOptions{
+		ProjectDir:        *projectDir,
+		RunID:             *runID,
+		AgentName:         *agentName,
+		CodexBin:          *codexBin,
+		Model:             *model,
+		Profile:           *profile,
+		Sandbox:           *sandbox,
+		Approval:          *approval,
+		EventJSON:         *eventJSON,
+		SkipGitRepoCheck:  *skipGitRepoCheck,
+		OutputLastMessage: *outputLastMessage,
+		DryRun:            *dryRun,
+	}, stdout, stderr)
+}
+
+func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
+	if opts.AgentName == "" {
+		opts.AgentName = "codex"
+	}
+	if opts.AgentName != "codex" {
 		fmt.Fprintf(stderr, "generate currently supports only --agent codex\n")
 		return 2
 	}
 
-	configPath, err := archive.RunConfigPath(*projectDir, *runID)
+	configPath, err := archive.RunConfigPath(opts.ProjectDir, opts.RunID)
 	if err != nil {
 		fmt.Fprintf(stderr, "generate failed: %v\n", err)
 		return 1
@@ -193,7 +266,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if cfg.ProjectDir == "" {
-		cfg.ProjectDir, _ = filepath.Abs(*projectDir)
+		cfg.ProjectDir, _ = filepath.Abs(opts.ProjectDir)
 	}
 
 	runDir := cfg.RunDir
@@ -204,37 +277,37 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	if promptPath == "" {
 		promptPath = filepath.Join(runDir, "prompts", "generation-round-0001.md")
 	}
-	if *outputLastMessage == "" {
-		*outputLastMessage = filepath.Join(runDir, "agents", "codex-final.md")
+	if opts.OutputLastMessage == "" {
+		opts.OutputLastMessage = filepath.Join(runDir, "agents", "codex-final.md")
 	}
 
-	opts := agent.CodexOptions{
-		Binary:            *codexBin,
+	codexOpts := agent.CodexOptions{
+		Binary:            opts.CodexBin,
 		ProjectDir:        cfg.ProjectDir,
 		RunDir:            runDir,
 		PromptPath:        promptPath,
-		Model:             *model,
-		Profile:           *profile,
-		Sandbox:           *sandbox,
-		ApprovalPolicy:    *approval,
-		OutputLastMessage: *outputLastMessage,
-		JSONEvents:        *eventJSON,
-		SkipGitRepoCheck:  *skipGitRepoCheck,
+		Model:             opts.Model,
+		Profile:           opts.Profile,
+		Sandbox:           opts.Sandbox,
+		ApprovalPolicy:    opts.Approval,
+		OutputLastMessage: opts.OutputLastMessage,
+		JSONEvents:        opts.EventJSON,
+		SkipGitRepoCheck:  opts.SkipGitRepoCheck,
 	}
 
-	command := agent.BuildCodexExecCommand(opts)
-	if *dryRun {
+	command := agent.BuildCodexExecCommand(codexOpts)
+	if opts.DryRun {
 		fmt.Fprintf(stdout, "Codex command:\n%s\n\n", agent.FormatCommand(command))
 		fmt.Fprintf(stdout, "Prompt stdin: %s\n", promptPath)
 		fmt.Fprintf(stdout, "Project root: %s\n", cfg.ProjectDir)
 		fmt.Fprintf(stdout, "Run archive: %s\n", runDir)
-		fmt.Fprintf(stdout, "Final message: %s\n", *outputLastMessage)
+		fmt.Fprintf(stdout, "Final message: %s\n", opts.OutputLastMessage)
 		return 0
 	}
 
 	fmt.Fprintf(stdout, "Running Codex for run %s\n", cfg.ID)
 	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
-	result, err := agent.RunCodex(context.Background(), opts, stdout, stderr)
+	result, err := agent.RunCodex(context.Background(), codexOpts, stdout, stderr)
 	if err != nil {
 		if result != nil {
 			fmt.Fprintf(stderr, "Codex exited with status %d\n", result.ExitCode)
@@ -321,7 +394,7 @@ func printHelp(w io.Writer) {
 
 Usage:
   crucible init [--project DIR] [--name NAME]
-  crucible run --optimize TEXT [--project DIR] [--target-path PATH] [--variants N]
+  crucible run --optimize TEXT [--project DIR] [--target-path PATH] [--variants N] [--generate]
   crucible generate [--project DIR] [--run RUN_ID] [--agent codex]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]
   crucible inspect [--project DIR] [--run RUN_ID] [candidate-id]
@@ -331,7 +404,7 @@ Core workflow:
   1. Run "crucible init" inside an existing project.
   2. Run "crucible run --optimize ..." to create a tournament workspace.
   3. Fill in docs/interfaces.md and evaluator/evaluator.sh.
-  4. Run "crucible generate --agent codex" to ask Codex for competitors.
+  4. Run "crucible generate --agent codex" to ask Codex for competitors, or use "crucible run --generate" as an explicit shortcut.
   5. Add competitor results to leaderboard.json as evaluation matures.
 
 `)

@@ -102,6 +102,16 @@ Preview the exact Codex invocation first:
 crucible generate --agent codex --dry-run
 ```
 
+When you already trust the generated scaffold for a task, create the run and invoke Codex in one command:
+
+```bash
+crucible run \
+  --optimize "reduce p95 latency of the search ranking function" \
+  --target-path internal/search/rank.go \
+  --variants 5 \
+  --generate
+```
+
 ## Running Without a Known Target Path
 
 If you do not know where the relevant code lives yet, omit `--target-path`:
@@ -150,6 +160,17 @@ crucible generate \
   --sandbox workspace-write \
   --approval never \
   --event-json=true
+```
+
+The same Codex options can be passed through `crucible run --generate`:
+
+```bash
+crucible run \
+  --optimize "reduce allocation pressure in the parser" \
+  --target-path internal/parser \
+  --variants 4 \
+  --generate \
+  --model gpt-5.5
 ```
 
 The generated prompt explicitly tells Codex to avoid modifying host project source outside `.crucible`. Sandbox enforcement currently allows workspace writes; stricter write isolation is planned with container execution.

@@ -136,6 +136,8 @@ agents/
 
 Codex uses the host project as its working root. The prompt instructs it to write only under the current round directory and not to modify host project source outside `.crucible`.
 
+`crucible run --generate` is an explicit shortcut. It creates the run archive first, then calls the same Codex generation path with the newly-created run ID. The separate `run` and `generate` commands remain the safer default workflow when the operator wants to review or edit interface docs, evaluator scripts, or prompts before spending a model run.
+
 Future providers can use the same run metadata and prompt package through a common provider interface.
 
 ## Evaluation
