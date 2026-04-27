@@ -28,6 +28,8 @@ Code Crucible is meant to run from inside an existing project:
 cd existing-project
 crucible init
 crucible run --optimize "make this feature faster"
+# or
+crucible run --task-file crucible-task.md
 ```
 
 The project receives a `.crucible/` directory. This keeps optimization artifacts close to the code being evaluated without requiring the host project to adopt Code Crucible as a dependency.

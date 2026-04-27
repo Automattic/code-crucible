@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -95,6 +96,7 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	projectDir := fs.String("project", ".", "project directory containing or receiving .crucible")
 	optimize := fs.String("optimize", "", "feature, function, or behavior to optimize")
+	taskFile := fs.String("task-file", "", "path to a file containing the optimization task, relative to project directory")
 	targetPath := fs.String("target-path", "", "optional file or directory to use as the initial baseline source")
 	agentName := fs.String("agent", "", "agent provider name")
 	variants := fs.Int("variants", 3, "number of new competitors to request per round")
@@ -118,6 +120,24 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	task := strings.TrimSpace(*optimize)
+	if strings.TrimSpace(*taskFile) != "" {
+		if task != "" {
+			fmt.Fprintf(stderr, "--optimize and --task-file cannot be used together\n")
+			return 2
+		}
+		taskPath := *taskFile
+		if !filepath.IsAbs(taskPath) {
+			taskPath = filepath.Join(*projectDir, taskPath)
+		}
+		data, err := os.ReadFile(taskPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "read task file failed: %v\n", err)
+			return 1
+		}
+		task = strings.TrimSpace(string(data))
+	}
+
 	runAgent := *agentName
 	if *generateNow {
 		if runAgent == "" {
@@ -131,7 +151,7 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 
 	created, err := run.Create(run.Options{
 		ProjectDir:      *projectDir,
-		Optimize:        *optimize,
+		Optimize:        task,
 		TargetPath:      *targetPath,
 		Agent:           runAgent,
 		Variants:        *variants,
@@ -580,7 +600,7 @@ func printHelp(w io.Writer) {
 
 Usage:
   crucible init [--project DIR] [--name NAME]
-  crucible run --optimize TEXT [--project DIR] [--target-path PATH] [--variants N] [--generate]
+  crucible run (--optimize TEXT | --task-file PATH) [--project DIR] [--target-path PATH] [--variants N] [--generate]
   crucible generate [--project DIR] [--run RUN_ID] [--agent codex]
   crucible adopt [--project DIR] [--run RUN_ID]
   crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID]
@@ -590,7 +610,7 @@ Usage:
 
 Core workflow:
   1. Run "crucible init" inside an existing project.
-  2. Run "crucible run --optimize ..." to create a tournament workspace.
+  2. Run "crucible run --optimize ..." or "crucible run --task-file ..." to create a tournament workspace.
   3. Fill in docs/interfaces.md and evaluator/evaluator.sh.
   4. Run "crucible generate --agent codex" to ask Codex for competitors, or use "crucible run --generate" as an explicit shortcut.
   5. Run "crucible evaluate" to execute the run evaluator and update leaderboard results.

@@ -1,4 +1,4 @@
-.PHONY: build test vet fmt check
+.PHONY: build test vet fmt examples-test check
 
 build:
 	go build -o bin/crucible ./cmd/crucible
@@ -10,6 +10,9 @@ vet:
 	go vet ./...
 
 fmt:
-	gofmt -w ./cmd ./internal
+	gofmt -w ./cmd ./internal examples/go-ranking-poc/ranking
 
-check: test vet build
+examples-test:
+	cd examples/go-ranking-poc && go test ./...
+
+check: test vet build examples-test

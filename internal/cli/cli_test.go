@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gaarai/code-crucible/internal/archive"
 	"github.com/gaarai/code-crucible/internal/model"
 )
 
@@ -101,6 +102,74 @@ func TestRunGenerateRejectsUnsupportedAgentBeforeCreatingRun(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "run --generate currently supports only --agent codex") {
 		t.Fatalf("stderr did not explain unsupported agent:\n%s", stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".crucible", "runs")); !os.IsNotExist(err) {
+		t.Fatalf("expected no run archive to be created, stat err: %v", err)
+	}
+}
+
+func TestRunTaskFileCreatesRun(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	task := "# Optimization Task\n\nMake ranking faster.\n"
+	taskPath := filepath.Join(projectDir, "task.md")
+	if err := os.WriteFile(taskPath, []byte(task), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--task-file", filepath.Base(taskPath),
+		"--target-path", "internal/search/rank.go",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one run config, found %d", len(matches))
+	}
+	cfg, err := archive.LoadRunConfig(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Optimize != strings.TrimSpace(task) {
+		t.Fatalf("Optimize = %q, want %q", cfg.Optimize, strings.TrimSpace(task))
+	}
+}
+
+func TestRunRejectsOptimizeAndTaskFileTogether(t *testing.T) {
+	projectDir := t.TempDir()
+	taskPath := filepath.Join(projectDir, "task.md")
+	if err := os.WriteFile(taskPath, []byte("make ranking faster\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--optimize", "make ranking faster",
+		"--task-file", taskPath,
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("run returned %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--optimize and --task-file cannot be used together") {
+		t.Fatalf("stderr did not explain task conflict:\n%s", stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(projectDir, ".crucible", "runs")); !os.IsNotExist(err) {
 		t.Fatalf("expected no run archive to be created, stat err: %v", err)

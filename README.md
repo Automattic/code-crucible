@@ -20,7 +20,7 @@ The goal is not just "does it work", but which implementation works best under m
 
 - Local git-friendly Go CLI
 - `crucible init` for adding a `.crucible/` work area to an existing project
-- `crucible run --optimize ...` for creating a tournament archive
+- `crucible run --optimize ...` or `--task-file ...` for creating a tournament archive
 - Baseline competitor extraction from an optional `--target-path`
 - Interface discovery document scaffold
 - External policy scaffold for `deny`, `allowlist`, `mock`, `replay`, and `record`
@@ -60,6 +60,14 @@ crucible run \
   --rounds 3 \
   --exploration 0.35 \
   --external-mode deny
+```
+
+For longer tasks, put the request in a Markdown file:
+
+```bash
+crucible run \
+  --task-file crucible-task.md \
+  --target-path internal/search/rank.go
 ```
 
 For a full evaluator script instead of a short command, use `--evaluator-script`:
@@ -250,7 +258,7 @@ go build -o bin/crucible ./cmd/crucible
 
 ./bin/crucible run \
   --project examples/go-ranking-poc \
-  --optimize "$(cat examples/go-ranking-poc/task.md)" \
+  --task-file task.md \
   --target-path ranking/rank.go \
   --evaluator-script evaluator.sh \
   --variants 2 \

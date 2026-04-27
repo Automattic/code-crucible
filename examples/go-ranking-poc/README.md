@@ -26,7 +26,7 @@ go build -o bin/crucible ./cmd/crucible
 
 ./bin/crucible run \
   --project examples/go-ranking-poc \
-  --optimize "$(cat examples/go-ranking-poc/task.md)" \
+  --task-file task.md \
   --target-path ranking/rank.go \
   --evaluator-script evaluator.sh \
   --variants 2 \

@@ -4,11 +4,11 @@ Code Crucible is a Go CLI project.
 
 ## Commands
 
-- Format: `gofmt -w ./cmd ./internal`
+- Format: `gofmt -w ./cmd ./internal examples/go-ranking-poc/ranking`
 - Test: `go test ./...`
 - Vet: `go vet ./...`
 - Build: `go build -o bin/crucible ./cmd/crucible`
-- Full check: `make check`
+- Full check: `make check` includes the root module plus the Go PoC example module
 - Smoke Codex command construction: `bin/crucible generate --project /tmp/crucible-sample --dry-run`
 
 ## Project Intent
