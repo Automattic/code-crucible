@@ -120,3 +120,5 @@ Code Crucible augments those script-provided values with process-level resource 
 ```
 
 If `verdict.json` is missing or invalid, Code Crucible marks the candidate as failed.
+
+`p95_latency_ms` should be a true 95th percentile over the evaluator's sampled timings. Use `runtime_mean_ms` for averages and `benchmark_ns_per_op` for the mean `go test -bench` style operation time.

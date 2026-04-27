@@ -135,6 +135,9 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 		return nil, fmt.Errorf("candidate %q was not found in run %s", opts.CandidateID, cfg.ID)
 	}
 
+	scoring.ScoreResults(board.Results)
+	syncEvaluationReportScores(report, board.Results)
+
 	if err := archive.SaveJSON(leaderboardPath, board); err != nil {
 		return nil, err
 	}
@@ -163,6 +166,22 @@ func evaluationIndexes(results []model.CandidateResult, candidateID string) []in
 		indexes = append(indexes, i)
 	}
 	return indexes
+}
+
+func syncEvaluationReportScores(report *EvaluationReport, results []model.CandidateResult) {
+	if report == nil {
+		return
+	}
+	byID := make(map[string]model.CandidateResult, len(results))
+	for _, result := range results {
+		byID[result.Candidate.ID] = result
+	}
+	for i := range report.Results {
+		if result, ok := byID[report.Results[i].ID]; ok {
+			report.Results[i].Score = result.Score
+			report.Results[i].Status = result.Status
+		}
+	}
 }
 
 func evaluateParallel(cfg *model.RunConfig, evaluatorPath, runDir string, results []model.CandidateResult, indexes []int, jobs int, execOpts evaluatorExecutionOptions) []evaluationResult {

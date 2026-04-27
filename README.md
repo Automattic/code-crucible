@@ -115,7 +115,7 @@ View the current standings:
 crucible leaderboard
 ```
 
-The human-readable leaderboard ranks passed candidates by score, then p95 latency. Use `--json` when you need archive order and raw result data.
+The human-readable leaderboard ranks passed candidates by score, then p95 latency. Numeric columns use adaptive precision so close results remain distinguishable and very wide ranges stay readable. Use `--json` when you need archive order and raw result data.
 
 Inspect a candidate:
 
@@ -226,7 +226,7 @@ crucible run \
   --model gpt-5.5
 ```
 
-The generated prompt explicitly tells Codex to avoid modifying host project source outside `.crucible`. Sandbox enforcement currently allows workspace writes; stricter write isolation is planned with container execution.
+The generated prompt explicitly tells Codex to avoid modifying host project source outside `.crucible`. Temporary verification work is directed to the run's `.crucible/runs/<run-id>/tmp/` scratch area, and the prompt tells Codex to avoid destructive cleanup commands so blocked cleanup attempts do not pollute generation logs. Sandbox enforcement currently allows workspace writes; stricter write isolation is planned with container execution.
 
 ## Evaluation
 
@@ -255,7 +255,7 @@ candidate-NNNN/
 
 If the evaluator fails or omits `verdict.json`, Code Crucible marks the candidate as failed. If `metrics.json` is missing or invalid, the candidate can still receive a failed verdict with a warning.
 
-Code Crucible also records process-level resource metrics around each evaluator invocation and merges them into `metrics.json` before updating `leaderboard.json`. These include wall time, user CPU time, system CPU time, CPU percent, max RSS, context switches, and block I/O counts. Evaluator scripts should still emit domain-specific metrics such as benchmark latency, allocations, external calls, and correctness verdicts.
+Code Crucible also records process-level resource metrics around each evaluator invocation and merges them into `metrics.json` before updating `leaderboard.json`. These include wall time, user CPU time, system CPU time, CPU percent, max RSS, context switches, and block I/O counts. Evaluator scripts should still emit domain-specific metrics such as benchmark latency, allocations, external calls, and correctness verdicts. When an evaluator reports `p95_latency_ms`, it should be a true 95th percentile value for the sampled benchmark or request timings, not an average or median.
 
 ## Proof Of Concept Fixture
 

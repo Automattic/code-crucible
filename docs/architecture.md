@@ -142,7 +142,7 @@ agents/
   codex-final.md
 ```
 
-Codex uses the host project as its working root. The prompt instructs it to write only under the current round directory and not to modify host project source outside `.crucible`.
+Codex uses the host project as its working root. The prompt instructs it to write generated competitor artifacts only under the current round directory, use the run `tmp/` scratch area for optional verification work, avoid destructive cleanup commands, and not modify host project source outside `.crucible`.
 
 `crucible run --generate` is an explicit shortcut. It creates the run archive first, then calls the same Codex generation path with the newly-created run ID. The separate `run` and `generate` commands remain the safer default workflow when the operator wants to review or edit interface docs, evaluator scripts, or prompts before spending a model run.
 
@@ -164,7 +164,7 @@ It passes:
 evaluator.sh <candidate-dir> <run-dir> <metrics-out> <verdict-out>
 ```
 
-The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads both files, adds process-level resource metrics collected around the evaluator invocation, updates `leaderboard.json`, computes a starter score, and marks candidates as `passed` only when correctness, benchmark, and external policy verdicts all pass. Missing or malformed verdicts fail closed.
+The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads both files, adds process-level resource metrics collected around the evaluator invocation, updates `leaderboard.json`, computes a relative log-scaled score, and marks candidates as `passed` only when correctness, benchmark, and external policy verdicts all pass. Missing or malformed verdicts fail closed.
 
 The planned evaluator layer will add:
 
@@ -186,4 +186,4 @@ The Go data model currently includes:
 
 The filesystem archive is the source of truth for now. SQLite indexing is planned once the artifact format stabilizes.
 
-The human-readable leaderboard view sorts passed candidates by score, then p95 latency. The JSON output preserves the archived result data for automation.
+The human-readable leaderboard view sorts passed candidates by score, then p95 latency. Scores are relative to the best passed candidate in the run, with each latency doubling costing points so large performance gaps remain visible. The JSON output preserves the archived result data for automation.

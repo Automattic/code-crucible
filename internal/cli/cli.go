@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -227,23 +228,7 @@ func runLeaderboard(args []string, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "Run: %s\n", board.RunID)
 	fmt.Fprintf(stdout, "Optimize: %s\n\n", board.Optimize)
-	fmt.Fprintf(stdout, "%-5s %-28s %-10s %-10s %-12s %-10s %-10s\n", "Rank", "Candidate", "Status", "Score", "P95 ms", "CPU s", "Calls")
-	for i, result := range rankedResults(board.Results) {
-		rank := "-"
-		if result.Status == "passed" {
-			rank = fmt.Sprintf("%d", i+1)
-		}
-		cpuSeconds := result.Metrics.CPUUserSeconds + result.Metrics.CPUSystemSeconds
-		fmt.Fprintf(stdout, "%-5s %-28s %-10s %-10.2f %-12.2f %-10.2f %-10d\n",
-			rank,
-			result.Candidate.ID,
-			result.Status,
-			result.Score,
-			result.Metrics.P95LatencyMS,
-			cpuSeconds,
-			result.Metrics.ExternalCallCount,
-		)
-	}
+	printLeaderboardTable(stdout, rankedResults(board.Results))
 	return 0
 }
 
@@ -281,6 +266,152 @@ func leaderboardStatusPriority(status string) int {
 	default:
 		return 4
 	}
+}
+
+func printLeaderboardTable(stdout io.Writer, results []model.CandidateResult) {
+	scoreValues := make([]float64, 0, len(results))
+	p95Values := make([]float64, 0, len(results))
+	cpuValues := make([]float64, 0, len(results))
+	for _, result := range results {
+		scoreValues = append(scoreValues, result.Score)
+		p95Values = append(p95Values, result.Metrics.P95LatencyMS)
+		cpuValues = append(cpuValues, result.Metrics.CPUUserSeconds+result.Metrics.CPUSystemSeconds)
+	}
+
+	scoreFormatter := newDynamicFloatFormatter(scoreValues, 2, 4)
+	p95Formatter := newDynamicFloatFormatter(p95Values, 2, 6)
+	cpuFormatter := newDynamicFloatFormatter(cpuValues, 2, 4)
+
+	rows := make([][]string, 0, len(results))
+	for i, result := range results {
+		rank := "-"
+		if result.Status == "passed" {
+			rank = fmt.Sprintf("%d", i+1)
+		}
+		rows = append(rows, []string{
+			rank,
+			result.Candidate.ID,
+			result.Status,
+			scoreFormatter.format(result.Score),
+			p95Formatter.format(result.Metrics.P95LatencyMS),
+			cpuFormatter.format(result.Metrics.CPUUserSeconds + result.Metrics.CPUSystemSeconds),
+			fmt.Sprintf("%d", result.Metrics.ExternalCallCount),
+		})
+	}
+
+	printTable(stdout, []string{"Rank", "Candidate", "Status", "Score", "P95 ms", "CPU s", "Calls"}, rows)
+}
+
+type dynamicFloatFormatter struct {
+	decimals   int
+	scientific bool
+}
+
+func newDynamicFloatFormatter(values []float64, defaultDecimals, maxDecimals int) dynamicFloatFormatter {
+	if maxDecimals < defaultDecimals {
+		maxDecimals = defaultDecimals
+	}
+
+	decimals := defaultDecimals
+	finite := finiteAbsValues(values)
+	if len(finite) == 0 {
+		return dynamicFloatFormatter{decimals: decimals}
+	}
+
+	sort.Float64s(finite)
+	minPositive := finite[0]
+	maxValue := finite[len(finite)-1]
+	if maxValue >= 1_000_000 || minPositive < math.Pow10(-maxDecimals) || maxValue/minPositive >= 1_000_000 {
+		return dynamicFloatFormatter{decimals: maxDecimals, scientific: true}
+	}
+
+	if minPositive < 1 {
+		decimals = maxInt(decimals, int(math.Ceil(-math.Log10(minPositive)))+2)
+	}
+	if minDelta := minDistinctDelta(finite); minDelta > 0 && minDelta < 1 {
+		decimals = maxInt(decimals, int(math.Ceil(-math.Log10(minDelta)))+1)
+	}
+	if decimals > maxDecimals {
+		decimals = maxDecimals
+	}
+	return dynamicFloatFormatter{decimals: decimals}
+}
+
+func finiteAbsValues(values []float64) []float64 {
+	finite := make([]float64, 0, len(values))
+	for _, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) || value == 0 {
+			continue
+		}
+		finite = append(finite, math.Abs(value))
+	}
+	return finite
+}
+
+func minDistinctDelta(sorted []float64) float64 {
+	var minDelta float64
+	for i := 1; i < len(sorted); i++ {
+		delta := sorted[i] - sorted[i-1]
+		if delta <= 0 {
+			continue
+		}
+		if minDelta == 0 || delta < minDelta {
+			minDelta = delta
+		}
+	}
+	return minDelta
+}
+
+func (f dynamicFloatFormatter) format(value float64) string {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return "-"
+	}
+	if f.scientific && value != 0 {
+		return fmt.Sprintf("%.4e", value)
+	}
+	formatted := fmt.Sprintf("%.*f", f.decimals, value)
+	formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
+	if formatted == "" || formatted == "-0" {
+		return "0"
+	}
+	return formatted
+}
+
+func printTable(stdout io.Writer, headers []string, rows [][]string) {
+	widths := make([]int, len(headers))
+	for i, header := range headers {
+		widths[i] = len(header)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if i < len(widths) && len(cell) > widths[i] {
+				widths[i] = len(cell)
+			}
+		}
+	}
+
+	printTableRow(stdout, widths, headers)
+	for _, row := range rows {
+		printTableRow(stdout, widths, row)
+	}
+}
+
+func printTableRow(stdout io.Writer, widths []int, row []string) {
+	for i, cell := range row {
+		padding := widths[i]
+		if i == len(row)-1 {
+			fmt.Fprintf(stdout, "%-*s\n", padding, cell)
+			return
+		}
+		fmt.Fprintf(stdout, "%-*s  ", padding, cell)
+	}
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func runAdopt(args []string, stdout, stderr io.Writer) int {
@@ -551,10 +682,20 @@ func printEvaluationReport(stdout io.Writer, report *run.EvaluationReport) {
 		return
 	}
 
-	fmt.Fprintf(stdout, "%-28s %-10s %-10s\n", "Candidate", "Status", "Score")
+	scoreValues := make([]float64, 0, len(report.Results))
 	for _, result := range report.Results {
-		fmt.Fprintf(stdout, "%-28s %-10s %-10.2f\n", result.ID, result.Status, result.Score)
+		scoreValues = append(scoreValues, result.Score)
 	}
+	scoreFormatter := newDynamicFloatFormatter(scoreValues, 2, 4)
+	rows := make([][]string, 0, len(report.Results))
+	for _, result := range report.Results {
+		rows = append(rows, []string{
+			result.ID,
+			result.Status,
+			scoreFormatter.format(result.Score),
+		})
+	}
+	printTable(stdout, []string{"Candidate", "Status", "Score"}, rows)
 }
 
 func runInspect(args []string, stdout, stderr io.Writer) int {

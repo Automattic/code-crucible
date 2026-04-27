@@ -291,3 +291,25 @@ func TestRankedResultsPrioritizesPassedScoreThenLatency(t *testing.T) {
 		}
 	}
 }
+
+func TestDynamicFloatFormatterPreservesSmallDifferences(t *testing.T) {
+	formatter := newDynamicFloatFormatter([]float64{0.003245, 0.003246, 11.85616}, 2, 6)
+
+	if got := formatter.format(0.003245); got != "0.003245" {
+		t.Fatalf("formatted tiny value = %q, want enough precision to distinguish values", got)
+	}
+	if got := formatter.format(11.85616); got != "11.85616" {
+		t.Fatalf("formatted larger value = %q, want shared precision in column", got)
+	}
+}
+
+func TestDynamicFloatFormatterUsesScientificForVeryWideColumns(t *testing.T) {
+	formatter := newDynamicFloatFormatter([]float64{0.00000012, 4_200_000}, 2, 6)
+
+	if got := formatter.format(0.00000012); !strings.Contains(got, "e") {
+		t.Fatalf("formatted wide-range tiny value = %q, want scientific notation", got)
+	}
+	if got := formatter.format(4_200_000); !strings.Contains(got, "e") {
+		t.Fatalf("formatted wide-range large value = %q, want scientific notation", got)
+	}
+}

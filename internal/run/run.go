@@ -85,11 +85,13 @@ func Create(opts Options) (*CreatedRun, error) {
 	roundDir := filepath.Join(runDir, "round-0001")
 	baselineDir := filepath.Join(roundDir, "candidate-0000-baseline")
 	baselineSrc := filepath.Join(baselineDir, "src")
+	generationScratchDir := filepath.Join(runDir, "tmp", "generation")
 
 	for _, dir := range []string{
 		runDir,
 		roundDir,
 		baselineSrc,
+		generationScratchDir,
 		filepath.Join(runDir, "docs"),
 		filepath.Join(runDir, "agents"),
 		filepath.Join(runDir, "evaluator"),
@@ -215,6 +217,7 @@ func Create(opts Options) (*CreatedRun, error) {
 		RunDir:            filepath.ToSlash(runDir),
 		RoundDir:          filepath.ToSlash(roundDir),
 		BaselineSourceDir: filepath.ToSlash(baselineSrc),
+		ScratchDir:        filepath.ToSlash(generationScratchDir),
 		History:           board.Results,
 	})
 	if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {

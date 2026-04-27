@@ -106,7 +106,7 @@ type CandidateResult struct {
 	Metrics   Metrics           `json:"metrics"`
 	External  ExternalCallTrace `json:"external"`
 	Verdict   Verdict           `json:"verdict"`
-	Score     float64           `json:"score,omitempty"`
+	Score     float64           `json:"score"`
 	Status    string            `json:"status"`
 }
 

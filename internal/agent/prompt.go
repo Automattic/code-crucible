@@ -13,6 +13,7 @@ type GenerationPromptRequest struct {
 	RunDir            string
 	RoundDir          string
 	BaselineSourceDir string
+	ScratchDir        string
 	History           []model.CandidateResult
 }
 
@@ -28,8 +29,11 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 	fmt.Fprintf(&b, "- Host project directory: `%s`\n", cfg.ProjectDir)
 	fmt.Fprintf(&b, "- Code Crucible run directory: `%s`\n", req.RunDir)
 	fmt.Fprintf(&b, "- Current round directory: `%s`\n", req.RoundDir)
+	if req.ScratchDir != "" {
+		fmt.Fprintf(&b, "- Temporary verification scratch directory: `%s`\n", req.ScratchDir)
+	}
 	fmt.Fprintf(&b, "- Baseline source directory: `%s`\n\n", req.BaselineSourceDir)
-	fmt.Fprintf(&b, "Only write generated competitor artifacts under the current round directory. Do not modify host project source files outside `.crucible`.\n\n")
+	fmt.Fprintf(&b, "Only write generated competitor artifacts under the current round directory. If temporary verification files are needed, write them under the scratch directory. Do not modify host project source files outside `.crucible`.\n\n")
 
 	fmt.Fprintf(&b, "## Required Contract\n\n")
 	fmt.Fprintf(&b, "Read and follow `%s`. Every generated competitor must be a drop-in replacement for the documented baseline interface.\n\n", req.InterfaceDocPath)
@@ -55,7 +59,7 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 		fmt.Fprintf(&b, "No prior competitor metrics exist yet. Use the baseline source as candidate-0000 and create new competitors beside it.\n\n")
 	} else {
 		for _, result := range req.History {
-			fmt.Fprintf(&b, "- %s: status=%s score=%.4f runtime_mean_ms=%.2f p95_latency_ms=%.2f cpu_seconds=%.3f memory_peak_bytes=%d external_calls=%d\n",
+			fmt.Fprintf(&b, "- %s: status=%s score=%.4g runtime_mean_ms=%.6g p95_latency_ms=%.6g cpu_seconds=%.6g memory_peak_bytes=%d external_calls=%d\n",
 				result.Candidate.ID,
 				result.Status,
 				result.Score,
@@ -92,6 +96,7 @@ For each competitor:
 
 5. Do not modify baseline source, evaluator files, run metadata, leaderboard.json, or completed candidate artifacts.
 6. Do not introduce external services or protocols that violate the external policy.
+7. Avoid destructive cleanup commands such as rm -rf. Create fresh temporary paths under the scratch directory instead and leave scratch artifacts for archive inspection.
 
 Favor measurable changes. If a competitor is experimental, make the experiment explicit in design.md.
 `)

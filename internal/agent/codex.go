@@ -38,6 +38,7 @@ type CodexInvocation struct {
 	ProjectDir        string    `json:"project_dir"`
 	RunDir            string    `json:"run_dir"`
 	PromptPath        string    `json:"prompt_path"`
+	ScratchDir        string    `json:"scratch_dir,omitempty"`
 	StdoutPath        string    `json:"stdout_path"`
 	StderrPath        string    `json:"stderr_path"`
 	OutputLastMessage string    `json:"output_last_message"`
@@ -136,6 +137,10 @@ func RunCodex(ctx context.Context, opts CodexOptions, stdout, stderr io.Writer) 
 	}
 
 	stamp := time.Now().UTC().Format("20060102-150405")
+	scratchDir := filepath.Join(opts.RunDir, "tmp", "agents", "codex-"+stamp)
+	if err := os.MkdirAll(scratchDir, 0o755); err != nil {
+		return nil, err
+	}
 	stdoutPath := filepath.Join(agentsDir, "codex-"+stamp+"-stdout.log")
 	if opts.JSONEvents {
 		stdoutPath = filepath.Join(agentsDir, "codex-"+stamp+"-events.jsonl")
@@ -153,6 +158,7 @@ func RunCodex(ctx context.Context, opts CodexOptions, stdout, stderr io.Writer) 
 		ProjectDir:        opts.ProjectDir,
 		RunDir:            opts.RunDir,
 		PromptPath:        opts.PromptPath,
+		ScratchDir:        scratchDir,
 		StdoutPath:        stdoutPath,
 		StderrPath:        stderrPath,
 		OutputLastMessage: finalPath,
@@ -175,6 +181,7 @@ func RunCodex(ctx context.Context, opts CodexOptions, stdout, stderr io.Writer) 
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 	cmd.Dir = opts.ProjectDir
 	cmd.Stdin = strings.NewReader(string(prompt))
+	cmd.Env = append(os.Environ(), "TMPDIR="+scratchDir)
 	cmd.Stdout = io.MultiWriter(stdoutFile, stdout)
 	cmd.Stderr = io.MultiWriter(stderrFile, stderr)
 

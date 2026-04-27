@@ -43,16 +43,19 @@ if [[ "$correctness_passed" == true ]] && (cd "$work_dir" && go test -cpu="$go_t
   benchmark_passed=true
 fi
 
-runtime_ns="$(awk '/BenchmarkTopN/ && /ns\/op/ { for (i = 1; i <= NF; i++) if ($(i + 1) == "ns/op") values[++n] = $i } END { print median(values, n) } function median(values, n, i, j, tmp) { if (n == 0) return 0; for (i = 1; i <= n; i++) for (j = i + 1; j <= n; j++) if (values[j] < values[i]) { tmp = values[i]; values[i] = values[j]; values[j] = tmp } if (n % 2) return values[(n + 1) / 2]; return (values[n / 2] + values[n / 2 + 1]) / 2 }' "$benchmark_log" 2>/dev/null || printf '0')"
+benchmark_stats="$(awk '/BenchmarkTopN/ && /ns\/op/ { for (i = 1; i <= NF; i++) if ($(i + 1) == "ns/op") values[++n] = $i } END { if (n == 0) { print "0 0"; exit } sort(values, n); total = 0; for (i = 1; i <= n; i++) total += values[i]; mean = total / n; p95_index = int(n * 0.95); if (p95_index < n * 0.95) p95_index++; if (p95_index < 1) p95_index = 1; if (p95_index > n) p95_index = n; printf "%.0f %.0f", mean, values[p95_index] } function sort(values, n, i, j, tmp) { for (i = 1; i <= n; i++) for (j = i + 1; j <= n; j++) if (values[j] < values[i]) { tmp = values[i]; values[i] = values[j]; values[j] = tmp } }' "$benchmark_log" 2>/dev/null || printf '0 0')"
+runtime_ns="${benchmark_stats%% *}"
+p95_ns="${benchmark_stats##* }"
 allocs_per_op="$(awk '/BenchmarkTopN/ && /allocs\/op/ { for (i = 1; i <= NF; i++) if ($(i + 1) == "allocs/op") values[++n] = $i } END { print median(values, n) } function median(values, n, i, j, tmp) { if (n == 0) return 0; for (i = 1; i <= n; i++) for (j = i + 1; j <= n; j++) if (values[j] < values[i]) { tmp = values[i]; values[i] = values[j]; values[j] = tmp } if (n % 2) return values[(n + 1) / 2]; return (values[n / 2] + values[n / 2 + 1]) / 2 }' "$benchmark_log" 2>/dev/null || printf '0')"
 bytes_per_op="$(awk '/BenchmarkTopN/ && /B\/op/ { for (i = 1; i <= NF; i++) if ($(i + 1) == "B/op") values[++n] = $i } END { print median(values, n) } function median(values, n, i, j, tmp) { if (n == 0) return 0; for (i = 1; i <= n; i++) for (j = i + 1; j <= n; j++) if (values[j] < values[i]) { tmp = values[i]; values[i] = values[j]; values[j] = tmp } if (n % 2) return values[(n + 1) / 2]; return (values[n / 2] + values[n / 2 + 1]) / 2 }' "$benchmark_log" 2>/dev/null || printf '0')"
 benchmark_runs="$(awk '/BenchmarkTopN/ && /ns\/op/ { n++ } END { print n + 0 }' "$benchmark_log" 2>/dev/null || printf '0')"
 
-p95_latency_ms="$(awk -v ns="$runtime_ns" 'BEGIN { printf "%.6f", ns / 1000000 }')"
+runtime_mean_ms="$(awk -v ns="$runtime_ns" 'BEGIN { printf "%.6f", ns / 1000000 }')"
+p95_latency_ms="$(awk -v ns="$p95_ns" 'BEGIN { printf "%.6f", ns / 1000000 }')"
 
 cat > "$metrics_out" <<JSON
 {
-  "runtime_mean_ms": $p95_latency_ms,
+  "runtime_mean_ms": $runtime_mean_ms,
   "p95_latency_ms": $p95_latency_ms,
   "benchmark_ns_per_op": $runtime_ns,
   "benchmark_runs": $benchmark_runs,
