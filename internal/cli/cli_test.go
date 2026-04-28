@@ -1320,6 +1320,44 @@ func TestEvaluateCommandUpdatesLeaderboard(t *testing.T) {
 	}
 }
 
+func TestEvaluateRequirePassedFailsWhenCandidateFails(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--optimize", "make ranking faster",
+		"--source-path", "internal/search/rank.go",
+		"--evaluator", "false",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"evaluate",
+		"--project", projectDir,
+		"--candidate", "candidate-0000-baseline",
+		"--require-passed",
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("evaluate returned %d, want 1; stdout: %s stderr: %s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "failed") {
+		t.Fatalf("stdout did not include failed status:\n%s", stdout.String())
+	}
+}
+
 func TestIndexCommandRebuildsSQLiteIndex(t *testing.T) {
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "search")

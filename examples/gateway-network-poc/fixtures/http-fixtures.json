@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "raw-http-status",
+      "request": {
+        "method": "GET",
+        "url": "http://api.crucible.test/v1/status"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "text/plain"
+        },
+        "body": "http fixture ok"
+      }
+    },
+    {
+      "id": "raw-https-status",
+      "request": {
+        "method": "GET",
+        "url": "https://secure.crucible.test/v1/status"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "text/plain"
+        },
+        "body": "https fixture ok"
+      }
+    }
+  ]
+}

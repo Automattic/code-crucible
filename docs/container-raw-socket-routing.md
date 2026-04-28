@@ -23,7 +23,7 @@ Use the explicit container routing mode:
 ```bash
 crucible evaluate \
   --sandbox-engine docker \
-  --sandbox-image golang:1.25 \
+  --sandbox-image golang:1.22 \
   --external-routing gateway-network
 ```
 

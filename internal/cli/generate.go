@@ -36,14 +36,14 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	runID := fs.String("run", "", "run ID; defaults to latest run")
 	agentName := fs.String("agent", "", "agent provider to run; defaults to the run or project default")
 	codexBin := fs.String("codex-bin", agent.DefaultCodexBinary, "Codex CLI binary")
-	model := fs.String("model", "", "Codex model override")
+	model := fs.String("model", "", "agent model override")
 	profile := fs.String("profile", "", "Codex config profile")
 	sandbox := fs.String("sandbox", agent.DefaultCodexSandbox, "Codex sandbox mode")
 	approval := fs.String("approval", agent.DefaultApprovalPolicy, "Codex approval policy")
 	eventJSON := fs.Bool("event-json", true, "ask Codex to emit JSONL events")
 	skipGitRepoCheck := fs.Bool("skip-git-repo-check", true, "allow Codex to run when the host project is not a git repository")
-	outputLastMessage := fs.String("output-last-message", "", "path for Codex final response; defaults to a run artifact")
-	dryRun := fs.Bool("dry-run", false, "print the Codex invocation without running it")
+	outputLastMessage := fs.String("output-last-message", "", "path for provider final response; defaults to a run artifact")
+	dryRun := fs.Bool("dry-run", false, "print the provider invocation without running it")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

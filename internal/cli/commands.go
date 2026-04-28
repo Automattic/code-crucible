@@ -650,6 +650,7 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	var env repeatedStrings
 	fs.Var(&env, "env", "environment variable for evaluators in KEY=VALUE form; may be repeated")
 	adoptBefore := fs.Bool("adopt", true, "adopt generated candidates before evaluation")
+	requirePassed := fs.Bool("require-passed", false, "exit non-zero when any evaluated candidate does not pass")
 	jsonOut := fs.Bool("json", false, "print raw evaluation report JSON")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -739,6 +740,9 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(stdout, "%s\n", data)
+		if *requirePassed && !evaluationReportPassed(report) {
+			return 1
+		}
 		return 0
 	}
 
@@ -746,7 +750,22 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 		printAdoptionReport(stdout, stderr, report.Adoption)
 	}
 	printEvaluationReport(stdout, report)
+	if *requirePassed && !evaluationReportPassed(report) {
+		return 1
+	}
 	return 0
+}
+
+func evaluationReportPassed(report *run.EvaluationReport) bool {
+	if report == nil || len(report.Results) == 0 {
+		return false
+	}
+	for _, result := range report.Results {
+		if result.Status != "passed" {
+			return false
+		}
+	}
+	return true
 }
 
 func runInspect(args []string, stdout, stderr io.Writer) int {

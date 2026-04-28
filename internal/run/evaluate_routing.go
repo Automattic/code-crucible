@@ -80,7 +80,12 @@ func setupContainerExternalRouting(policy model.ExternalPolicy, sandbox SandboxO
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cleanupCancel()
 		if output, err := runEngineCommand(cleanupCtx, sandbox.Engine, "rm", "-f", gatewayName); err != nil {
-			notes = append(notes, fmt.Sprintf("remove gateway %s failed: %v: %s", gatewayName, err, strings.TrimSpace(string(output))))
+			message := fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(output)))
+			if !containerExists(cleanupCtx, sandbox.Engine, gatewayName) {
+				notes = append(notes, fmt.Sprintf("gateway %s was already removed after cleanup error: %s", gatewayName, message))
+			} else {
+				notes = append(notes, fmt.Sprintf("remove gateway %s failed: %s", gatewayName, message))
+			}
 		} else {
 			notes = append(notes, "removed gateway "+gatewayName)
 		}
@@ -129,6 +134,11 @@ func setupContainerExternalRouting(policy model.ExternalPolicy, sandbox SandboxO
 		Sandbox:  sandbox,
 		cleanup:  cleanup,
 	}, nil
+}
+
+func containerExists(ctx context.Context, engine, name string) bool {
+	output, err := runEngineCommand(ctx, engine, "inspect", name)
+	return err == nil && strings.TrimSpace(string(output)) != ""
 }
 
 func createRoutingNetwork(ctx context.Context, engine, networkName string, mode model.ExternalMode) error {

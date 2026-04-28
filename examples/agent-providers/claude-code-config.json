@@ -1,0 +1,27 @@
+{
+  "default_agent": "claude",
+  "agent_providers": {
+    "claude": {
+      "name": "claude",
+      "kind": "command",
+      "description": "Claude Code CLI provider using print mode with the Code Crucible prompt supplied on stdin.",
+      "command": [
+        "claude",
+        "--bare",
+        "--output-format",
+        "text",
+        "--permission-mode",
+        "acceptEdits",
+        "-p",
+        "Read the Code Crucible prompt from stdin and complete the requested optimization-agent task. Keep generated artifacts inside the run archive unless the prompt explicitly says otherwise."
+      ],
+      "capabilities": {
+        "supports_discovery": true,
+        "supports_generation": true,
+        "supports_evolution": true,
+        "supports_json_output": false,
+        "requires_git_repo": false
+      }
+    }
+  }
+}

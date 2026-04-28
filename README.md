@@ -125,6 +125,39 @@ Additional local command providers can be configured in `.crucible/config.json`:
 
 Command providers receive the prompt on stdin. Code Crucible also exports `CRUCIBLE_PROVIDER_NAME`, `CRUCIBLE_PROJECT_DIR`, `CRUCIBLE_RUN_DIR`, `CRUCIBLE_PROMPT_PATH`, `CRUCIBLE_OUTPUT_LAST_MESSAGE`, and `CRUCIBLE_MODEL` when a model override is supplied. If the provider does not write the final response file itself, stdout is archived as the final response.
 
+The repository includes a Claude Code command-provider example at [examples/agent-providers/claude-code-config.json](examples/agent-providers/claude-code-config.json). It uses Claude Code print mode with the Code Crucible prompt supplied on stdin:
+
+```json
+{
+  "default_agent": "claude",
+  "agent_providers": {
+    "claude": {
+      "name": "claude",
+      "kind": "command",
+      "command": [
+        "claude",
+        "--bare",
+        "--output-format",
+        "text",
+        "--permission-mode",
+        "acceptEdits",
+        "-p",
+        "Read the Code Crucible prompt from stdin and complete the requested optimization-agent task. Keep generated artifacts inside the run archive unless the prompt explicitly says otherwise."
+      ],
+      "capabilities": {
+        "supports_discovery": true,
+        "supports_generation": true,
+        "supports_evolution": true,
+        "supports_json_output": false,
+        "requires_git_repo": false
+      }
+    }
+  }
+}
+```
+
+Use `crucible generate --agent claude --dry-run` to inspect the archived command before spending a model run.
+
 If the source path or evaluator boundary is unclear, create a discovery plan first:
 
 ```bash
@@ -411,6 +444,8 @@ candidate-NNNN/
 
 If the evaluator fails or omits `verdict.json`, Code Crucible marks the candidate as failed. If `metrics.json` is missing or invalid, the candidate can still receive a failed verdict with a warning.
 
+Use `--require-passed` in smoke tests or CI when the shell command should fail if any evaluated candidate does not pass.
+
 Code Crucible also records resource metrics for each evaluator invocation in `resource-metrics.json` and merges them into `metrics.json` before updating `leaderboard.json`. These include wall time, user CPU time, system CPU time, CPU percent, max RSS, context switches, block I/O counts, and `resource_metric_source`. Evaluator scripts should still emit domain-specific metrics such as benchmark latency, allocations, external calls, and correctness verdicts. When an evaluator reports `p95_latency_ms`, it should be a true 95th percentile value for the sampled benchmark or request timings, not an average or median.
 
 Evaluator execution is local by default. For containerized evaluation, pass `--sandbox-engine docker` or `--sandbox-engine podman` with an image that contains `bash` and the required project toolchain:
@@ -418,7 +453,7 @@ Evaluator execution is local by default. For containerized evaluation, pass `--s
 ```bash
 crucible evaluate \
   --sandbox-engine podman \
-  --sandbox-image golang:1.25 \
+  --sandbox-image golang:1.22 \
   --sandbox-profile strict \
   --cpu-limit 2
 ```
@@ -450,7 +485,7 @@ For clients that ignore proxy environment variables, container evaluation can ro
 ```bash
 crucible evaluate \
   --sandbox-engine podman \
-  --sandbox-image golang:1.25 \
+  --sandbox-image golang:1.22 \
   --external-routing gateway-network
 ```
 
@@ -569,13 +604,27 @@ Run the end-to-end proof-of-concept smoke test:
 make smoke
 ```
 
+Run the Podman gateway-network proof of concept when sandbox routing changed:
+
+```bash
+make smoke-gateway-network-podman
+```
+
+Run the equivalent Docker check separately when validating cross-engine behavior:
+
+```bash
+make smoke-gateway-network-docker
+```
+
+These targets require a local `golang:1.22` container image and a container runtime that can create user networks. They validate fixture-backed raw HTTP and HTTPS routing through the gateway sidecar; do not compare Podman and Docker timing metrics with each other.
+
 Run the CI-style regression tournament, which extends the smoke test by rebuilding the index, querying passed candidates, and rendering an HTML report:
 
 ```bash
 make regression-tournament
 ```
 
-These targets create ignored artifacts under `examples/go-ranking-poc/.crucible/`.
+These targets create ignored artifacts under each example project's `.crucible/` directory.
 
 Remove local build, cache, and smoke-test artifacts with:
 
@@ -586,6 +635,19 @@ make clean
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](SECURITY.md) for security notes, and [docs/release-checklist.md](docs/release-checklist.md) before publishing or tagging.
 
 ## Roadmap
+
+Current priorities:
+
+- [x] Validate `gateway-network` with a live Podman proof of concept covering declared raw HTTP and HTTPS fixture hosts
+- [x] Make the Podman `gateway-network` proof of concept repeatable from the Makefile and release checklist
+- [x] Run an equivalent Docker `gateway-network` check, while keeping Podman and Docker timing results separate
+- [x] Add a Claude command-provider example to prove the model-agnostic provider contract beyond Codex
+- [x] Perform a public experimental-repo onboarding pass without cutting a tagged release
+
+Deferred roadmap:
+
+- [ ] Add protocol-specific external routing adapters beyond HTTP/HTTPS, such as gRPC, database clients, and arbitrary TCP
+- [ ] Upgrade the TUI forms to Bubbles widgets after the core evaluator and sandbox behavior is validated
 
 Completed cleanup and infrastructure:
 

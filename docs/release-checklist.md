@@ -28,6 +28,15 @@ Use this checklist before pushing to a remote, tagging, or preparing a public re
   ```bash
   make smoke
   ```
+- Run the Podman gateway-network proof of concept when sandbox routing changed:
+  ```bash
+  make smoke-gateway-network-podman
+  ```
+- Run the Docker gateway-network proof of concept when cross-engine routing changed:
+  ```bash
+  make smoke-gateway-network-docker
+  ```
+  Keep Podman and Docker timing results separate; these targets validate routing behavior, not cross-engine performance.
 - Run the CI-style regression tournament when reports, indexes, or tournament automation changed:
   ```bash
   make regression-tournament

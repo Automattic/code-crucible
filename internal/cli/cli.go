@@ -74,7 +74,7 @@ Usage:
   crucible run (--optimize TEXT | --task-file PATH) [--project-dir DIR] [--source-path PATH] [--agent AGENT] [--agent-plan PATH] [--variants N] [--generate]
   crucible generate [--project-dir DIR] [--run RUN_ID] [--agent AGENT]
   crucible adopt [--project-dir DIR] [--run RUN_ID]
-  crucible evaluate [--project-dir DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--warmups N] [--repetitions N] [--outliers MODE] [--sample-stat STAT] [--nice N] [--cpu-limit N] [--sandbox-profile PROFILE] [--sandbox-engine docker|podman --sandbox-image IMAGE] [--external-routing gateway-network]
+  crucible evaluate [--project-dir DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--warmups N] [--repetitions N] [--outliers MODE] [--sample-stat STAT] [--nice N] [--cpu-limit N] [--sandbox-profile PROFILE] [--sandbox-engine docker|podman --sandbox-image IMAGE] [--external-routing gateway-network] [--require-passed]
   crucible next-round [--project-dir DIR] [--run RUN_ID] [--parents N]
   crucible evolve [--project-dir DIR] [--run RUN_ID] [--rounds N] [--parents N] [--agent AGENT]
   crucible leaderboard [--project-dir DIR] [--run RUN_ID] [--json]
