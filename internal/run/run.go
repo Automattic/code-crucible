@@ -68,9 +68,17 @@ func Create(opts Options) (*CreatedRun, error) {
 		opts.Agent = cfg.DefaultAgent
 	}
 	opts.Agent = agent.NormalizeProviderName(opts.Agent)
-	if err := agent.ValidateProviderCapability(opts.Agent, "generation"); err != nil {
+	provider, ok := agent.ProviderFromConfig(opts.Agent, cfg.AgentProviders)
+	if !ok {
+		return nil, fmt.Errorf("unsupported agent provider %q", opts.Agent)
+	}
+	if err := agent.ValidateProviderDefinition(provider); err != nil {
 		return nil, err
 	}
+	if !provider.Supports("generation") {
+		return nil, fmt.Errorf("agent provider %q does not support generation", provider.Name)
+	}
+	opts.Agent = provider.Name
 	if opts.Exploration < 0 {
 		opts.Exploration = 0
 	}

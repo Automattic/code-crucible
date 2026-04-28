@@ -57,11 +57,12 @@ func runDiscover(args []string, stdout, stderr io.Writer) int {
 	if discoveryAgent == "" {
 		discoveryAgent = agent.ProviderLocal
 	}
-	if err := agent.ValidateProviderCapability(discoveryAgent, "discovery"); err != nil {
+	provider, err := configuredProvider(*projectDir, discoveryAgent, "discovery")
+	if err != nil {
 		fmt.Fprintf(stderr, "discover failed: %v\n", err)
 		return 2
 	}
-	switch discoveryAgent {
+	switch provider.Kind {
 	case agent.ProviderLocal:
 		printDiscoveryPlan(stdout, plan)
 		return 0
@@ -76,8 +77,10 @@ func runDiscover(args []string, stdout, stderr io.Writer) int {
 			SkipGitRepoCheck: *skipGitRepoCheck,
 			DryRun:           *dryRun,
 		}, stdout, stderr)
+	case "command":
+		return runCommandDiscovery(*projectDir, plan, provider, *model, *dryRun, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "discover failed: provider %q is not implemented for discovery yet\n", discoveryAgent)
+		fmt.Fprintf(stderr, "discover failed: provider %q is not implemented for discovery yet\n", provider.Name)
 		return 2
 	}
 }
@@ -139,6 +142,56 @@ func runCodexDiscovery(projectDir string, plan *discovery.Plan, opts codexDiscov
 	}
 	printDiscoveryPlan(stdout, plan)
 	fmt.Fprintf(stdout, "Codex discovery complete\n")
+	fmt.Fprintf(stdout, "Agent plan: %s\n", result.FinalPath)
+	if parsed, structuredPath, err := loadOrExtractAgentPlan(agentPlanPath, result.FinalPath); err != nil {
+		fmt.Fprintf(stderr, "discover warning: structured agent plan was not captured: %v\n", err)
+	} else {
+		fmt.Fprintf(stdout, "Structured plan: %s\n", structuredPath)
+		printStructuredAgentPlanSummary(stdout, parsed)
+	}
+	fmt.Fprintf(stdout, "Invocation: %s\n", result.InvocationPath)
+	return 0
+}
+
+func runCommandDiscovery(projectDir string, plan *discovery.Plan, provider agent.ProviderDefinition, modelName string, dryRun bool, stdout, stderr io.Writer) int {
+	absProject, err := filepath.Abs(projectDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "discover failed: %v\n", err)
+		return 1
+	}
+	planDir := archive.ProjectPath(absProject, plan.PlanDir)
+	promptPath := archive.ProjectPath(absProject, plan.PromptPath)
+	outputLastMessage := filepath.Join(planDir, "agent-plan.md")
+	agentPlanPath := discovery.AgentPlanPath(planDir)
+	if dryRun {
+		printDiscoveryPlan(stdout, plan)
+		fmt.Fprintf(stdout, "\nAgent provider: %s\n", provider.Name)
+		fmt.Fprintf(stdout, "Provider command:\n%s\n\n", agent.FormatCommand(agent.BuildCommandProviderCommand(provider)))
+		fmt.Fprintf(stdout, "Prompt stdin: %s\n", promptPath)
+		fmt.Fprintf(stdout, "Project root: %s\n", absProject)
+		fmt.Fprintf(stdout, "Discovery archive: %s\n", planDir)
+		fmt.Fprintf(stdout, "Agent plan: %s\n", outputLastMessage)
+		fmt.Fprintf(stdout, "Structured plan: %s\n", agentPlanPath)
+		return 0
+	}
+	result, err := agent.RunCommandProvider(context.Background(), agent.CommandProviderOptions{
+		Provider:          provider,
+		ProjectDir:        absProject,
+		RunDir:            planDir,
+		PromptPath:        promptPath,
+		Model:             modelName,
+		OutputLastMessage: outputLastMessage,
+	}, stdout, stderr)
+	if err != nil {
+		if result != nil {
+			fmt.Fprintf(stderr, "discover failed: provider %s exited with status %d\n", provider.Name, result.ExitCode)
+		} else {
+			fmt.Fprintf(stderr, "discover failed: %v\n", err)
+		}
+		return 1
+	}
+	printDiscoveryPlan(stdout, plan)
+	fmt.Fprintf(stdout, "%s discovery complete\n", provider.Name)
 	fmt.Fprintf(stdout, "Agent plan: %s\n", result.FinalPath)
 	if parsed, structuredPath, err := loadOrExtractAgentPlan(agentPlanPath, result.FinalPath); err != nil {
 		fmt.Fprintf(stderr, "discover warning: structured agent plan was not captured: %v\n", err)

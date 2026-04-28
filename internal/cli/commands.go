@@ -97,10 +97,12 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 
 	runAgent := agent.NormalizeProviderName(*agentName)
 	if runAgent != "" {
-		if err := agent.ValidateProviderCapability(runAgent, "generation"); err != nil {
+		provider, err := configuredProvider(*projectDir, runAgent, "generation")
+		if err != nil {
 			fmt.Fprintf(stderr, "run failed: %v\n", err)
 			return 2
 		}
+		runAgent = provider.Name
 	}
 	if *generateNow && runAgent == "" {
 		cfg, err := project.Ensure(*projectDir)
@@ -109,10 +111,12 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		runAgent = cfg.DefaultAgent
-		if err := agent.ValidateProviderCapability(runAgent, "generation"); err != nil {
+		provider, err := configuredProvider(*projectDir, runAgent, "generation")
+		if err != nil {
 			fmt.Fprintf(stderr, "run --generate failed: %v\n", err)
 			return 2
 		}
+		runAgent = provider.Name
 	}
 
 	created, err := run.Create(run.Options{
@@ -159,6 +163,28 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	}
 
 	return 0
+}
+
+func configuredProvider(projectDir, name, capability string) (agent.ProviderDefinition, error) {
+	absProject, err := filepath.Abs(projectDir)
+	if err != nil {
+		return agent.ProviderDefinition{}, err
+	}
+	var configured map[string]agent.ProviderDefinition
+	if cfg, err := project.Load(absProject); err == nil {
+		configured = cfg.AgentProviders
+	}
+	provider, ok := agent.ProviderFromConfig(name, configured)
+	if !ok {
+		return agent.ProviderDefinition{}, fmt.Errorf("unsupported agent provider %q", agent.NormalizeProviderName(name))
+	}
+	if err := agent.ValidateProviderDefinition(provider); err != nil {
+		return agent.ProviderDefinition{}, err
+	}
+	if !provider.Supports(capability) {
+		return agent.ProviderDefinition{}, fmt.Errorf("agent provider %q does not support %s", provider.Name, capability)
+	}
+	return provider, nil
 }
 
 func loadAgentPlanForProject(projectDir, path string) (*discovery.AgentPlan, error) {

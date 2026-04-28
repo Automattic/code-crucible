@@ -15,12 +15,13 @@ import (
 const DirName = ".crucible"
 
 type Config struct {
-	Version               int                  `json:"version"`
-	ProjectName           string               `json:"project_name"`
-	CreatedAt             time.Time            `json:"created_at"`
-	DefaultAgent          string               `json:"default_agent"`
-	DefaultExternalPolicy model.ExternalPolicy `json:"default_external_policy"`
-	ArchiveDir            string               `json:"archive_dir"`
+	Version               int                                 `json:"version"`
+	ProjectName           string                              `json:"project_name"`
+	CreatedAt             time.Time                           `json:"created_at"`
+	DefaultAgent          string                              `json:"default_agent"`
+	AgentProviders        map[string]agent.ProviderDefinition `json:"agent_providers,omitempty"`
+	DefaultExternalPolicy model.ExternalPolicy                `json:"default_external_policy"`
+	ArchiveDir            string                              `json:"archive_dir"`
 }
 
 func WorkDir(projectDir string) string {
@@ -144,6 +145,18 @@ func NormalizeConfig(cfg *Config) {
 	}
 	if strings.TrimSpace(cfg.ArchiveDir) == "" {
 		cfg.ArchiveDir = "runs"
+	}
+	if len(cfg.AgentProviders) > 0 {
+		normalized := make(map[string]agent.ProviderDefinition, len(cfg.AgentProviders))
+		for key, provider := range cfg.AgentProviders {
+			provider.Name = agent.NormalizeProviderName(provider.Name)
+			if provider.Name == "" {
+				provider.Name = agent.NormalizeProviderName(key)
+			}
+			provider.Kind = agent.NormalizeProviderName(provider.Kind)
+			normalized[provider.Name] = provider
+		}
+		cfg.AgentProviders = normalized
 	}
 }
 

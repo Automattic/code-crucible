@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Automattic/code-crucible/internal/agent"
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/model"
 	"github.com/Automattic/code-crucible/internal/run"
@@ -450,6 +451,110 @@ JSON
 	}
 	if len(matches) != 1 {
 		t.Fatalf("expected one Codex final message artifact, found %d", len(matches))
+	}
+}
+
+func TestRunGenerateUsesConfiguredCommandProvider(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n\nfunc Rank() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	providerScript := filepath.Join(t.TempDir(), "provider.sh")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+prompt="$(cat)"
+bt=$'\140'
+round_dir="$(awk -v bt="$bt" 'index($0, "Current round directory:") { split($0, a, bt); print a[2]; exit }' <<< "$prompt")"
+candidate="$(awk -v bt="$bt" 'index($0, "Create candidates starting at") { split($0, a, bt); print a[2]; exit }' <<< "$prompt")"
+if [[ -z "$round_dir" || -z "$candidate" ]]; then
+  echo "failed to parse prompt" >&2
+  exit 9
+fi
+mkdir -p "$round_dir/$candidate/src"
+printf 'package search\n\nfunc Rank() int { return 3 }\n' > "$round_dir/$candidate/src/rank.go"
+printf '# Candidate\n' > "$round_dir/$candidate/design.md"
+cat > "$round_dir/$candidate/candidate.json" <<JSON
+{
+  "id": "$candidate",
+  "name": "command $candidate",
+  "round": 1,
+  "parent_ids": ["candidate-0000-baseline"],
+  "agent": "$CRUCIBLE_PROVIDER_NAME",
+  "source_path": "src",
+  "baseline": false
+}
+JSON
+printf 'command provider complete\n'
+`
+	if err := os.WriteFile(providerScript, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(projectDir, ".crucible"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := struct {
+		Version               int                                 `json:"version"`
+		ProjectName           string                              `json:"project_name"`
+		DefaultAgent          string                              `json:"default_agent"`
+		AgentProviders        map[string]agent.ProviderDefinition `json:"agent_providers"`
+		DefaultExternalPolicy model.ExternalPolicy                `json:"default_external_policy"`
+		ArchiveDir            string                              `json:"archive_dir"`
+	}{
+		Version:      1,
+		ProjectName:  "fixture",
+		DefaultAgent: "custom",
+		AgentProviders: map[string]agent.ProviderDefinition{
+			"custom": {
+				Name:    "custom",
+				Kind:    "command",
+				Command: []string{providerScript},
+				Capabilities: agent.ProviderCapabilities{
+					SupportsGeneration: true,
+					SupportsEvolution:  true,
+				},
+			},
+		},
+		DefaultExternalPolicy: model.ExternalPolicy{Mode: model.ExternalModeDeny},
+		ArchiveDir:            "runs",
+	}
+	configRaw, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, ".crucible", "config.json"), append(configRaw, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--optimize", "make ranking faster",
+		"--source-path", "internal/search/rank.go",
+		"--variants", "1",
+		"--generate",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s\nstdout:\n%s", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "custom generation complete") {
+		t.Fatalf("stdout did not include custom provider completion:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Added: candidate-0001") {
+		t.Fatalf("stdout did not include adoption result:\n%s", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "agents", "custom-*-invocation.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one command provider invocation, found %d", len(matches))
 	}
 }
 

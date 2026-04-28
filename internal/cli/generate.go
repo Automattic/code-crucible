@@ -85,10 +85,6 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "generate failed: %v\n", err)
 		return 2
 	}
-	if provider.Kind != "codex" {
-		fmt.Fprintf(stderr, "generate failed: provider %q is not implemented for generation yet\n", provider.Name)
-		return 2
-	}
 	projectDir := absProject
 	if cfg.ProjectDir != "" {
 		projectDir = archive.ProjectPath(absProject, cfg.ProjectDir)
@@ -108,6 +104,14 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 	}
 	if opts.OutputLastMessage == "" {
 		opts.OutputLastMessage = filepath.Join(runDir, "agents", "codex-final.md")
+	}
+
+	if provider.Kind == "command" {
+		return runCommandGenerationProvider(provider, projectDir, runDir, promptPath, cfg.ID, opts, stdout, stderr)
+	}
+	if provider.Kind != "codex" {
+		fmt.Fprintf(stderr, "generate failed: provider %q is not implemented for generation yet\n", provider.Name)
+		return 2
 	}
 
 	codexOpts := agent.CodexOptions{
@@ -169,22 +173,82 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runCommandGenerationProvider(provider agent.ProviderDefinition, projectDir, runDir, promptPath, runID string, opts generationOptions, stdout, stderr io.Writer) int {
+	if opts.OutputLastMessage == filepath.Join(runDir, "agents", "codex-final.md") {
+		opts.OutputLastMessage = filepath.Join(runDir, "agents", provider.Name+"-final.md")
+	}
+	command := agent.BuildCommandProviderCommand(provider)
+	if opts.DryRun {
+		fmt.Fprintf(stdout, "Agent provider: %s\n", provider.Name)
+		fmt.Fprintf(stdout, "Provider command:\n%s\n\n", agent.FormatCommand(command))
+		fmt.Fprintf(stdout, "Prompt stdin: %s\n", promptPath)
+		fmt.Fprintf(stdout, "Project root: %s\n", projectDir)
+		fmt.Fprintf(stdout, "Run archive: %s\n", runDir)
+		fmt.Fprintf(stdout, "Final message: %s\n", opts.OutputLastMessage)
+		return 0
+	}
+
+	fmt.Fprintf(stdout, "Running %s for run %s\n", provider.Name, runID)
+	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
+	result, err := agent.RunCommandProvider(context.Background(), agent.CommandProviderOptions{
+		Provider:          provider,
+		ProjectDir:        projectDir,
+		RunDir:            runDir,
+		PromptPath:        promptPath,
+		Model:             opts.Model,
+		OutputLastMessage: opts.OutputLastMessage,
+	}, stdout, stderr)
+	if err != nil {
+		if result != nil {
+			fmt.Fprintf(stderr, "Provider %s exited with status %d\n", provider.Name, result.ExitCode)
+			fmt.Fprintf(stderr, "Invocation: %s\n", result.InvocationPath)
+			fmt.Fprintf(stderr, "Stdout: %s\n", result.StdoutPath)
+			fmt.Fprintf(stderr, "Stderr: %s\n", result.StderrPath)
+		}
+		fmt.Fprintf(stderr, "generate failed: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "\n%s generation complete\n", provider.Name)
+	fmt.Fprintf(stdout, "Invocation: %s\n", result.InvocationPath)
+	fmt.Fprintf(stdout, "Stdout: %s\n", result.StdoutPath)
+	fmt.Fprintf(stdout, "Stderr: %s\n", result.StderrPath)
+	fmt.Fprintf(stdout, "Final message: %s\n", result.FinalPath)
+
+	report, err := run.AdoptCandidates(run.AdoptionOptions{
+		ProjectDir: opts.ProjectDir,
+		RunID:      runID,
+		Model:      opts.Model,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "adopt failed after generation: %v\n", err)
+		return 1
+	}
+	printAdoptionReport(stdout, stderr, report)
+	return 0
+}
+
 func resolveGenerationProvider(projectDir string, cfg *model.RunConfig, requested string) (agent.ProviderDefinition, error) {
 	name := agent.NormalizeProviderName(requested)
 	if name == "" && cfg != nil {
 		name = agent.NormalizeProviderName(cfg.Agent)
 	}
-	if name == "" {
-		if projectConfig, err := project.Load(projectDir); err == nil {
+	var configured map[string]agent.ProviderDefinition
+	if projectConfig, err := project.Load(projectDir); err == nil {
+		configured = projectConfig.AgentProviders
+		if name == "" {
 			name = agent.NormalizeProviderName(projectConfig.DefaultAgent)
 		}
 	}
 	if name == "" {
 		name = agent.ProviderCodex
 	}
-	provider, ok := agent.Provider(name)
+	provider, ok := agent.ProviderFromConfig(name, configured)
 	if !ok {
 		return agent.ProviderDefinition{}, fmt.Errorf("unsupported --agent %q", name)
+	}
+	if err := agent.ValidateProviderDefinition(provider); err != nil {
+		return agent.ProviderDefinition{}, err
 	}
 	if !provider.Supports("generation") {
 		return agent.ProviderDefinition{}, fmt.Errorf("agent provider %q does not support generation", provider.Name)

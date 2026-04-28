@@ -23,6 +23,7 @@ type ProviderDefinition struct {
 	Name         string               `json:"name"`
 	Kind         string               `json:"kind"`
 	Description  string               `json:"description,omitempty"`
+	Command      []string             `json:"command,omitempty"`
 	Capabilities ProviderCapabilities `json:"capabilities"`
 }
 
@@ -60,6 +61,25 @@ func Provider(name string) (ProviderDefinition, bool) {
 	return provider, ok
 }
 
+func ProviderFromConfig(name string, configured map[string]ProviderDefinition) (ProviderDefinition, bool) {
+	name = NormalizeProviderName(name)
+	if provider, ok := Provider(name); ok {
+		return provider, true
+	}
+	for key, provider := range configured {
+		providerName := NormalizeProviderName(provider.Name)
+		if providerName == "" {
+			providerName = NormalizeProviderName(key)
+		}
+		if providerName == name {
+			provider.Name = providerName
+			provider.Kind = NormalizeProviderName(provider.Kind)
+			return provider, true
+		}
+	}
+	return ProviderDefinition{}, false
+}
+
 func NormalizeProviderName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
@@ -84,6 +104,36 @@ func ValidateProviderCapability(name, capability string) error {
 		return nil
 	}
 	return fmt.Errorf("agent provider %q does not support %s", provider.Name, capability)
+}
+
+func ValidateProviderDefinition(provider ProviderDefinition) error {
+	provider.Name = NormalizeProviderName(provider.Name)
+	provider.Kind = NormalizeProviderName(provider.Kind)
+	if provider.Name == "" {
+		return fmt.Errorf("provider name is required")
+	}
+	switch provider.Kind {
+	case "codex", "local":
+		if builtin, ok := Provider(provider.Name); ok && builtin.Kind == provider.Kind {
+			return nil
+		}
+		return fmt.Errorf("provider %q uses reserved kind %q", provider.Name, provider.Kind)
+	case "command":
+		if len(provider.Command) == 0 {
+			return fmt.Errorf("provider %q command is required", provider.Name)
+		}
+		for i, arg := range provider.Command {
+			if strings.TrimSpace(arg) == "" {
+				return fmt.Errorf("provider %q command argument %d is empty", provider.Name, i+1)
+			}
+		}
+		if !provider.Capabilities.SupportsDiscovery && !provider.Capabilities.SupportsGeneration && !provider.Capabilities.SupportsEvolution {
+			return fmt.Errorf("provider %q must support at least one agent capability", provider.Name)
+		}
+		return nil
+	default:
+		return fmt.Errorf("provider %q has unsupported kind %q", provider.Name, provider.Kind)
+	}
 }
 
 func (p ProviderDefinition) Supports(capability string) bool {
