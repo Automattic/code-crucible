@@ -651,6 +651,7 @@ Current priorities:
 - [x] Add cancellable TUI long-running actions with cancellation events and `canceled` candidate status
 - [x] Add richer cancellation cleanup for partial generation artifacts
 - [x] Clarify `run`/`generate` next steps when a run is waiting on generation or a real evaluator
+- [x] Auto-select the only available run in interactive actions instead of prompting
 
 Deferred roadmap:
 

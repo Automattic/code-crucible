@@ -382,15 +382,18 @@ func TestInteractiveExistingProjectShowsLeaderboard(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n2\n\nq\n"), &stdout, &stderr)
+	code := RunWithIO(nil, strings.NewReader("\n2\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "Found Code Crucible work area") {
 		t.Fatalf("stdout did not detect existing setup:\n%s", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "Latest run:") {
-		t.Fatalf("stdout did not show latest run status:\n%s", stdout.String())
+	if !strings.Contains(stdout.String(), "Using only run:") {
+		t.Fatalf("stdout did not auto-select the only run:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "Run [latest]:") {
+		t.Fatalf("stdout prompted for a run despite only one run:\n%s", stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "candidate-0000-baseline") {
 		t.Fatalf("stdout did not show leaderboard:\n%s", stdout.String())
@@ -419,7 +422,7 @@ func TestInteractiveReportPromptsForOutputAndJSON(t *testing.T) {
 
 	outputPath := filepath.Join(projectDir, "interactive-report.html")
 	var stdout, stderr bytes.Buffer
-	input := "\n6\n\n" + outputPath + "\ny\nq\n"
+	input := "\n6\n" + outputPath + "\ny\nq\n"
 	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
@@ -453,7 +456,7 @@ func TestInteractiveIndexPromptsForRunAndJSON(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n8\ny\n\ny\nq\n"), &stdout, &stderr)
+	code := RunWithIO(nil, strings.NewReader("\n8\ny\ny\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -495,7 +498,7 @@ func TestInteractiveGeneratePromptsForAdvancedOptions(t *testing.T) {
 	t.Setenv("EDITOR_LOG", editorLog)
 
 	finalPath := filepath.Join(projectDir, "codex-final.md")
-	input := "\n3\n\n\nedit\n\ny\ngpt-test\n" + finalPath + "\nprofile-a\nread-only\non-request\ny\nq\n"
+	input := "\n3\n\nedit\n\ny\ngpt-test\n" + finalPath + "\nprofile-a\nread-only\non-request\ny\nq\n"
 	var stdout, stderr bytes.Buffer
 	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
@@ -698,7 +701,7 @@ func TestInteractiveAdoptGeneratedCandidate(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n11\n\n\nq\n"), &stdout, &stderr)
+	code := RunWithIO(nil, strings.NewReader("\n11\n\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}

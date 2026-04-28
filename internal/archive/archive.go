@@ -70,6 +70,10 @@ func PreviousRunDir(projectDir string) (string, error) {
 	return runs[len(runs)-2], nil
 }
 
+func ListRunDirs(projectDir string) ([]string, error) {
+	return runDirs(projectDir)
+}
+
 func runDirs(projectDir string) ([]string, error) {
 	runsDir := filepath.Join(project.WorkDir(projectDir), "runs")
 	entries, err := os.ReadDir(runsDir)

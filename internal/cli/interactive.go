@@ -325,11 +325,21 @@ func (s interactiveSession) menu(projectDir string) int {
 }
 
 func (s interactiveSession) askRunSelector(projectDir string) (string, bool) {
-	runDir, err := archive.LatestRunDir(projectDir)
+	runs, err := archive.ListRunDirs(projectDir)
 	if err != nil {
 		fmt.Fprintln(s.stdout, "No runs available.")
 		return "", false
 	}
+	switch len(runs) {
+	case 0:
+		fmt.Fprintln(s.stdout, "No runs available.")
+		return "", false
+	case 1:
+		runID := filepath.Base(runs[0])
+		fmt.Fprintf(s.stdout, "Using only run: %s\n", runID)
+		return runID, true
+	}
+	runDir := runs[len(runs)-1]
 	fmt.Fprintf(s.stdout, "Latest run: %s\n", filepath.Base(runDir))
 	answer, ok := s.ask("Run [latest]: ")
 	if !ok {
