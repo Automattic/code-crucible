@@ -251,6 +251,12 @@ func TestExternalEvaluationEnvAddsFixtureGatewayDefaults(t *testing.T) {
 		"CRUCIBLE_MOCK_GATEWAY_SOURCE=" + filepath.ToSlash(gatewaySource),
 		"CRUCIBLE_MOCK_GATEWAY_ADDR=127.0.0.1:19090",
 		"CRUCIBLE_MOCK_GATEWAY_URL=http://127.0.0.1:19090",
+		"HTTP_PROXY=http://127.0.0.1:19090",
+		"http_proxy=http://127.0.0.1:19090",
+		"HTTPS_PROXY=http://127.0.0.1:19090",
+		"https_proxy=http://127.0.0.1:19090",
+		"NO_PROXY=localhost,127.0.0.1,::1",
+		"no_proxy=localhost,127.0.0.1,::1",
 	} {
 		if !containsArg(env, want) {
 			t.Fatalf("env missing %q: %#v", want, env)

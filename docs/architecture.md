@@ -18,7 +18,7 @@ optimization request
   -> next generation prompt
 ```
 
-The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, leaderboard scoring, and resource metric archival. Transparent external proxying and multi-round evolution are the next major execution-layer gaps.
+The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP proxy env routing, leaderboard scoring, and resource metric archival. HTTPS replay and multi-round evolution are the next major execution-layer gaps.
 
 ## Project Mode
 
@@ -108,9 +108,9 @@ Supported modes:
 - `replay`
 - `record`
 
-The current implementation records and communicates the policy. Container evaluation enforces `deny` mode by running with `--sandbox-network none`; deny-mode container evaluations fail closed if a different sandbox network is requested. For `mock` and `replay`, sandboxed evaluators receive fixture gateway environment variables and the container wrapper starts the archived gateway on loopback before the evaluator runs. Local mode and modes other than `deny`, `mock`, and `replay` remain evaluator-advisory until local mocks, proxying, DNS overrides, or protocol-specific adapters are implemented.
+The current implementation records and communicates the policy. Container evaluation enforces `deny` mode by running with `--sandbox-network none`; deny-mode container evaluations fail closed if a different sandbox network is requested. For `mock` and `replay`, sandboxed evaluators receive fixture gateway and proxy environment variables, and the container wrapper starts the archived gateway on loopback before the evaluator runs. Local mode and modes other than `deny`, `mock`, and `replay` remain evaluator-advisory until local mocks, DNS overrides, or protocol-specific adapters are implemented.
 
-For `mock`, `replay`, and `record` modes, each run archives an HTTP fixture file at `external/http-fixtures.json`. If `--external-fixtures` is provided, the file is validated and copied into the run archive; otherwise an empty fixture template is created. The generated `external/mock-gateway.go` is the first gateway artifact. It is started automatically for sandboxed fixture-backed evaluations, but transparent HTTPS replay and protocol-specific routing are still planned work.
+For `mock`, `replay`, and `record` modes, each run archives an HTTP fixture file at `external/http-fixtures.json`. If `--external-fixtures` is provided, the file is validated and copied into the run archive; otherwise an empty fixture template is created. The generated `external/mock-gateway.go` is the first gateway artifact. It is started automatically for sandboxed fixture-backed evaluations and can serve standard HTTP proxy requests, but HTTPS replay and protocol-specific routing are still planned work.
 
 ## Agent Integration
 
@@ -164,7 +164,7 @@ If `--evaluator` is provided, the scaffold wraps that command and records minima
 
 Evaluator execution is local by default. Passing `--sandbox-engine docker` or `--sandbox-engine podman` with `--sandbox-image IMAGE` wraps each evaluator invocation in `docker run` or `podman run`. Container mode bind-mounts the run archive read/write, bind-mounts the host project read-only, defaults to `--network none`, maps `--cpu-limit` to a container CPU quota, and records the sandbox settings in JSON evaluation reports.
 
-For fixture-backed `mock` and `replay` runs, evaluator environments include `CRUCIBLE_HTTP_FIXTURES`, `CRUCIBLE_MOCK_GATEWAY_SOURCE`, `CRUCIBLE_MOCK_GATEWAY_ADDR`, and `CRUCIBLE_MOCK_GATEWAY_URL`. In container mode, `evaluator/resource-wrapper.sh` starts that gateway before invoking `evaluator.sh`. The current gateway is generated Go source, so the sandbox image must include `go` until Code Crucible ships a packaged gateway binary.
+For fixture-backed `mock` and `replay` runs, evaluator environments include `CRUCIBLE_HTTP_FIXTURES`, `CRUCIBLE_MOCK_GATEWAY_SOURCE`, `CRUCIBLE_MOCK_GATEWAY_ADDR`, `CRUCIBLE_MOCK_GATEWAY_URL`, and standard proxy variables such as `HTTP_PROXY` and `HTTPS_PROXY`. In container mode, `evaluator/resource-wrapper.sh` starts that gateway before invoking `evaluator.sh`. The current gateway is generated Go source, so the sandbox image must include `go` until Code Crucible ships a packaged gateway binary.
 
 Each evaluator run writes `resource-metrics.json` beside the candidate's `metrics.json` and `verdict.json`. Local mode records host child-process metrics. Container mode runs `evaluator/resource-wrapper.sh` inside the sandbox so wall time, user CPU time, system CPU time, and CPU percent come from the isolated evaluator process rather than the host Docker or Podman client. `metrics.resource_metric_source` identifies the source used for the merged resource metrics.
 
@@ -180,7 +180,8 @@ The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads 
 
 The planned evaluator layer will add:
 
-- Transparent HTTP proxy routing and HTTPS replay
+- HTTPS CONNECT replay
+- Lower-level routing for clients that ignore proxy environment variables
 - Allowlist enforcement
 - External trace collection
 - Richer sandbox profiles

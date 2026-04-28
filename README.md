@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, and archive leaderboard metrics. Transparent external proxying, multi-round evolution, and automated reporting are still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, route standard HTTP proxy traffic to fixtures, and archive leaderboard metrics. HTTPS replay, multi-round evolution, and automated reporting are still under active development.
 
 ## Why
 
@@ -30,7 +30,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Candidate adoption from generated `candidate-NNNN` artifacts into `leaderboard.json`
 - Local evaluator execution through `crucible evaluate`
 - Docker and Podman evaluator sandboxing with in-container resource metrics
-- Fixture-backed mock gateway startup for sandboxed `mock` and `replay` evaluations
+- Fixture-backed mock gateway startup and HTTP proxy env wiring for sandboxed `mock` and `replay` evaluations
 - Ranked human-readable leaderboard output for passed candidates
 - Machine-readable score explanations in `leaderboard.json`
 - File-backed leaderboard and candidate metadata
@@ -327,7 +327,7 @@ crucible run \
 
 For `deny` mode, container evaluation enforces network isolation with `--sandbox-network none`. A deny-mode container evaluation fails closed if a different sandbox network is requested. Local deny-mode runs are marked advisory because the framework cannot prevent host-network access around an arbitrary local evaluator. Allowlist and record modes are currently documented and surfaced to agents and evaluators, but framework-level enforcement is still on the roadmap.
 
-Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During sandboxed `mock` and `replay` evaluation, Code Crucible exports gateway environment variables and starts the archived mock gateway on loopback before running the evaluator. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
+Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During sandboxed `mock` and `replay` evaluation, Code Crucible exports gateway and proxy environment variables, then starts the archived mock gateway on loopback before running the evaluator. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
 
 ## Project Work Area
 
@@ -387,7 +387,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 ## Roadmap
 
-- Add transparent HTTP proxy routing and HTTPS replay support
+- Add HTTPS CONNECT replay support
 - Add multi-round evolution strategy
 - Add SQLite index alongside filesystem artifacts
 - Add HTML reports

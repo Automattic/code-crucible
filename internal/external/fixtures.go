@@ -158,9 +158,12 @@ func mockGatewaySource() string {
 	return `package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -179,8 +182,10 @@ type fixture struct {
 }
 
 type request struct {
-	Method string ` + "`json:\"method\"`" + `
-	URL    string ` + "`json:\"url\"`" + `
+	Method     string            ` + "`json:\"method\"`" + `
+	URL        string            ` + "`json:\"url\"`" + `
+	Headers    map[string]string ` + "`json:\"headers,omitempty\"`" + `
+	BodySHA256 string            ` + "`json:\"body_sha256,omitempty\"`" + `
 }
 
 type response struct {
@@ -201,10 +206,18 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		key := r.Method + " " + requestURL(r)
+		if r.Method == http.MethodConnect {
+			http.Error(w, "HTTPS CONNECT replay is not implemented", http.StatusNotImplemented)
+			return
+		}
+		key := strings.ToUpper(r.Method) + " " + requestURL(r)
 		fixture, ok := fixtures[key]
 		if !ok {
 			http.Error(w, "no fixture for "+key, http.StatusNotFound)
+			return
+		}
+		if err := validateRequest(r, fixture); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		for name, value := range fixture.Response.Headers {
@@ -235,7 +248,31 @@ func loadFixtures(path string) (map[string]fixture, error) {
 	return out, nil
 }
 
+func validateRequest(r *http.Request, fixture fixture) error {
+	for name, value := range fixture.Request.Headers {
+		if got := r.Header.Get(name); got != value {
+			return fmt.Errorf("request header %s = %q, want %q", name, got, value)
+		}
+	}
+	if fixture.Request.BodySHA256 == "" {
+		return nil
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(body)
+	got := hex.EncodeToString(sum[:])
+	if !strings.EqualFold(got, fixture.Request.BodySHA256) {
+		return fmt.Errorf("request body_sha256 = %q, want %q", got, fixture.Request.BodySHA256)
+	}
+	return nil
+}
+
 func requestURL(r *http.Request) string {
+	if r.URL != nil && r.URL.IsAbs() {
+		return r.URL.String()
+	}
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"

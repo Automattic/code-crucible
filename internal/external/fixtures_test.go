@@ -1,10 +1,14 @@
 package external
 
 import (
+	"go/ast"
+	"go/importer"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Automattic/code-crucible/internal/model"
@@ -109,7 +113,26 @@ func TestRequestBodySHA256(t *testing.T) {
 }
 
 func TestMockGatewaySourceParses(t *testing.T) {
-	if _, err := parser.ParseFile(token.NewFileSet(), MockGatewayName, mockGatewaySource(), 0); err != nil {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, MockGatewayName, mockGatewaySource(), 0)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := (&types.Config{Importer: importer.Default()}).Check("mockgateway", fset, []*ast.File{file}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMockGatewaySourceIncludesProxyRouting(t *testing.T) {
+	source := mockGatewaySource()
+	for _, want := range []string{
+		"r.URL.IsAbs()",
+		"http.MethodConnect",
+		"HTTPS CONNECT replay is not implemented",
+		"BodySHA256",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("mock gateway source missing %q", want)
+		}
 	}
 }

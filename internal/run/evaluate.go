@@ -411,10 +411,10 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 	case model.ExternalModeMock, model.ExternalModeReplay:
 		if sandboxEnabled(sandbox) && sandbox.Network == "none" {
 			enforcement.Status = "partial"
-			enforcement.Warnings = append(enforcement.Warnings, "live network is blocked and the fixture gateway is available inside the sandbox; transparent HTTPS replay and protocol-specific routing are not implemented yet")
+			enforcement.Warnings = append(enforcement.Warnings, "live network is blocked and the fixture gateway is available inside the sandbox; HTTPS CONNECT replay and protocol-specific routing are not implemented yet")
 			return enforcement
 		}
-		enforcement.Warnings = append(enforcement.Warnings, "fixture gateway environment is available when fixtures are archived, but network isolation requires a container sandbox with --sandbox-network none")
+		enforcement.Warnings = append(enforcement.Warnings, "fixture gateway and HTTP proxy environment are available when fixtures are archived, but network isolation requires a container sandbox with --sandbox-network none")
 	case model.ExternalModeAllowlist:
 		enforcement.Warnings = append(enforcement.Warnings, "framework-level allowlist enforcement is not implemented yet")
 	case model.ExternalModeRecord:
@@ -458,7 +458,17 @@ func externalEvaluationEnv(policy model.ExternalPolicy, runDir string, env []str
 		gatewayAddr = "127.0.0.1:18080"
 		out = appendEnvDefault(out, "CRUCIBLE_MOCK_GATEWAY_ADDR", gatewayAddr)
 	}
-	out = appendEnvDefault(out, "CRUCIBLE_MOCK_GATEWAY_URL", "http://"+gatewayAddr)
+	gatewayURL := envValue(out, "CRUCIBLE_MOCK_GATEWAY_URL")
+	if gatewayURL == "" {
+		gatewayURL = "http://" + gatewayAddr
+		out = appendEnvDefault(out, "CRUCIBLE_MOCK_GATEWAY_URL", gatewayURL)
+	}
+	out = appendEnvDefault(out, "HTTP_PROXY", gatewayURL)
+	out = appendEnvDefault(out, "http_proxy", gatewayURL)
+	out = appendEnvDefault(out, "HTTPS_PROXY", gatewayURL)
+	out = appendEnvDefault(out, "https_proxy", gatewayURL)
+	out = appendEnvDefault(out, "NO_PROXY", "localhost,127.0.0.1,::1")
+	out = appendEnvDefault(out, "no_proxy", "localhost,127.0.0.1,::1")
 	return out
 }
 
