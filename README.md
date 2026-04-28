@@ -643,11 +643,16 @@ Current priorities:
 - [x] Run an equivalent Docker `gateway-network` check, while keeping Podman and Docker timing results separate
 - [x] Add a Claude command-provider example to prove the model-agnostic provider contract beyond Codex
 - [x] Perform a public experimental-repo onboarding pass without cutting a tagged release
+- [x] Upgrade TUI forms, candidate selection, and action output to Bubbles widgets
+- [x] Add optional/manual gateway-network CI coverage
+- [x] Run a public experimental-readiness pass after TUI polish
 
 Deferred roadmap:
 
-- [ ] Add protocol-specific external routing adapters beyond HTTP/HTTPS, such as gRPC, database clients, and arbitrary TCP
-- [ ] Upgrade the TUI forms to Bubbles widgets after the core evaluator and sandbox behavior is validated
+- [ ] Add an async TUI app shell with live job progress and cancellable long-running actions
+- [ ] Add provider setup templates or an install command for Claude and other command providers
+- [ ] Prepare a caveated GitHub pre-release after the experimental UX stabilizes
+- [ ] Revisit protocol-specific external routing adapters only when a concrete target project needs one; start with gRPC when that need appears
 
 Completed cleanup and infrastructure:
 

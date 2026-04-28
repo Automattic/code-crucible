@@ -29,7 +29,14 @@ Run the CI-style regression tournament when changing reporting, indexing, or the
 make regression-tournament
 ```
 
-These targets create ignored artifacts under `examples/go-ranking-poc/.crucible/`.
+Run gateway-network smoke tests when changing sandbox routing:
+
+```bash
+make smoke-gateway-network-docker
+make smoke-gateway-network-podman
+```
+
+These targets create ignored artifacts under the example projects' `.crucible/` directories. The gateway-network targets require a local `golang:1.22` container image and Docker or Podman user networking.
 
 Clean ignored local artifacts:
 
@@ -45,6 +52,7 @@ make clean
 - Run `make check` before opening a pull request.
 - Run `make smoke` for changes that affect run creation, evaluation, metrics, leaderboard output, or the Go PoC fixture.
 - Run `make regression-tournament` for changes that affect CI tournament artifacts, reports, or indexed automation views.
+- Run the relevant gateway-network smoke target for changes that affect container external routing.
 
 ## Artifact Hygiene
 

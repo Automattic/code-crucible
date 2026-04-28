@@ -237,6 +237,10 @@ func setTUIFormValue(form *tuiForm, name, value string) {
 	for i := range form.Fields {
 		if form.Fields[i].Name == name {
 			form.Fields[i].Value = value
+			if form.Fields[i].Input.Width > 0 {
+				form.Fields[i].Input.SetValue(value)
+				form.Fields[i].Input.SetCursor(len([]rune(value)))
+			}
 			return
 		}
 	}

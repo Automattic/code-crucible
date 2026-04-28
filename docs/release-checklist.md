@@ -41,6 +41,7 @@ Use this checklist before pushing to a remote, tagging, or preparing a public re
   ```bash
   make regression-tournament
   ```
+- Trigger the manual `Gateway Network Smoke` workflow before a public pre-release when container routing changed and local-only validation is not enough.
 
 ## Sensitive Data And Artifacts
 
@@ -55,6 +56,7 @@ Use this checklist before pushing to a remote, tagging, or preparing a public re
 - Confirm `README.md` reflects current commands and limitations.
 - Confirm `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md` are present.
 - Confirm GitHub Actions exists under `.github/workflows/ci.yml` and includes both Go checks and the regression tournament job.
+- Confirm `.github/workflows/gateway-network.yml` remains manual-only unless the Docker/Podman smoke tests are stable enough for every pull request.
 - Confirm the remote target is intentional before the first push:
   ```bash
   git remote -v

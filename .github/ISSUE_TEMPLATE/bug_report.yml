@@ -1,0 +1,47 @@
+name: Bug Report
+description: Report a reproducible Code Crucible problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Code Crucible is experimental. Please avoid attaching private `.crucible/` archives unless you have reviewed them for source code, prompts, logs, hostnames, fixtures, and generated competitors.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction Steps
+      description: Include the exact `crucible` command or Make target when possible.
+      placeholder: |
+        1. Run `crucible ...`
+        2. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Go version, Code Crucible commit, container engine/version, and agent provider when relevant.
+      placeholder: |
+        - OS:
+        - Go:
+        - Code Crucible commit:
+        - Container engine:
+        - Agent provider:
+    validations:
+      required: true
+  - type: textarea
+    id: artifacts
+    attributes:
+      label: Relevant Artifacts
+      description: Paste non-sensitive excerpts from logs, `leaderboard.json`, `verdict.json`, `external-routing.json`, or command output.
+    validations:
+      required: false

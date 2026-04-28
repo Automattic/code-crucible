@@ -1,0 +1,42 @@
+name: Feature Request
+description: Propose a new workflow, provider, evaluator, sandbox, or reporting capability.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow or project need should Code Crucible handle better?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Approach
+      description: Describe the behavior, CLI shape, artifacts, or user flow you want.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Include manual workarounds or other tools if relevant.
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI workflow
+        - TUI workflow
+        - Agent provider
+        - Evaluator or metrics
+        - Sandbox or external routing
+        - Reports or indexing
+        - Documentation
+        - Other
+    validations:
+      required: true

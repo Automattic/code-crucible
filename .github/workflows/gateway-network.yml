@@ -1,0 +1,78 @@
+name: Gateway Network Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: Container engine to validate
+        required: true
+        default: docker
+        type: choice
+        options:
+          - docker
+          - podman
+          - both
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    name: Docker gateway-network
+    if: ${{ github.event.inputs.engine == 'docker' || github.event.inputs.engine == 'both' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Docker gateway-network smoke
+        run: make smoke-gateway-network-docker
+
+      - name: Upload gateway-network artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-network-docker
+          path: examples/gateway-network-poc/.crucible/runs
+          if-no-files-found: ignore
+          retention-days: 7
+
+  podman:
+    name: Podman gateway-network
+    if: ${{ github.event.inputs.engine == 'podman' || github.event.inputs.engine == 'both' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Pull Podman smoke image
+        run: podman pull docker.io/library/golang:1.22
+
+      - name: Run Podman gateway-network smoke
+        run: make smoke-gateway-network-podman
+
+      - name: Upload gateway-network artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-network-podman
+          path: examples/gateway-network-poc/.crucible/runs
+          if-no-files-found: ignore
+          retention-days: 7

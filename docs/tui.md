@@ -6,7 +6,7 @@ Code Crucible uses Bubble Tea for the terminal UI.
 
 Use Charmbracelet's Bubble Tea as the primary TUI framework, with Bubbles for reusable widgets when the interface needs lists, tables, text inputs, viewports, progress displays, file pickers, or help views.
 
-Code Crucible uses Bubble Tea v1.2.x for the first TUI slice because it supports the project's Go 1.22 baseline. Newer Bubble Tea releases currently require a newer Go toolchain. The prompt-based interactive mode remains available through bare `crucible`, and the TUI entrypoint is explicit: `crucible tui`.
+Code Crucible uses Bubble Tea v1.2.x and Bubbles v0.20.x because that pair supports the project's Go 1.22 baseline. Newer Bubbles releases currently pull in a newer Bubble Tea dependency chain and raise the Go directive. The prompt-based interactive mode remains available through bare `crucible`, and the TUI entrypoint is explicit: `crucible tui`.
 
 ## Rationale
 
@@ -18,12 +18,13 @@ Code Crucible uses Bubble Tea v1.2.x for the first TUI slice because it supports
 ## Implementation Notes
 
 - Keep `crucible tui` as the explicit entrypoint instead of replacing bare `crucible`.
-- Use the existing `internal/cli.WorkflowController` from prompt mode and the future TUI so both interfaces share command construction and execution.
+- Use the existing `internal/cli.WorkflowController` from prompt mode and the TUI so both interfaces share command construction and execution.
 - The first implementation includes a run dashboard: latest or selected run status, leaderboard rows, selected candidate detail, and common next action commands.
-- Basic forms now cover run creation, discovery, generation, evaluation, reports, and archive queries. They execute through the shared CLI controller and show captured output after completion.
+- Forms cover run creation, discovery, generation, evaluation, reports, and archive queries. They use Bubbles text inputs, execute through the shared CLI controller, and show captured output in a scrollable viewport after completion.
+- Candidate selection uses the Bubbles table widget, and candidate details use a scrollable viewport.
 - Keep tests focused on state transitions and command construction. Avoid terminal snapshot tests until the UI stabilizes.
 
 ## Deferred
 
 - Exact screen layout and keybindings.
-- Whether the forms should add Bubbles widgets immediately or continue with plain Bubble Tea state until the interaction model stabilizes.
+- Whether to add a full async app shell with live progress, cancellation, and richer background job management.

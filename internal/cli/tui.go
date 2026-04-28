@@ -10,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Automattic/code-crucible/internal/archive"
@@ -37,6 +40,9 @@ type tuiDashboardModel struct {
 	actionOutput string
 	actionError  string
 	busy         bool
+	table        table.Model
+	detail       viewport.Model
+	result       viewport.Model
 }
 
 type tuiMode int
@@ -71,6 +77,7 @@ type tuiFormField struct {
 	Label    string
 	Value    string
 	Required bool
+	Input    textinput.Model
 }
 
 type tuiActionDoneMsg struct {
@@ -176,11 +183,13 @@ func loadTUIDashboard(projectDir, runSelector string) (tuiDashboardData, error) 
 }
 
 func newTUIDashboardModel(data tuiDashboardData, message string) tuiDashboardModel {
-	return tuiDashboardModel{
+	m := tuiDashboardModel{
 		data:    data,
 		width:   100,
 		message: message,
 	}
+	m.configureBubbles()
+	return m
 }
 
 func (m tuiDashboardModel) Init() tea.Cmd {
@@ -192,6 +201,7 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.configureBubbles()
 	case tuiActionDoneMsg:
 		m.busy = false
 		m.mode = tuiModeActionResult
@@ -209,6 +219,7 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = clampInt(m.selected, 0, len(m.data.Results)-1)
 			}
 		}
+		m.configureBubbles()
 	case tea.KeyMsg:
 		if m.busy {
 			return m, nil
@@ -224,7 +235,9 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = tuiModeDashboard
 				return m, nil
 			}
-			return m, nil
+			var cmd tea.Cmd
+			m.result, cmd = m.result.Update(msg)
+			return m, cmd
 		}
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
@@ -241,26 +254,22 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openForm(tuiActionReport)
 		case "s":
 			m.openForm(tuiActionQuery)
-		case "up", "k":
-			if m.selected > 0 {
-				m.selected--
-			}
-		case "down", "j":
-			if m.selected < len(m.data.Results)-1 {
-				m.selected++
-			}
-		case "home":
-			m.selected = 0
-		case "end":
-			if len(m.data.Results) > 0 {
-				m.selected = len(m.data.Results) - 1
-			}
+		case "up", "down", "k", "j", "home", "end", "pgup", "pgdown":
+			var cmd tea.Cmd
+			m.table, cmd = m.table.Update(msg)
+			m.selected = m.tableSelectedIndex()
+			m.syncDetailViewport()
+			return m, cmd
+		default:
+			return m, nil
 		}
+		m.configureBubbles()
 	}
 	return m, nil
 }
 
 func (m tuiDashboardModel) View() string {
+	m.configureBubbles()
 	switch m.mode {
 	case tuiModeForm:
 		return m.formView()
@@ -305,9 +314,10 @@ func (m tuiDashboardModel) dashboardView() string {
 		b.WriteString("No candidates are archived for this run.\n\n")
 	} else {
 		b.WriteString("Leaderboard\n")
-		b.WriteString(m.leaderboardTable())
+		b.WriteString(m.table.View())
 		b.WriteString("\n")
-		b.WriteString(m.candidateDetail())
+		b.WriteString("Candidate Detail\n")
+		b.WriteString(m.detail.View())
 		b.WriteString("\n")
 	}
 
@@ -323,9 +333,11 @@ func (m *tuiDashboardModel) openForm(action tuiAction) {
 	m.mode = tuiModeForm
 	m.message = ""
 	m.form = m.newForm(action)
+	m.form.configureInputs(m.formWidth())
 }
 
 func (m tuiDashboardModel) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.form.configureInputs(m.formWidth())
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -334,40 +346,30 @@ func (m tuiDashboardModel) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "tab", "down":
 		m.form.Focus = nextFormFocus(m.form)
+		m.form.configureInputs(m.formWidth())
 		return m, nil
 	case "shift+tab", "up":
 		m.form.Focus = previousFormFocus(m.form)
+		m.form.configureInputs(m.formWidth())
 		return m, nil
 	case "enter":
 		return m.submitForm()
-	case "backspace", "ctrl+h":
-		if len(m.form.Fields) == 0 {
-			return m, nil
-		}
-		field := &m.form.Fields[m.form.Focus]
-		if field.Value != "" {
-			runes := []rune(field.Value)
-			field.Value = string(runes[:len(runes)-1])
-		}
-		return m, nil
-	case "ctrl+u":
-		if len(m.form.Fields) > 0 {
-			m.form.Fields[m.form.Focus].Value = ""
-		}
-		return m, nil
 	}
 	if len(m.form.Fields) > 0 {
-		switch {
-		case msg.Type == tea.KeyRunes:
-			m.form.Fields[m.form.Focus].Value += string(msg.Runes)
-		case msg.String() == " ":
-			m.form.Fields[m.form.Focus].Value += " "
+		var cmd tea.Cmd
+		field := &m.form.Fields[m.form.Focus]
+		if msg.Type == tea.KeySpace {
+			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
 		}
+		field.Input, cmd = field.Input.Update(msg)
+		field.Value = field.Input.Value()
+		return m, cmd
 	}
 	return m, nil
 }
 
 func (m tuiDashboardModel) submitForm() (tea.Model, tea.Cmd) {
+	m.form.syncValues()
 	if err := m.form.validate(); err != nil {
 		m.form.Message = err.Error()
 		return m, nil
@@ -408,6 +410,7 @@ func (m tuiDashboardModel) submitForm() (tea.Model, tea.Cmd) {
 }
 
 func (m tuiDashboardModel) formView() string {
+	m.form.configureInputs(m.formWidth())
 	var b strings.Builder
 	fmt.Fprintf(&b, "Code Crucible\n\n%s\n", m.form.Title)
 	if strings.TrimSpace(m.form.Message) != "" {
@@ -422,14 +425,15 @@ func (m tuiDashboardModel) formView() string {
 		if field.Required {
 			required = " *"
 		}
-		fmt.Fprintf(&b, "%s %s%s: %s\n", marker, field.Label, required, field.Value)
+		fmt.Fprintf(&b, "%s %s%s: %s\n", marker, field.Label, required, field.Input.View())
 	}
 	fmt.Fprintf(&b, "\nCommand Preview\n%s\n", m.form.commandPreview(m.data.ProjectDir, m.data.Config.ID))
-	b.WriteString("\nKeys: type to edit, tab/down next field, up previous field, enter run, esc cancel\n")
+	b.WriteString("\nKeys: type/edit, tab/down next field, up previous field, ctrl+u clear, enter run, esc cancel\n")
 	return b.String()
 }
 
 func (m tuiDashboardModel) actionResultView() string {
+	m.syncResultViewport()
 	var b strings.Builder
 	fmt.Fprintf(&b, "Code Crucible\n\n")
 	if m.busy {
@@ -437,13 +441,10 @@ func (m tuiDashboardModel) actionResultView() string {
 		return b.String()
 	}
 	fmt.Fprintf(&b, "%s\n", displayValue(m.message))
-	if strings.TrimSpace(m.actionOutput) != "" {
-		fmt.Fprintf(&b, "\nOutput\n%s\n", strings.TrimRight(m.actionOutput, "\n"))
+	if strings.TrimSpace(m.result.View()) != "" {
+		fmt.Fprintf(&b, "\n%s\n", m.result.View())
 	}
-	if strings.TrimSpace(m.actionError) != "" {
-		fmt.Fprintf(&b, "\nErrors\n%s\n", strings.TrimRight(m.actionError, "\n"))
-	}
-	b.WriteString("\nKeys: b back to dashboard, q quit\n")
+	b.WriteString("\nKeys: j/k scroll, pgup/pgdown page, b back to dashboard, q quit\n")
 	return b.String()
 }
 
@@ -679,10 +680,51 @@ func (f tuiForm) commandPreview(projectDir, runID string) string {
 func (f tuiForm) value(name string) string {
 	for _, field := range f.Fields {
 		if field.Name == name {
+			if field.Input.Width > 0 {
+				return strings.TrimSpace(field.Input.Value())
+			}
 			return strings.TrimSpace(field.Value)
 		}
 	}
 	return ""
+}
+
+func (f *tuiForm) configureInputs(width int) {
+	if f == nil {
+		return
+	}
+	if width <= 0 {
+		width = 64
+	}
+	for i := range f.Fields {
+		field := &f.Fields[i]
+		if field.Input.Width == 0 {
+			input := textinput.New()
+			input.Prompt = ""
+			input.Placeholder = field.Label
+			input.SetValue(field.Value)
+			input.SetCursor(len([]rune(field.Value)))
+			field.Input = input
+		}
+		field.Input.Width = width
+		if i == f.Focus {
+			field.Input.Focus()
+		} else {
+			field.Input.Blur()
+		}
+		field.Value = field.Input.Value()
+	}
+}
+
+func (f *tuiForm) syncValues() {
+	if f == nil {
+		return
+	}
+	for i := range f.Fields {
+		if f.Fields[i].Input.Width > 0 {
+			f.Fields[i].Value = f.Fields[i].Input.Value()
+		}
+	}
 }
 
 func nextFormFocus(form tuiForm) int {
@@ -702,7 +744,51 @@ func previousFormFocus(form tuiForm) int {
 	return form.Focus - 1
 }
 
-func (m tuiDashboardModel) leaderboardTable() string {
+func (m tuiDashboardModel) formWidth() int {
+	width := m.width - 28
+	if width < 24 {
+		width = 24
+	}
+	if width > 96 {
+		width = 96
+	}
+	return width
+}
+
+func (m *tuiDashboardModel) configureBubbles() {
+	if m == nil {
+		return
+	}
+	m.configureCandidateTable()
+	m.syncDetailViewport()
+	m.syncResultViewport()
+}
+
+func (m *tuiDashboardModel) configureCandidateTable() {
+	if m == nil {
+		return
+	}
+	width := m.width
+	if width <= 0 {
+		width = 100
+	}
+	columns := tuiCandidateTableColumns(width, leaderboardHasExternalCalls(m.data.Results))
+	rows := m.candidateTableRows()
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithRows(rows),
+		table.WithFocused(true),
+		table.WithHeight(tuiCandidateTableHeight(m.height, len(rows))),
+	)
+	t.SetWidth(width)
+	t.Focus()
+	if m.selected > 0 {
+		t.MoveDown(m.selected)
+	}
+	m.table = t
+}
+
+func (m tuiDashboardModel) candidateTableRows() []table.Row {
 	scoreValues := make([]float64, 0, len(m.data.Results))
 	p95Values := make([]float64, 0, len(m.data.Results))
 	nsPerOpValues := make([]float64, 0, len(m.data.Results))
@@ -718,22 +804,13 @@ func (m tuiDashboardModel) leaderboardTable() string {
 	baselineMemory := leaderboardBaselineMemory(m.data.Results)
 	showExternalCalls := leaderboardHasExternalCalls(m.data.Results)
 
-	headers := []string{"", "Rank", "Candidate", "Status", "Score", "P95 ms", "ns/op", "Speedup", "Memory", "Mem/Base"}
-	if showExternalCalls {
-		headers = append(headers, "Ext Calls")
-	}
-	rows := make([][]string, 0, len(m.data.Results))
+	rows := make([]table.Row, 0, len(m.data.Results))
 	for i, result := range m.data.Results {
-		marker := " "
-		if i == m.selected {
-			marker = ">"
-		}
 		rank := "-"
 		if result.Status == "passed" {
 			rank = strconv.Itoa(i + 1)
 		}
-		row := []string{
-			marker,
+		row := table.Row{
 			rank,
 			result.Candidate.ID,
 			result.Status,
@@ -749,9 +826,110 @@ func (m tuiDashboardModel) leaderboardTable() string {
 		}
 		rows = append(rows, row)
 	}
+	return rows
+}
+
+func tuiCandidateTableColumns(width int, showExternalCalls bool) []table.Column {
+	if width <= 0 {
+		width = 100
+	}
+	candidateWidth := 28
+	if width < 90 {
+		candidateWidth = 20
+	}
+	if width < 72 {
+		candidateWidth = 16
+	}
+	columns := []table.Column{
+		{Title: "Rank", Width: 4},
+		{Title: "Candidate", Width: candidateWidth},
+		{Title: "Status", Width: 8},
+		{Title: "Score", Width: 7},
+		{Title: "P95 ms", Width: 10},
+		{Title: "ns/op", Width: 10},
+		{Title: "Speed", Width: 7},
+		{Title: "Memory", Width: 9},
+		{Title: "Mem/Base", Width: 8},
+	}
+	if showExternalCalls {
+		columns = append(columns, table.Column{Title: "Ext", Width: 5})
+	}
+	return columns
+}
+
+func tuiCandidateTableHeight(windowHeight, rows int) int {
+	height := 8
+	if windowHeight > 0 {
+		height = windowHeight / 3
+	}
+	if height < 5 {
+		height = 5
+	}
+	if rows > 0 && height > rows+1 {
+		height = rows + 1
+	}
+	return height
+}
+
+func (m tuiDashboardModel) tableSelectedIndex() int {
+	selected := m.table.SelectedRow()
+	if len(selected) < 2 {
+		return clampInt(m.selected, 0, len(m.data.Results)-1)
+	}
+	candidateID := selected[1]
+	for i, result := range m.data.Results {
+		if result.Candidate.ID == candidateID {
+			return i
+		}
+	}
+	return clampInt(m.selected, 0, len(m.data.Results)-1)
+}
+
+func (m *tuiDashboardModel) syncDetailViewport() {
+	if m == nil {
+		return
+	}
+	width := m.width
+	if width <= 0 {
+		width = 100
+	}
+	height := 8
+	if m.height > 0 {
+		height = m.height / 4
+	}
+	if height < 6 {
+		height = 6
+	}
+	m.detail.Width = width
+	m.detail.Height = height
+	m.detail.SetContent(strings.TrimPrefix(m.candidateDetail(), "Candidate Detail\n"))
+}
+
+func (m *tuiDashboardModel) syncResultViewport() {
+	if m == nil {
+		return
+	}
+	width := m.width
+	if width <= 0 {
+		width = 100
+	}
+	height := m.height - 6
+	if height < 10 {
+		height = 18
+	}
 	var b strings.Builder
-	printTable(&b, headers, rows)
-	return b.String()
+	if strings.TrimSpace(m.actionOutput) != "" {
+		fmt.Fprintf(&b, "Output\n%s\n", strings.TrimRight(m.actionOutput, "\n"))
+	}
+	if strings.TrimSpace(m.actionError) != "" {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "Errors\n%s\n", strings.TrimRight(m.actionError, "\n"))
+	}
+	m.result.Width = width
+	m.result.Height = height
+	m.result.SetContent(b.String())
 }
 
 func (m tuiDashboardModel) candidateDetail() string {
