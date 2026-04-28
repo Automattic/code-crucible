@@ -66,6 +66,7 @@ The current layout is:
   README.md
   docs/interfaces.md
   evaluator/evaluator.sh
+  evaluator/semantic-checks.json
   external/policy.json
   external/http-fixtures.json
   external/mock-gateway.go
@@ -186,6 +187,8 @@ Future providers can use the same run metadata and prompt package through a comm
 If `--evaluator` is provided, the scaffold wraps that command and records minimal metrics. If `--evaluator-script` is provided, Code Crucible copies that script into the run archive as `evaluator/evaluator.sh`. If neither is provided, the generated script writes a failing verdict with instructions to add deterministic correctness checks and benchmarks.
 
 `crucible evaluate` executes the run evaluator for each candidate currently listed in `leaderboard.json`. The default CLI behavior is sequential (`--jobs 1`) and lower-priority (`--nice 10`) so tournaments do not monopolize an interactive workstation. CPU affinity can be constrained with `--cpu-limit N` on systems with `taskset`. Additional evaluator environment variables can be passed with repeated `--env KEY=VALUE` flags.
+
+Runs can include `evaluator/semantic-checks.json` for behavior-level prechecks. Each check command runs once in the baseline `src/` directory and once in the candidate `src/` directory before the benchmark evaluator starts. The framework compares exit code and stdout by default, can optionally compare stderr, and archives candidate-scoped results in `semantic-contract-results.json`. A semantic mismatch fails the candidate without running the benchmark evaluator.
 
 Evaluator execution is local by default. Passing `--sandbox-engine docker` or `--sandbox-engine podman` with `--sandbox-image IMAGE` wraps each evaluator invocation in `docker run` or `podman run`. Container mode bind-mounts the run archive read/write, bind-mounts the host project read-only, defaults to `--network none`, maps `--cpu-limit` to a container CPU quota, and records the sandbox settings in JSON evaluation reports. The `strict` profile adds default `--memory-limit 1g` and `--pids-limit 256` caps while keeping network disabled; the `networked` profile applies the same default caps with `--network bridge`. Explicit `--memory-limit`, `--pids-limit`, and `--sandbox-network` flags can tune those defaults, except `strict` always requires `none` networking.
 

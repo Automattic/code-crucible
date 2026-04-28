@@ -41,22 +41,23 @@ type SandboxOptions struct {
 }
 
 type CandidateEvaluation struct {
-	ID                 string                           `json:"id"`
-	Status             string                           `json:"status"`
-	Score              float64                          `json:"score"`
-	ScoreExplanation   *model.ScoreExplanation          `json:"score_explanation,omitempty"`
-	MetricsPath        string                           `json:"metrics_path"`
-	ResourcePath       string                           `json:"resource_metrics_path,omitempty"`
-	SamplesPath        string                           `json:"evaluation_samples_path,omitempty"`
-	ExternalTracePath  string                           `json:"external_trace_path,omitempty"`
-	RecordFixturesPath string                           `json:"record_fixtures_path,omitempty"`
-	VerdictPath        string                           `json:"verdict_path"`
-	StdoutPath         string                           `json:"stdout_path"`
-	StderrPath         string                           `json:"stderr_path"`
-	Sandbox            *SandboxOptions                  `json:"sandbox,omitempty"`
-	ExternalPolicy     *model.ExternalPolicyEnforcement `json:"external_policy,omitempty"`
-	Errors             []string                         `json:"errors,omitempty"`
-	Warnings           []string                         `json:"warnings,omitempty"`
+	ID                  string                           `json:"id"`
+	Status              string                           `json:"status"`
+	Score               float64                          `json:"score"`
+	ScoreExplanation    *model.ScoreExplanation          `json:"score_explanation,omitempty"`
+	MetricsPath         string                           `json:"metrics_path"`
+	ResourcePath        string                           `json:"resource_metrics_path,omitempty"`
+	SamplesPath         string                           `json:"evaluation_samples_path,omitempty"`
+	SemanticResultsPath string                           `json:"semantic_contract_results_path,omitempty"`
+	ExternalTracePath   string                           `json:"external_trace_path,omitempty"`
+	RecordFixturesPath  string                           `json:"record_fixtures_path,omitempty"`
+	VerdictPath         string                           `json:"verdict_path"`
+	StdoutPath          string                           `json:"stdout_path"`
+	StderrPath          string                           `json:"stderr_path"`
+	Sandbox             *SandboxOptions                  `json:"sandbox,omitempty"`
+	ExternalPolicy      *model.ExternalPolicyEnforcement `json:"external_policy,omitempty"`
+	Errors              []string                         `json:"errors,omitempty"`
+	Warnings            []string                         `json:"warnings,omitempty"`
 }
 
 type EvaluationReport struct {
@@ -275,6 +276,7 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	metricsPath := filepath.Join(candidateDir, "metrics.json")
 	resourcePath := filepath.Join(candidateDir, "resource-metrics.json")
 	samplesPath := filepath.Join(candidateDir, "evaluation-samples.json")
+	semanticResultsPath := filepath.Join(candidateDir, "semantic-contract-results.json")
 	verdictPath := filepath.Join(candidateDir, "verdict.json")
 	stdoutPath := filepath.Join(candidateDir, "evaluation.stdout.log")
 	stderrPath := filepath.Join(candidateDir, "evaluation.stderr.log")
@@ -306,12 +308,16 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	evaluation.Warnings = append(evaluation.Warnings, policyEnforcement.Warnings...)
 	evaluation.Errors = append(evaluation.Errors, policyEnforcement.Errors...)
 
-	if err := removeEvaluationOutputs(metricsPath, resourcePath, samplesPath, tracePath, recordFixturesPath, verdictPath); err != nil {
+	if err := removeEvaluationOutputs(metricsPath, resourcePath, samplesPath, semanticResultsPath, tracePath, recordFixturesPath, verdictPath); err != nil {
 		evaluation.Warnings = append(evaluation.Warnings, err.Error())
 	}
 	policyFailed := len(policyEnforcement.Errors) > 0
-	contractErrors := validateCandidateContract(runDir, candidateDir, result.Candidate)
+	contractResult := validateCandidateContract(runDir, candidateDir, result.Candidate, candidateExecOpts, semanticResultsPath)
+	contractErrors := contractResult.Errors
 	contractFailed := len(contractErrors) > 0
+	if contractResult.SemanticResultsPath != "" {
+		evaluation.SemanticResultsPath = filepath.ToSlash(contractResult.SemanticResultsPath)
+	}
 	if contractFailed {
 		evaluation.Errors = append(evaluation.Errors, contractErrors...)
 	}
@@ -392,27 +398,32 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	return evaluation, result
 }
 
-func validateCandidateContract(runDir, candidateDir string, candidate model.Candidate) []string {
+type candidateContractResult struct {
+	Errors              []string
+	SemanticResultsPath string
+}
+
+func validateCandidateContract(runDir, candidateDir string, candidate model.Candidate, execOpts evaluatorExecutionOptions, semanticResultsPath string) candidateContractResult {
 	srcDir := filepath.Join(candidateDir, "src")
 	info, err := os.Stat(srcDir)
 	if err != nil || !info.IsDir() {
-		return []string{"candidate contract failed: src directory is missing"}
+		return candidateContractResult{Errors: []string{"candidate contract failed: src directory is missing"}}
 	}
 	candidateExts, candidateFiles, err := contractSourceExtensions(srcDir)
 	if err != nil {
-		return []string{"candidate contract failed: " + err.Error()}
+		return candidateContractResult{Errors: []string{"candidate contract failed: " + err.Error()}}
 	}
 	if candidateFiles == 0 {
-		return []string{"candidate contract failed: src directory contains no source files"}
+		return candidateContractResult{Errors: []string{"candidate contract failed: src directory contains no source files"}}
 	}
 	if candidate.Baseline {
-		return nil
+		return candidateContractResult{}
 	}
 
 	baselineSrc := filepath.Join(runDir, "round-0001", "candidate-0000-baseline", "src")
 	baselineExts, baselineFiles, err := contractSourceExtensions(baselineSrc)
 	if err != nil || baselineFiles == 0 || len(baselineExts) == 0 {
-		return nil
+		return candidateContractResult{}
 	}
 	var errors []string
 	var missing []string
@@ -426,7 +437,16 @@ func validateCandidateContract(runDir, candidateDir string, candidate model.Cand
 		errors = append(errors, fmt.Sprintf("candidate contract failed: src does not contain baseline language extensions %s", strings.Join(missing, ", ")))
 	}
 	errors = append(errors, semanticContractErrors(runDir, baselineSrc, srcDir, baselineExts, candidateExts)...)
-	return errors
+	var semanticPath string
+	if len(errors) == 0 {
+		var semanticErrors []string
+		semanticErrors, semanticPath = runSemanticContractChecks(runDir, baselineSrc, srcDir, candidateDir, semanticResultsPath, execOpts)
+		errors = append(errors, semanticErrors...)
+	}
+	return candidateContractResult{
+		Errors:              errors,
+		SemanticResultsPath: semanticPath,
+	}
 }
 
 func contractSourceExtensions(root string) (map[string]bool, int, error) {

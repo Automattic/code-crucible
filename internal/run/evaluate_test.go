@@ -12,6 +12,7 @@ import (
 
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/discovery"
+	"github.com/Automattic/code-crucible/internal/evaluator"
 	externalfixtures "github.com/Automattic/code-crucible/internal/external"
 	"github.com/Automattic/code-crucible/internal/model"
 )
@@ -1174,6 +1175,103 @@ JSON
 	}
 	if !result.Verdict.ExternalPolicyPassed {
 		t.Fatalf("external_policy_passed = false, want signature failure to preserve passed policy state")
+	}
+}
+
+func TestEvaluateCandidatesRunsSemanticChecksBeforeBenchmarking(t *testing.T) {
+	projectDir, created := createEvaluationFixture(t)
+	baselineSrc := filepath.Join(created.RunDir, "round-0001", "candidate-0000-baseline", "src")
+	if err := os.WriteFile(filepath.Join(baselineSrc, "behavior.txt"), []byte("same\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	candidateDir := filepath.Join(created.RunDir, "round-0001", "candidate-0001")
+	writeCandidateArtifact(t, candidateDir, model.Candidate{
+		ID:         "candidate-0001",
+		Name:       "semantic mismatch",
+		Round:      1,
+		ParentIDs:  []string{"candidate-0000-baseline"},
+		Agent:      "codex",
+		SourcePath: "src",
+	})
+	if err := os.WriteFile(filepath.Join(candidateDir, "src", "behavior.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.SaveJSON(filepath.Join(created.RunDir, "evaluator", evaluator.SemanticChecksFilename), evaluator.SemanticChecks{
+		Version: 1,
+		Checks: []evaluator.SemanticCheck{
+			{
+				Name:    "behavior fixture",
+				Command: "cat behavior.txt",
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AdoptCandidates(AdoptionOptions{ProjectDir: projectDir, RunID: created.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluatorScript := `#!/usr/bin/env bash
+set -euo pipefail
+touch "$1/evaluator-ran"
+cat > "$3" <<'JSON'
+{
+  "runtime_mean_ms": 1
+}
+JSON
+cat > "$4" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+`
+	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluatorScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCandidates(EvaluationOptions{
+		ProjectDir:  projectDir,
+		RunID:       created.ID,
+		CandidateID: "candidate-0001",
+		Adopt:       false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("evaluated results = %d, want one", len(report.Results))
+	}
+	if report.Results[0].SemanticResultsPath == "" {
+		t.Fatal("semantic results path was not reported")
+	}
+	if _, err := os.Stat(filepath.Join(candidateDir, "evaluator-ran")); !os.IsNotExist(err) {
+		t.Fatalf("evaluator should not have run, stat err: %v", err)
+	}
+	semanticResults, err := os.ReadFile(filepath.Join(candidateDir, "semantic-contract-results.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(semanticResults), "stdout changed") {
+		t.Fatalf("semantic results did not include stdout mismatch:\n%s", semanticResults)
+	}
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result model.CandidateResult
+	for _, candidateResult := range board.Results {
+		if candidateResult.Candidate.ID == "candidate-0001" {
+			result = candidateResult
+			break
+		}
+	}
+	if result.Status != "failed" {
+		t.Fatalf("status = %q, want failed", result.Status)
+	}
+	if len(result.Verdict.Errors) == 0 || !strings.Contains(result.Verdict.Errors[0], "semantic check") {
+		t.Fatalf("verdict errors = %#v, want semantic check failure", result.Verdict.Errors)
 	}
 }
 

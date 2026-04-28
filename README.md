@@ -320,7 +320,26 @@ The generated prompt explicitly tells Codex to avoid modifying host project sour
 
 Every run includes `evaluator/evaluator.sh`. `crucible evaluate` executes that script once per candidate currently listed in `leaderboard.json`.
 
-Runs seeded from a structured discovery handoff can also include `evaluator/contract-checks.json`. The generated evaluator scaffold uses that file to run deterministic artifact and source-shape checks before benchmarking; semantic correctness and performance comparisons still require a real evaluator command or script.
+Runs seeded from a structured discovery handoff can also include `evaluator/contract-checks.json`. The generated evaluator scaffold uses that file to run deterministic artifact and source-shape checks before benchmarking.
+
+For behavior-level prechecks, add `evaluator/semantic-checks.json`. Each check runs the same command in the baseline `src/` directory and the candidate `src/` directory before the benchmark evaluator starts. By default, the candidate must match the baseline exit code and stdout. Stderr comparison is available when needed.
+
+```json
+{
+  "version": 1,
+  "checks": [
+    {
+      "name": "golden fixture",
+      "command": "go test ./...",
+      "timeout_ms": 30000,
+      "compare_exit_code": true,
+      "compare_stdout": true
+    }
+  ]
+}
+```
+
+Semantic check results are archived beside each candidate as `semantic-contract-results.json`, and failing semantic checks stop evaluation before benchmarking.
 
 The evaluator script receives:
 
@@ -539,7 +558,7 @@ Base functionality roadmap:
 - [x] Automatically generate deterministic evaluator checks from discovery handoff data when enough contract detail is available
 - [x] Add pre-evaluation source-shape contract checks before benchmarking
 - [x] Add pre-evaluation Go function signature checks when discovery names a Go drop-in interface
-- [ ] Validate semantic drop-in replacement contracts before benchmarking
+- [x] Validate semantic drop-in replacement contracts before benchmarking
 - [x] Improve no-source-path generation so the agent extracts and archives the baseline before creating competitors
 - [x] Add repeated evaluation controls for warmups, repetitions, and runtime spread metrics
 - [x] Add outlier handling, confidence summaries, and configurable statistical score inputs
