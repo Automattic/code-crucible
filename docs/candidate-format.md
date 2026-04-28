@@ -58,6 +58,8 @@ Required fields:
 
 `created_at` should be an RFC3339 UTC timestamp. If it is omitted, adoption records the current time in the leaderboard entry.
 
+Adopted candidates are recorded in `leaderboard.json` with project-relative `source_path` values when possible. Evaluator scripts receive absolute runtime paths as arguments and should prefer those arguments, plus `CRUCIBLE_PROJECT_DIR`, over parsing archive paths directly from JSON.
+
 ## Adoption
 
 `crucible adopt` scans the active round directory from `run.json` and adds valid generated candidates to `leaderboard.json`. `crucible next-round` advances that active directory after prior candidates have passed.

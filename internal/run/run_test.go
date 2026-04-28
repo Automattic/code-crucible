@@ -57,6 +57,33 @@ func TestCreateRunCopiesFileBaseline(t *testing.T) {
 			t.Fatalf("expected generated file %s: %v", path, err)
 		}
 	}
+
+	cfg, err := archive.LoadRunConfig(filepath.Join(created.RunDir, "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]string{
+		"project_dir":    cfg.ProjectDir,
+		"run_dir":        cfg.RunDir,
+		"round_dir":      cfg.RoundDir,
+		"interface_docs": cfg.InterfaceDocs,
+		"prompt_path":    cfg.PromptPath,
+	} {
+		if filepath.IsAbs(filepath.FromSlash(value)) {
+			t.Fatalf("%s = %q, want project-relative archive path", name, value)
+		}
+	}
+
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(board.Results) != 1 {
+		t.Fatalf("leaderboard results = %d, want baseline", len(board.Results))
+	}
+	if filepath.IsAbs(filepath.FromSlash(board.Results[0].Candidate.SourcePath)) {
+		t.Fatalf("baseline source_path = %q, want project-relative path", board.Results[0].Candidate.SourcePath)
+	}
 }
 
 func TestCreateRunWithoutTargetPathCreatesDiscoveryPrompt(t *testing.T) {
@@ -172,8 +199,8 @@ func TestCreateRunArchivesHTTPFixtureTemplateForReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantFixtures := filepath.Join(created.RunDir, "external", external.HTTPFixturesName)
-	if cfg.External.Fixtures != filepath.ToSlash(wantFixtures) {
-		t.Fatalf("fixtures path = %q, want %q", cfg.External.Fixtures, filepath.ToSlash(wantFixtures))
+	if cfg.External.Fixtures != archive.ProjectRelativePath(projectDir, wantFixtures) {
+		t.Fatalf("fixtures path = %q, want %q", cfg.External.Fixtures, archive.ProjectRelativePath(projectDir, wantFixtures))
 	}
 	fixtures, err := external.LoadHTTPFixtureSet(wantFixtures)
 	if err != nil {
@@ -237,7 +264,7 @@ func TestCreateRunCopiesHTTPFixturesIntoArchive(t *testing.T) {
 	if err := json.Unmarshal(data, &policy); err != nil {
 		t.Fatal(err)
 	}
-	fixtures, err := external.LoadHTTPFixtureSet(policy.Fixtures)
+	fixtures, err := external.LoadHTTPFixtureSet(archive.ProjectPath(projectDir, policy.Fixtures))
 	if err != nil {
 		t.Fatal(err)
 	}

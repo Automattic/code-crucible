@@ -377,6 +377,8 @@ Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Pro
 
 The work area is intended to be local project metadata. Completed run directories should be reproducible archives containing source, prompts, metrics, external traces, and verdicts. `crucible index` adds `index.sqlite` as a rebuildable summary of those archives.
 
+New run archives store paths relative to the host project where possible. Runtime commands resolve those paths back to absolute locations and pass evaluator scripts the absolute candidate directory, run directory, and `CRUCIBLE_PROJECT_DIR`.
+
 Do not commit `.crucible/` run archives from private projects unless you have reviewed them. They may contain source code, prompts, logs, generated competitors, hostnames, fixtures, or project-specific context.
 
 ## Architecture
@@ -426,7 +428,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 Cleanup before more feature work:
 
 - [x] Start fixture gateways for local `mock` and `replay` evaluation, or stop exporting local proxy variables that point to no running gateway
-- [ ] Decide archive path portability: keep absolute runtime paths in `run.json`, or store relative archive paths and resolve absolutes at execution time
+- [x] Decide archive path portability: keep absolute runtime paths in `run.json`, or store relative archive paths and resolve absolutes at execution time
 - [x] Refresh stale security and external-policy docs so they match current Docker/Podman and proxy behavior
 - [ ] Split large implementation files before adding reporting: CLI commands, evaluator sandbox/resource handling, and generated gateway source
 - [ ] Add SQLite schema-version handling for derivative index rebuilds

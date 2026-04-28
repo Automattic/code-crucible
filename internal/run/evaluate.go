@@ -90,10 +90,16 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 	runDir := cfg.RunDir
 	if runDir == "" {
 		runDir = filepath.Dir(configPath)
+	} else {
+		runDir = archive.ProjectPath(absProject, runDir)
 	}
 	leaderboardPath := filepath.Join(runDir, "leaderboard.json")
 	evaluatorPath := filepath.Join(runDir, "evaluator", "evaluator.sh")
-	evaluatorEnv := externalEvaluationEnv(cfg.External, runDir, opts.Env)
+	policy := cfg.External
+	policy.Fixtures = archive.ProjectPath(absProject, policy.Fixtures)
+	evaluatorEnv := appendEnvDefault(opts.Env, "CRUCIBLE_PROJECT_DIR", absProject)
+	evaluatorEnv = appendEnvDefault(evaluatorEnv, "CRUCIBLE_RUN_DIR", runDir)
+	evaluatorEnv = externalEvaluationEnv(policy, runDir, evaluatorEnv)
 	if !sandboxEnabled(opts.Sandbox) {
 		cleanup, err := startLocalMockGateway(context.Background(), evaluatorEnv, filepath.Join(runDir, "external", "mock-gateway.local.log"))
 		if err != nil {
@@ -256,7 +262,7 @@ func evaluateParallel(cfg *model.RunConfig, evaluatorPath, runDir string, result
 }
 
 func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result model.CandidateResult, execOpts evaluatorExecutionOptions) (CandidateEvaluation, model.CandidateResult) {
-	candidateDir := candidateDirectory(result.Candidate)
+	candidateDir := candidateDirectory(execOpts.ProjectDir, result.Candidate)
 	metricsPath := filepath.Join(candidateDir, "metrics.json")
 	resourcePath := filepath.Join(candidateDir, "resource-metrics.json")
 	verdictPath := filepath.Join(candidateDir, "verdict.json")
@@ -986,8 +992,8 @@ func loadJSON(path string, out any) error {
 	return nil
 }
 
-func candidateDirectory(candidate model.Candidate) string {
-	sourcePath := filepath.Clean(candidate.SourcePath)
+func candidateDirectory(projectDir string, candidate model.Candidate) string {
+	sourcePath := archive.ProjectPath(projectDir, candidate.SourcePath)
 	if filepath.Base(sourcePath) == "src" {
 		return filepath.Dir(sourcePath)
 	}

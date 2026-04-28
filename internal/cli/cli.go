@@ -929,17 +929,27 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "generate failed: %v\n", err)
 		return 1
 	}
-	if cfg.ProjectDir == "" {
-		cfg.ProjectDir, _ = filepath.Abs(opts.ProjectDir)
+	absProject, err := filepath.Abs(opts.ProjectDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "generate failed: %v\n", err)
+		return 1
+	}
+	projectDir := absProject
+	if cfg.ProjectDir != "" {
+		projectDir = archive.ProjectPath(absProject, cfg.ProjectDir)
 	}
 
 	runDir := cfg.RunDir
 	if runDir == "" {
 		runDir = filepath.Dir(configPath)
+	} else {
+		runDir = archive.ProjectPath(projectDir, runDir)
 	}
 	promptPath := cfg.PromptPath
 	if promptPath == "" {
 		promptPath = filepath.Join(runDir, "prompts", "generation-round-0001.md")
+	} else {
+		promptPath = archive.ProjectPath(projectDir, promptPath)
 	}
 	if opts.OutputLastMessage == "" {
 		opts.OutputLastMessage = filepath.Join(runDir, "agents", "codex-final.md")
@@ -947,7 +957,7 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 
 	codexOpts := agent.CodexOptions{
 		Binary:            opts.CodexBin,
-		ProjectDir:        cfg.ProjectDir,
+		ProjectDir:        projectDir,
 		RunDir:            runDir,
 		PromptPath:        promptPath,
 		Model:             opts.Model,
@@ -963,7 +973,7 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 	if opts.DryRun {
 		fmt.Fprintf(stdout, "Codex command:\n%s\n\n", agent.FormatCommand(command))
 		fmt.Fprintf(stdout, "Prompt stdin: %s\n", promptPath)
-		fmt.Fprintf(stdout, "Project root: %s\n", cfg.ProjectDir)
+		fmt.Fprintf(stdout, "Project root: %s\n", projectDir)
 		fmt.Fprintf(stdout, "Run archive: %s\n", runDir)
 		fmt.Fprintf(stdout, "Final message: %s\n", opts.OutputLastMessage)
 		return 0

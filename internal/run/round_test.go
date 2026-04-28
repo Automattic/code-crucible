@@ -38,17 +38,23 @@ func TestPrepareNextRoundCreatesRoundPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(filepath.FromSlash(cfg.RoundDir), filepath.Join(created.RunDir, "round-0002")) {
+	if filepath.IsAbs(filepath.FromSlash(cfg.RoundDir)) {
+		t.Fatalf("RoundDir = %q, want project-relative path", cfg.RoundDir)
+	}
+	if !strings.HasSuffix(filepath.FromSlash(cfg.RoundDir), filepath.Join(".crucible", "runs", created.ID, "round-0002")) {
 		t.Fatalf("RoundDir = %q, want round-0002", cfg.RoundDir)
 	}
-	if !strings.HasSuffix(filepath.FromSlash(cfg.PromptPath), filepath.Join(created.RunDir, "prompts", "generation-round-0002.md")) {
+	if filepath.IsAbs(filepath.FromSlash(cfg.PromptPath)) {
+		t.Fatalf("PromptPath = %q, want project-relative path", cfg.PromptPath)
+	}
+	if !strings.HasSuffix(filepath.FromSlash(cfg.PromptPath), filepath.Join(".crucible", "runs", created.ID, "prompts", "generation-round-0002.md")) {
 		t.Fatalf("PromptPath = %q, want generation-round-0002.md", cfg.PromptPath)
 	}
 	if cfg.Rounds != 2 {
 		t.Fatalf("Rounds = %d, want 2", cfg.Rounds)
 	}
 
-	prompt, err := os.ReadFile(filepath.FromSlash(cfg.PromptPath))
+	prompt, err := os.ReadFile(archive.ProjectPath(projectDir, cfg.PromptPath))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -34,6 +34,8 @@ crucible run --task-file crucible-task.md
 
 The project receives a `.crucible/` directory. This keeps optimization artifacts close to the code being evaluated without requiring the host project to adopt Code Crucible as a dependency.
 
+Archive metadata stores project-local paths where possible, such as `.crucible/runs/<run-id>/...`, instead of absolute host paths. Runtime commands resolve those archive paths against the current project directory so the same archive can be inspected, indexed, or moved without hard-coding a private workstation path.
+
 ## Run Archive
 
 Each run is stored under:
@@ -185,6 +187,8 @@ It passes:
 ```text
 evaluator.sh <candidate-dir> <run-dir> <metrics-out> <verdict-out>
 ```
+
+Those positional paths are absolute runtime paths. Evaluator environments also include `CRUCIBLE_PROJECT_DIR` and `CRUCIBLE_RUN_DIR` so scripts do not need to parse path fields from `run.json`.
 
 The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads both files, merges resource metrics, updates `leaderboard.json`, computes a relative log-scaled score, and marks candidates as `passed` only when correctness, benchmark, and external policy verdicts all pass. Missing or malformed verdicts fail closed.
 

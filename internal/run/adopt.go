@@ -47,6 +47,7 @@ func AdoptCandidates(opts AdoptionOptions) (*AdoptionReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts.ProjectDir = absProject
 
 	configPath, err := archive.RunConfigPath(absProject, opts.RunID)
 	if err != nil {
@@ -60,10 +61,14 @@ func AdoptCandidates(opts AdoptionOptions) (*AdoptionReport, error) {
 	runDir := cfg.RunDir
 	if runDir == "" {
 		runDir = filepath.Dir(configPath)
+	} else {
+		runDir = archive.ProjectPath(absProject, runDir)
 	}
 	roundDir := cfg.RoundDir
 	if roundDir == "" {
 		roundDir = filepath.Join(runDir, "round-0001")
+	} else {
+		roundDir = archive.ProjectPath(absProject, roundDir)
 	}
 	roundNumber := roundNumberFromDir(roundDir)
 	if roundNumber <= 0 {
@@ -208,7 +213,7 @@ func loadAdoptableCandidate(candidateDir, roundDir, id string, roundNumber int, 
 	if candidate.CreatedAt.IsZero() {
 		candidate.CreatedAt = time.Now().UTC()
 	}
-	candidate.SourcePath = filepath.ToSlash(srcDir)
+	candidate.SourcePath = archive.ProjectRelativePath(opts.ProjectDir, srcDir)
 
 	return candidate, nil
 }

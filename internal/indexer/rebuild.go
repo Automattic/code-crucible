@@ -105,7 +105,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value
 	}
 
 	for _, runDir := range runDirs {
-		candidates, err := indexRun(ctx, tx, runDir)
+		candidates, err := indexRun(ctx, tx, absProject, runDir)
 		if err != nil {
 			return nil, err
 		}
@@ -245,7 +245,7 @@ func clearIndexedRows(ctx context.Context, tx *sql.Tx, runID string) error {
 	return nil
 }
 
-func indexRun(ctx context.Context, tx *sql.Tx, runDir string) (int, error) {
+func indexRun(ctx context.Context, tx *sql.Tx, projectDir, runDir string) (int, error) {
 	cfg, err := archive.LoadRunConfig(filepath.Join(runDir, "run.json"))
 	if err != nil {
 		return 0, fmt.Errorf("load run config %s: %w", runDir, err)
@@ -261,7 +261,14 @@ func indexRun(ctx context.Context, tx *sql.Tx, runDir string) (int, error) {
 	if createdAt.IsZero() {
 		createdAt = board.CreatedAt
 	}
-	runPath := firstNonEmpty(cfg.RunDir, runDir)
+	runPath := archive.ProjectPath(projectDir, cfg.RunDir)
+	if runPath == "" {
+		runPath = runDir
+	}
+	roundPath := archive.ProjectPath(projectDir, cfg.RoundDir)
+	if roundPath == "" {
+		roundPath = cfg.RoundDir
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO runs (
@@ -269,7 +276,7 @@ INSERT INTO runs (
 	variants, rounds, exploration, evaluator, evaluator_script, external_mode,
 	external_fixtures, created_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, runID, optimize, cfg.ProjectDir, filepath.ToSlash(runPath), cfg.RoundDir, roundNumber(cfg.RoundDir), cfg.TargetPath,
+`, runID, optimize, projectDir, filepath.ToSlash(runPath), filepath.ToSlash(roundPath), roundNumber(cfg.RoundDir), cfg.TargetPath,
 		cfg.Agent, cfg.Variants, cfg.Rounds, cfg.Exploration, cfg.Evaluator, cfg.EvaluatorScript,
 		string(cfg.External.Mode), cfg.External.Fixtures, formatTime(createdAt)); err != nil {
 		return 0, fmt.Errorf("index run %s: %w", runID, err)

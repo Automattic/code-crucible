@@ -91,6 +91,32 @@ func LeaderboardPath(projectDir, runID string) (string, error) {
 	return filepath.Join(runDir, "leaderboard.json"), nil
 }
 
+func ProjectPath(projectDir, path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	path = filepath.FromSlash(path)
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(filepath.Join(projectDir, path))
+}
+
+func ProjectRelativePath(projectDir, path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	path = filepath.FromSlash(path)
+	if !filepath.IsAbs(path) {
+		return filepath.ToSlash(filepath.Clean(path))
+	}
+	rel, err := filepath.Rel(projectDir, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return filepath.ToSlash(filepath.Clean(path))
+	}
+	return filepath.ToSlash(filepath.Clean(rel))
+}
+
 func Slug(input string, maxLen int) string {
 	input = strings.ToLower(strings.TrimSpace(input))
 	var out strings.Builder

@@ -51,6 +51,8 @@ func PrepareNextRound(opts NextRoundOptions) (*NextRoundReport, error) {
 	runDir := cfg.RunDir
 	if runDir == "" {
 		runDir = filepath.Dir(configPath)
+	} else {
+		runDir = archive.ProjectPath(absProject, runDir)
 	}
 	leaderboardPath := filepath.Join(runDir, "leaderboard.json")
 	board, err := archive.LoadLeaderboard(leaderboardPath)
@@ -89,8 +91,8 @@ func PrepareNextRound(opts NextRoundOptions) (*NextRoundReport, error) {
 
 	promptPath := filepath.Join(runDir, "prompts", fmt.Sprintf("generation-%s.md", roundName(nextRound)))
 	nextCandidate := nextCandidateNumber(board.Results)
-	cfg.RoundDir = filepath.ToSlash(roundDir)
-	cfg.PromptPath = filepath.ToSlash(promptPath)
+	cfg.RoundDir = archive.ProjectRelativePath(absProject, roundDir)
+	cfg.PromptPath = archive.ProjectRelativePath(absProject, promptPath)
 	if cfg.Rounds < nextRound {
 		cfg.Rounds = nextRound
 	}
@@ -101,10 +103,10 @@ func PrepareNextRound(opts NextRoundOptions) (*NextRoundReport, error) {
 		NextCandidate:     nextCandidate,
 		ParentIDs:         parentIDs,
 		InterfaceDocPath:  cfg.InterfaceDocs,
-		RunDir:            filepath.ToSlash(runDir),
-		RoundDir:          filepath.ToSlash(roundDir),
+		RunDir:            archive.ProjectRelativePath(absProject, runDir),
+		RoundDir:          cfg.RoundDir,
 		BaselineSourceDir: baselineSourceDir(board.Results),
-		ScratchDir:        filepath.ToSlash(scratchDir),
+		ScratchDir:        archive.ProjectRelativePath(absProject, scratchDir),
 		History:           board.Results,
 	})
 	if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {

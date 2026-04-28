@@ -130,11 +130,11 @@ func Create(opts Options) (*CreatedRun, error) {
 	promptPath := filepath.Join(runDir, "prompts", "generation-round-0001.md")
 	runConfig := model.RunConfig{
 		ID:              runID,
-		ProjectDir:      absProject,
-		RunDir:          runDir,
-		RoundDir:        roundDir,
+		ProjectDir:      ".",
+		RunDir:          archive.ProjectRelativePath(absProject, runDir),
+		RoundDir:        archive.ProjectRelativePath(absProject, roundDir),
 		Optimize:        opts.Optimize,
-		TargetPath:      opts.TargetPath,
+		TargetPath:      archive.ProjectRelativePath(absProject, opts.TargetPath),
 		Agent:           opts.Agent,
 		Variants:        opts.Variants,
 		Rounds:          opts.Rounds,
@@ -143,14 +143,15 @@ func Create(opts Options) (*CreatedRun, error) {
 		EvaluatorScript: opts.EvaluatorScript,
 		External:        external,
 		CreatedAt:       now,
-		InterfaceDocs:   filepath.ToSlash(interfacePath),
-		PromptPath:      filepath.ToSlash(promptPath),
+		InterfaceDocs:   archive.ProjectRelativePath(absProject, interfacePath),
+		PromptPath:      archive.ProjectRelativePath(absProject, promptPath),
 	}
+	runConfig.External.Fixtures = archive.ProjectRelativePath(absProject, runConfig.External.Fixtures)
 
 	if err := archive.SaveJSON(filepath.Join(runDir, "run.json"), runConfig); err != nil {
 		return nil, err
 	}
-	if err := archive.SaveJSON(filepath.Join(runDir, "external", "policy.json"), external); err != nil {
+	if err := archive.SaveJSON(filepath.Join(runDir, "external", "policy.json"), runConfig.External); err != nil {
 		return nil, err
 	}
 
@@ -159,7 +160,7 @@ func Create(opts Options) (*CreatedRun, error) {
 		Name:       "baseline",
 		Round:      1,
 		Agent:      "source",
-		SourcePath: filepath.ToSlash(baselineSrc),
+		SourcePath: archive.ProjectRelativePath(absProject, baselineSrc),
 		Baseline:   true,
 		CreatedAt:  now,
 	}
@@ -218,11 +219,11 @@ func Create(opts Options) (*CreatedRun, error) {
 
 	prompt := agent.BuildGenerationPrompt(agent.GenerationPromptRequest{
 		RunConfig:         runConfig,
-		InterfaceDocPath:  filepath.ToSlash(interfacePath),
-		RunDir:            filepath.ToSlash(runDir),
-		RoundDir:          filepath.ToSlash(roundDir),
-		BaselineSourceDir: filepath.ToSlash(baselineSrc),
-		ScratchDir:        filepath.ToSlash(generationScratchDir),
+		InterfaceDocPath:  runConfig.InterfaceDocs,
+		RunDir:            runConfig.RunDir,
+		RoundDir:          runConfig.RoundDir,
+		BaselineSourceDir: baseline.SourcePath,
+		ScratchDir:        archive.ProjectRelativePath(absProject, generationScratchDir),
 		History:           board.Results,
 	})
 	if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {

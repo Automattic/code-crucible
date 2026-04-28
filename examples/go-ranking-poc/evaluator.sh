@@ -6,7 +6,13 @@ run_dir="${2:?run directory required}"
 metrics_out="${3:?metrics output path required}"
 verdict_out="${4:?verdict output path required}"
 
-project_dir="$(sed -n 's/^  "project_dir": "\(.*\)",$/\1/p' "$run_dir/run.json")"
+project_dir="${CRUCIBLE_PROJECT_DIR:-}"
+if [[ -z "$project_dir" ]]; then
+  project_dir="$(sed -n 's/^  "project_dir": "\(.*\)",$/\1/p' "$run_dir/run.json")"
+fi
+if [[ "$project_dir" == "." ]]; then
+  project_dir="$(cd "$run_dir/../../.." && pwd)"
+fi
 if [[ -z "$project_dir" || ! -d "$project_dir" ]]; then
   echo "unable to read project_dir from $run_dir/run.json" >&2
   exit 2
