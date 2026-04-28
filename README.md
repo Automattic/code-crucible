@@ -623,7 +623,7 @@ Interactive interface roadmap:
 - [x] Add interactive controls for advanced `generate` options: model, profile, sandbox, approval mode, dry-run, and output path
 - [x] Add interactive controls for advanced `evaluate` options: candidate, jobs, timeout, nice, CPU limit, sandbox engine/image/profile/network, memory limit, and PID limit
 - [x] Add interactive controls for report/index JSON and output-path options
-- [ ] Add review/edit prompts for generated interface docs, evaluator scaffold, and discovery handoff before generation
+- [ ] Add `$EDITOR`-based review/edit prompts for generated interface docs, evaluator scaffold, and discovery handoff before generation
 
 Evaluator and external policy roadmap:
 
@@ -631,13 +631,16 @@ Evaluator and external policy roadmap:
 - [x] Add external trace collection and `record` mode capture
 - [x] Add direct-routed gateway URLs for clients that ignore proxy environment variables
 - [x] Package the fixture gateway for sandbox images without Go
-- [ ] Design and implement transparent routing for raw socket clients with an explicit sandbox/network strategy
-- [ ] Decide how raw socket routing should behave for local mode versus Docker/Podman mode
-- [ ] Extend external trace capture for transparent routing once raw socket interception exists
+- [x] Decide raw socket routing scope: no local transparent interception; implement only inside Docker/Podman sandboxes
+- [ ] Design container-only raw socket routing with explicit sandbox/network setup
+- [ ] Implement container-only raw socket routing through an isolated evaluator network and gateway sidecar
+- [ ] Add local-mode warnings when raw socket/transparent routing would be required
+- [ ] Extend external trace capture for container-routed raw socket traffic once interception exists
 
 TUI roadmap:
 
 - [x] Select and document a Go TUI framework; selected Bubble Tea from Charmbracelet
+- [x] Decide TUI launch mode: add explicit `crucible tui` first and keep bare `crucible` prompt-based
 - [ ] Extract interactive workflow actions into reusable controller functions shared by prompt mode and TUI mode
 - [ ] Build a TUI run dashboard with latest run status, leaderboard, candidate details, and common next actions
 - [ ] Build TUI forms for run creation, discovery, generation, evaluation, reports, and queries

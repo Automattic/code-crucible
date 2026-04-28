@@ -6,7 +6,7 @@ Code Crucible will use Bubble Tea for the planned terminal UI.
 
 Use Charmbracelet's Bubble Tea as the primary TUI framework, with Bubbles for reusable widgets when the interface needs lists, tables, text inputs, viewports, progress displays, file pickers, or help views.
 
-Do not add the dependency until the first TUI implementation slice starts. The current prompt-based interactive mode should remain dependency-light and continue to work without Bubble Tea.
+Do not add the dependency until the first TUI implementation slice starts. The current prompt-based interactive mode should remain dependency-light and continue to work without Bubble Tea. The first TUI entrypoint should be explicit, such as `crucible tui`, rather than replacing the bare `crucible` workflow.
 
 ## Rationale
 
@@ -17,7 +17,7 @@ Do not add the dependency until the first TUI implementation slice starts. The c
 
 ## Implementation Notes
 
-- Add a new `crucible tui` command or an equivalent explicit flag instead of replacing bare `crucible` immediately.
+- Add a new `crucible tui` command instead of replacing bare `crucible`.
 - Extract interactive actions into controller functions before adding Bubble Tea models, so prompt mode and TUI mode share command construction and validation.
 - Start with a read-mostly run dashboard: latest run status, leaderboard, candidate detail, and common next actions.
 - Add forms after the dashboard for run creation, discovery, generation, evaluation, reports, and queries.
@@ -26,5 +26,4 @@ Do not add the dependency until the first TUI implementation slice starts. The c
 ## Deferred
 
 - Exact screen layout and keybindings.
-- Whether bare `crucible` should eventually launch the TUI when stdout is a terminal.
 - Whether the first TUI slice should import only Bubble Tea or include Bubbles/Lip Gloss immediately.
