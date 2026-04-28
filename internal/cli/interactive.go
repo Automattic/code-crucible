@@ -103,6 +103,11 @@ func runInteractive(stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 func (s interactiveSession) menu(projectDir string) int {
+	controller := WorkflowController{
+		ProjectDir: projectDir,
+		Stdout:     s.stdout,
+		Stderr:     s.stderr,
+	}
 	for {
 		fmt.Fprintln(s.stdout)
 		fmt.Fprintln(s.stdout, "Actions:")
@@ -136,7 +141,7 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			if code := runLeaderboard([]string{"--project-dir", projectDir, "--run", runSelector}, s.stdout, s.stderr); code != 0 {
+			if code := controller.Leaderboard(runSelector); code != 0 {
 				return code
 			}
 		case "3", "generate":
@@ -147,10 +152,6 @@ func (s interactiveSession) menu(projectDir string) int {
 			generationAgent, ok := s.askGenerationAgent(projectDir)
 			if !ok {
 				return 0
-			}
-			args := []string{"--project-dir", projectDir, "--run", runSelector}
-			if generationAgent != "" {
-				args = append(args, "--agent", generationAgent)
 			}
 			proceed, ok := s.reviewRunArtifactsBeforeGeneration(projectDir, runSelector)
 			if !ok {
@@ -164,8 +165,11 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			args = append(args, advancedArgs...)
-			if code := runGenerate(args, s.stdout, s.stderr); code != 0 {
+			if code := controller.Generate(GenerateWorkflowOptions{
+				RunSelector: runSelector,
+				Agent:       generationAgent,
+				ExtraArgs:   advancedArgs,
+			}); code != 0 {
 				return code
 			}
 		case "4", "evaluate":
@@ -173,13 +177,14 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			args := []string{"--project-dir", projectDir, "--run", runSelector}
 			advancedArgs, ok := s.askAdvancedEvaluateOptions()
 			if !ok {
 				return 0
 			}
-			args = append(args, advancedArgs...)
-			if code := runEvaluate(args, s.stdout, s.stderr); code != 0 {
+			if code := controller.Evaluate(EvaluateWorkflowOptions{
+				RunSelector: runSelector,
+				ExtraArgs:   advancedArgs,
+			}); code != 0 {
 				return code
 			}
 		case "5", "evolve":
@@ -199,11 +204,12 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			args := []string{"--project-dir", projectDir, "--run", runSelector, "--rounds", strconv.Itoa(rounds), "--parents", strconv.Itoa(parents)}
-			if generationAgent != "" {
-				args = append(args, "--agent", generationAgent)
-			}
-			if code := runEvolve(args, s.stdout, s.stderr); code != 0 {
+			if code := controller.Evolve(EvolveWorkflowOptions{
+				RunSelector: runSelector,
+				Rounds:      rounds,
+				Parents:     parents,
+				Agent:       generationAgent,
+			}); code != 0 {
 				return code
 			}
 		case "6", "report":
@@ -219,14 +225,11 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			args := []string{"--project-dir", projectDir, "--run", runSelector}
-			if strings.TrimSpace(outputPath) != "" {
-				args = append(args, "--output", strings.TrimSpace(outputPath))
-			}
-			if jsonOut {
-				args = append(args, "--json")
-			}
-			if code := runReport(args, s.stdout, s.stderr); code != 0 {
+			if code := controller.Report(ReportWorkflowOptions{
+				RunSelector: runSelector,
+				OutputPath:  outputPath,
+				JSON:        jsonOut,
+			}); code != 0 {
 				return code
 			}
 		case "7", "inspect":
@@ -242,30 +245,34 @@ func (s interactiveSession) menu(projectDir string) int {
 			if candidateID == "" {
 				candidateID = "candidate-0000-baseline"
 			}
-			if code := runInspect([]string{"--project-dir", projectDir, "--run", runSelector, candidateID}, s.stdout, s.stderr); code != 0 {
+			if code := controller.Inspect(InspectWorkflowOptions{
+				RunSelector: runSelector,
+				CandidateID: candidateID,
+			}); code != 0 {
 				return code
 			}
 		case "8", "index":
-			args := []string{"--project-dir", projectDir}
 			scopeRun, ok := s.confirm("Rebuild only one run?", false)
 			if !ok {
 				return 0
 			}
+			runSelector := ""
 			if scopeRun {
-				runSelector, ok := s.askRunSelector(projectDir)
+				selected, ok := s.askRunSelector(projectDir)
 				if !ok {
 					return 0
 				}
-				args = append(args, "--run", runSelector)
+				runSelector = selected
 			}
 			jsonOut, ok := s.confirm("Print index rebuild JSON?", false)
 			if !ok {
 				return 0
 			}
-			if jsonOut {
-				args = append(args, "--json")
-			}
-			if code := runIndex(args, s.stdout, s.stderr); code != 0 {
+			if code := controller.Index(IndexWorkflowOptions{
+				RunSelector: runSelector,
+				ScopedRun:   scopeRun,
+				JSON:        jsonOut,
+			}); code != 0 {
 				return code
 			}
 		case "9", "agent", "agents", "agent settings":
@@ -273,7 +280,7 @@ func (s interactiveSession) menu(projectDir string) int {
 				return code
 			}
 		case "10", "discover", "discovery":
-			if code := s.standaloneDiscovery(projectDir); code != 0 {
+			if code := s.standaloneDiscovery(controller); code != 0 {
 				return code
 			}
 		case "11", "adopt":
@@ -285,11 +292,10 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			args := []string{"--project-dir", projectDir, "--run", runSelector}
-			if strings.TrimSpace(modelName) != "" {
-				args = append(args, "--model", strings.TrimSpace(modelName))
-			}
-			if code := runAdopt(args, s.stdout, s.stderr); code != 0 {
+			if code := controller.Adopt(AdoptWorkflowOptions{
+				RunSelector: runSelector,
+				Model:       modelName,
+			}); code != 0 {
 				return code
 			}
 		case "12", "next-round", "next round":
@@ -301,11 +307,14 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			if code := runNextRound([]string{"--project-dir", projectDir, "--run", runSelector, "--parents", strconv.Itoa(parents)}, s.stdout, s.stderr); code != 0 {
+			if code := controller.NextRound(NextRoundWorkflowOptions{
+				RunSelector: runSelector,
+				Parents:     parents,
+			}); code != 0 {
 				return code
 			}
 		case "13", "query":
-			if code := s.queryArchive(projectDir); code != 0 {
+			if code := s.queryArchive(controller); code != 0 {
 				return code
 			}
 		default:
@@ -542,17 +551,19 @@ func (s interactiveSession) askGenerationAgent(projectDir string) (string, bool)
 	return answer, true
 }
 
-func (s interactiveSession) standaloneDiscovery(projectDir string) int {
+func (s interactiveSession) standaloneDiscovery(controller WorkflowController) int {
 	request, ok := s.askRequired("Optimization request: ")
 	if !ok {
 		return 0
 	}
-	discoveryAgent, ok := s.askDiscoveryAgent(projectDir)
+	discoveryAgent, ok := s.askDiscoveryAgent(controller.ProjectDir)
 	if !ok {
 		return 0
 	}
-	args := []string{"--project-dir", projectDir, "--agent", discoveryAgent, request}
-	return runDiscover(args, s.stdout, s.stderr)
+	return controller.Discover(DiscoverWorkflowOptions{
+		Agent:   discoveryAgent,
+		Request: request,
+	})
 }
 
 func (s interactiveSession) askAdvancedGenerationOptions(projectDir, runSelector, generationAgent string) ([]string, bool) {
@@ -801,7 +812,7 @@ func (s interactiveSession) askAdvancedEvaluateOptions() ([]string, bool) {
 	return args, true
 }
 
-func (s interactiveSession) queryArchive(projectDir string) int {
+func (s interactiveSession) queryArchive(controller WorkflowController) int {
 	kind, ok := s.ask("Query runs or candidates [runs]: ")
 	if !ok {
 		return 0
@@ -814,22 +825,26 @@ func (s interactiveSession) queryArchive(projectDir string) int {
 	if !ok {
 		return 0
 	}
-	args := []string{kind, "--project-dir", projectDir, "--limit", strconv.Itoa(limit)}
+	runSelector := ""
+	status := ""
 	if kind == "candidates" {
-		runSelector, ok := s.askRunSelector(projectDir)
+		selected, ok := s.askRunSelector(controller.ProjectDir)
 		if !ok {
 			return 0
 		}
-		status, ok := s.ask("Status filter [all]: ")
+		runSelector = selected
+		answer, ok := s.ask("Status filter [all]: ")
 		if !ok {
 			return 0
 		}
-		args = append(args, "--run", runSelector)
-		if strings.TrimSpace(status) != "" {
-			args = append(args, "--status", strings.TrimSpace(status))
-		}
+		status = answer
 	}
-	return runQuery(args, s.stdout, s.stderr)
+	return controller.Query(QueryWorkflowOptions{
+		Kind:        kind,
+		Limit:       limit,
+		RunSelector: runSelector,
+		Status:      status,
+	})
 }
 
 func (s interactiveSession) askDiscoveryAgent(projectDir string) (string, bool) {

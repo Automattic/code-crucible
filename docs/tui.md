@@ -18,7 +18,7 @@ Do not add the dependency until the first TUI implementation slice starts. The c
 ## Implementation Notes
 
 - Add a new `crucible tui` command instead of replacing bare `crucible`.
-- Extract interactive actions into controller functions before adding Bubble Tea models, so prompt mode and TUI mode share command construction and validation.
+- Use the existing `internal/cli.WorkflowController` from prompt mode and the future TUI so both interfaces share command construction and execution.
 - Start with a read-mostly run dashboard: latest run status, leaderboard, candidate detail, and common next actions.
 - Add forms after the dashboard for run creation, discovery, generation, evaluation, reports, and queries.
 - Keep tests focused on state transitions and command construction. Avoid terminal snapshot tests until the UI stabilizes.

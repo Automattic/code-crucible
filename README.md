@@ -641,7 +641,7 @@ TUI roadmap:
 
 - [x] Select and document a Go TUI framework; selected Bubble Tea from Charmbracelet
 - [x] Decide TUI launch mode: add explicit `crucible tui` first and keep bare `crucible` prompt-based
-- [ ] Extract interactive workflow actions into reusable controller functions shared by prompt mode and TUI mode
+- [x] Extract interactive workflow actions into reusable controller functions shared by prompt mode and TUI mode
 - [ ] Build a TUI run dashboard with latest run status, leaderboard, candidate details, and common next actions
 - [ ] Build TUI forms for run creation, discovery, generation, evaluation, reports, and queries
 - [ ] Add TUI tests around navigation state and command construction
