@@ -279,6 +279,148 @@ func TestNextRoundCommandPreparesActiveRound(t *testing.T) {
 	}
 }
 
+func TestEvolveCommandRunsGenerateEvaluateCycles(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evaluatorPath := filepath.Join(projectDir, "evaluator.sh")
+	evaluator := `#!/usr/bin/env bash
+set -euo pipefail
+candidate_dir="$1"
+metrics_out="$3"
+verdict_out="$4"
+id="$(basename "$candidate_dir")"
+runtime=30
+if [[ "$id" == "candidate-0001" ]]; then
+  runtime=10
+elif [[ "$id" == "candidate-0002" ]]; then
+  runtime=5
+fi
+cat > "$metrics_out" <<JSON
+{
+  "runtime_mean_ms": $runtime,
+  "p95_latency_ms": $runtime,
+  "memory_peak_bytes": 1024
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+`
+	if err := os.WriteFile(evaluatorPath, []byte(evaluator), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeCodex := filepath.Join(t.TempDir(), "codex")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    out="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+prompt="$(cat)"
+bt=$'\140'
+round_dir="$(awk -v bt="$bt" 'index($0, "Current round directory:") { split($0, a, bt); print a[2]; exit }' <<< "$prompt")"
+candidate="$(awk -v bt="$bt" 'index($0, "Create candidates starting at") { split($0, a, bt); print a[2]; exit }' <<< "$prompt")"
+round="$(awk '/Generate .* round / { for (i = 1; i <= NF; i++) if ($i == "round") { gsub(/[^0-9]/, "", $(i+1)); print $(i+1); exit } }' <<< "$prompt")"
+parent="$(awk -v bt="$bt" 'index($0, "Preferred parent candidates:") { split($0, a, bt); print a[2]; exit }' <<< "$prompt")"
+if [[ -z "$round_dir" || -z "$candidate" || -z "$round" || -z "$parent" ]]; then
+  echo "failed to parse prompt" >&2
+  exit 9
+fi
+mkdir -p "$(dirname "$out")"
+printf 'fake codex complete\n' > "$out"
+mkdir -p "$round_dir/$candidate/src"
+printf 'package search\n' > "$round_dir/$candidate/src/rank.go"
+printf '# Candidate\n' > "$round_dir/$candidate/design.md"
+cat > "$round_dir/$candidate/candidate.json" <<JSON
+{
+  "id": "$candidate",
+  "name": "fake $candidate",
+  "round": $round,
+  "parent_ids": ["$parent"],
+  "agent": "codex",
+  "source_path": "src",
+  "baseline": false
+}
+JSON
+`
+	if err := os.WriteFile(fakeCodex, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--optimize", "make ranking faster",
+		"--target-path", "internal/search/rank.go",
+		"--evaluator-script", filepath.Base(evaluatorPath),
+		"--variants", "1",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"evolve",
+		"--project", projectDir,
+		"--rounds", "2",
+		"--parents", "1",
+		"--codex-bin", fakeCodex,
+		"--nice", "0",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("evolve returned %d, stderr: %s\nstdout:\n%s", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Evolution cycle 2 of 2") {
+		t.Fatalf("stdout did not include second cycle:\n%s", stdout.String())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one leaderboard, found %d", len(matches))
+	}
+	board, err := archive.LoadLeaderboard(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, result := range board.Results {
+		seen[result.Candidate.ID] = true
+	}
+	for _, want := range []string{"candidate-0001", "candidate-0002"} {
+		if !seen[want] {
+			t.Fatalf("leaderboard missing %s: %#v", want, board.Results)
+		}
+	}
+	cfg, err := archive.LoadRunConfig(filepath.Join(filepath.Dir(matches[0]), "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(filepath.FromSlash(cfg.RoundDir), "round-0002") {
+		t.Fatalf("RoundDir = %q, want round-0002", cfg.RoundDir)
+	}
+}
+
 func TestEvaluateRejectsInvalidResourceOptions(t *testing.T) {
 	for _, tt := range []struct {
 		name string

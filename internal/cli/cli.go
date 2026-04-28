@@ -63,6 +63,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runEvaluate(args[1:], stdout, stderr)
 	case "next-round":
 		return runNextRound(args[1:], stdout, stderr)
+	case "evolve":
+		return runEvolve(args[1:], stdout, stderr)
 	case "leaderboard":
 		return runLeaderboard(args[1:], stdout, stderr)
 	case "inspect":
@@ -275,6 +277,129 @@ func runNextRound(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "Prompt: %s\n", report.PromptPath)
 	fmt.Fprintf(stdout, "Parent candidates: %s\n", strings.Join(report.ParentIDs, ", "))
 	fmt.Fprintf(stdout, "Next candidate: %s\n", report.NextCandidateID)
+	return 0
+}
+
+func runEvolve(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("evolve", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	runID := fs.String("run", "", "run ID; defaults to latest run")
+	rounds := fs.Int("rounds", 1, "number of generate/evaluate cycles to run")
+	parents := fs.Int("parents", 3, "number of passed candidates to seed each follow-up round")
+	agentName := fs.String("agent", "codex", "agent provider to run")
+	codexBin := fs.String("codex-bin", agent.DefaultCodexBinary, "Codex CLI binary")
+	model := fs.String("model", "", "Codex model override")
+	profile := fs.String("profile", "", "Codex config profile")
+	codexSandbox := fs.String("sandbox", agent.DefaultCodexSandbox, "Codex sandbox mode")
+	approval := fs.String("approval", agent.DefaultApprovalPolicy, "Codex approval policy")
+	eventJSON := fs.Bool("event-json", true, "ask Codex to emit JSONL events")
+	skipGitRepoCheck := fs.Bool("skip-git-repo-check", true, "allow Codex to run when the host project is not a git repository")
+	outputLastMessage := fs.String("output-last-message", "", "path for Codex final response; defaults to a run artifact")
+	timeoutValue := fs.String("timeout", "", "optional evaluator timeout, such as 30s or 2m")
+	jobs := fs.Int("jobs", 1, "maximum number of candidates to evaluate concurrently")
+	nice := fs.Int("nice", 10, "nice priority for evaluator processes; 0 disables priority adjustment")
+	cpuLimit := fs.Int("cpu-limit", 0, "optional CPU limit for evaluator processes; local mode uses taskset affinity")
+	sandboxEngine := fs.String("sandbox-engine", "local", "evaluator sandbox engine: local, docker, or podman")
+	sandboxImage := fs.String("sandbox-image", "", "container image for docker or podman evaluator sandboxes")
+	sandboxNetwork := fs.String("sandbox-network", "none", "container network mode for docker or podman evaluator sandboxes")
+	var env repeatedStrings
+	fs.Var(&env, "env", "environment variable for evaluators in KEY=VALUE form; may be repeated")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if *rounds < 1 {
+		fmt.Fprintf(stderr, "evolve failed: --rounds must be at least 1\n")
+		return 2
+	}
+	if *parents < 1 {
+		fmt.Fprintf(stderr, "evolve failed: --parents must be at least 1\n")
+		return 2
+	}
+	if *jobs < 1 {
+		fmt.Fprintf(stderr, "evolve failed: --jobs must be at least 1\n")
+		return 2
+	}
+	if *nice < 0 || *nice > 19 {
+		fmt.Fprintf(stderr, "evolve failed: --nice must be between 0 and 19\n")
+		return 2
+	}
+	if *cpuLimit < 0 {
+		fmt.Fprintf(stderr, "evolve failed: --cpu-limit must be at least 0\n")
+		return 2
+	}
+	evaluatorSandbox, err := run.NormalizeSandboxOptions(run.SandboxOptions{
+		Engine:  *sandboxEngine,
+		Image:   *sandboxImage,
+		Network: *sandboxNetwork,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "evolve failed: %v\n", err)
+		return 2
+	}
+	timeout := time.Duration(0)
+	if strings.TrimSpace(*timeoutValue) != "" {
+		parsed, err := time.ParseDuration(*timeoutValue)
+		if err != nil {
+			fmt.Fprintf(stderr, "evolve failed: invalid --timeout %q: %v\n", *timeoutValue, err)
+			return 2
+		}
+		timeout = parsed
+	}
+
+	for cycle := 1; cycle <= *rounds; cycle++ {
+		fmt.Fprintf(stdout, "\nEvolution cycle %d of %d\n", cycle, *rounds)
+		code := generateWithOptions(generationOptions{
+			ProjectDir:        *projectDir,
+			RunID:             *runID,
+			AgentName:         *agentName,
+			CodexBin:          *codexBin,
+			Model:             *model,
+			Profile:           *profile,
+			Sandbox:           *codexSandbox,
+			Approval:          *approval,
+			EventJSON:         *eventJSON,
+			SkipGitRepoCheck:  *skipGitRepoCheck,
+			OutputLastMessage: *outputLastMessage,
+		}, stdout, stderr)
+		if code != 0 {
+			return code
+		}
+
+		report, err := run.EvaluateCandidates(run.EvaluationOptions{
+			ProjectDir: *projectDir,
+			RunID:      *runID,
+			Timeout:    timeout,
+			Adopt:      false,
+			Jobs:       *jobs,
+			Nice:       *nice,
+			CPULimit:   *cpuLimit,
+			Env:        []string(env),
+			Sandbox:    evaluatorSandbox,
+		})
+		if err != nil {
+			fmt.Fprintf(stderr, "evolve failed: %v\n", err)
+			return 1
+		}
+		printEvaluationReport(stdout, report)
+
+		if cycle < *rounds {
+			next, err := run.PrepareNextRound(run.NextRoundOptions{
+				ProjectDir: *projectDir,
+				RunID:      *runID,
+				Parents:    *parents,
+			})
+			if err != nil {
+				fmt.Fprintf(stderr, "evolve failed: %v\n", err)
+				return 1
+			}
+			fmt.Fprintf(stdout, "\nPrepared round %d\n", next.Round)
+			fmt.Fprintf(stdout, "Round directory: %s\n", next.RoundDir)
+			fmt.Fprintf(stdout, "Prompt: %s\n", next.PromptPath)
+			fmt.Fprintf(stdout, "Parent candidates: %s\n", strings.Join(next.ParentIDs, ", "))
+		}
+	}
 	return 0
 }
 
@@ -976,6 +1101,7 @@ Usage:
   crucible adopt [--project DIR] [--run RUN_ID]
   crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--nice N] [--cpu-limit N] [--sandbox-engine docker|podman --sandbox-image IMAGE]
   crucible next-round [--project DIR] [--run RUN_ID] [--parents N]
+  crucible evolve [--project DIR] [--run RUN_ID] [--rounds N] [--parents N]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]
   crucible inspect [--project DIR] [--run RUN_ID] [candidate-id]
   crucible version
@@ -987,6 +1113,7 @@ Core workflow:
   4. Run "crucible generate --agent codex" to ask Codex for competitors, or use "crucible run --generate" as an explicit shortcut.
   5. Run "crucible evaluate" to execute the run evaluator and update leaderboard results.
   6. Run "crucible next-round" to prepare the next generation prompt from passed candidates.
+  7. Run "crucible evolve --rounds N" to automate generate/evaluate/next-round cycles.
 
 `)
 }

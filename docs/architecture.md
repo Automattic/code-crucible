@@ -18,7 +18,7 @@ optimization request
   -> next generation prompt
 ```
 
-The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP/HTTPS proxy env routing, next-round prompt preparation, leaderboard scoring, and resource metric archival. Automated multi-round execution loops are the next major execution-layer gap.
+The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP/HTTPS proxy env routing, next-round prompt preparation, automated multi-round execution loops, leaderboard scoring, and resource metric archival. SQLite indexing and richer reporting are the next major archive-layer gaps.
 
 ## Project Mode
 
@@ -158,6 +158,8 @@ After successful generation, Code Crucible adopts valid `candidate-NNNN` directo
 
 After evaluation produces passed candidates, `crucible next-round` selects the top passed parents by score, updates the active round in `run.json`, and writes the next generation prompt with historical metrics and parent IDs. The next `crucible generate` invocation uses that active prompt and round directory.
 
+`crucible evolve --rounds N` automates the loop by running generation, evaluating adopted candidates, and preparing the next round between cycles. It uses the same generation and evaluation options as the individual commands so the filesystem artifacts remain inspectable at every step.
+
 Future providers can use the same run metadata and prompt package through a common provider interface.
 
 ## Evaluation
@@ -190,8 +192,6 @@ The planned evaluator layer will add:
 - Allowlist enforcement
 - External trace collection
 - Richer sandbox profiles
-
-The planned orchestration layer will add automated multi-round loops that chain generation, adoption, evaluation, and next-round preparation.
 
 ## Data Model
 
