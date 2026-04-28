@@ -430,7 +430,7 @@ Cleanup before more feature work:
 - [x] Start fixture gateways for local `mock` and `replay` evaluation, or stop exporting local proxy variables that point to no running gateway
 - [x] Decide archive path portability: keep absolute runtime paths in `run.json`, or store relative archive paths and resolve absolutes at execution time
 - [x] Refresh stale security and external-policy docs so they match current Docker/Podman and proxy behavior
-- [ ] Split large implementation files before adding reporting: CLI commands, evaluator sandbox/resource handling, and generated gateway source
+- [x] Split large implementation files before adding reporting: CLI commands, evaluator sandbox/resource handling, and generated gateway source
 - [ ] Add SQLite schema-version handling for derivative index rebuilds
 - [x] Add a cleanup command or Make target for ignored build, cache, and smoke-test artifacts
 
