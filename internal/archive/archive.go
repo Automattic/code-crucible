@@ -49,10 +49,32 @@ func LoadRunConfig(path string) (*model.RunConfig, error) {
 }
 
 func LatestRunDir(projectDir string) (string, error) {
+	runs, err := runDirs(projectDir)
+	if err != nil {
+		return "", err
+	}
+	if len(runs) == 0 {
+		return "", fmt.Errorf("no Code Crucible runs found in %s", filepath.Join(project.WorkDir(projectDir), "runs"))
+	}
+	return runs[len(runs)-1], nil
+}
+
+func PreviousRunDir(projectDir string) (string, error) {
+	runs, err := runDirs(projectDir)
+	if err != nil {
+		return "", err
+	}
+	if len(runs) < 2 {
+		return "", fmt.Errorf("no previous Code Crucible run found in %s", filepath.Join(project.WorkDir(projectDir), "runs"))
+	}
+	return runs[len(runs)-2], nil
+}
+
+func runDirs(projectDir string) ([]string, error) {
 	runsDir := filepath.Join(project.WorkDir(projectDir), "runs")
 	entries, err := os.ReadDir(runsDir)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	var runs []string
@@ -62,17 +84,49 @@ func LatestRunDir(projectDir string) (string, error) {
 		}
 	}
 	sort.Strings(runs)
-	if len(runs) == 0 {
-		return "", fmt.Errorf("no Code Crucible runs found in %s", runsDir)
-	}
-	return runs[len(runs)-1], nil
+	return runs, nil
 }
 
 func RunDir(projectDir, runID string) (string, error) {
-	if strings.TrimSpace(runID) == "" {
+	runID = strings.TrimSpace(runID)
+	switch runID {
+	case "", "latest":
 		return LatestRunDir(projectDir)
+	case "previous":
+		return PreviousRunDir(projectDir)
 	}
-	return filepath.Join(project.WorkDir(projectDir), "runs", runID), nil
+	if filepath.IsAbs(runID) {
+		return filepath.Clean(runID), nil
+	}
+
+	runsDir := filepath.Join(project.WorkDir(projectDir), "runs")
+	exact := filepath.Join(runsDir, runID)
+	if info, err := os.Stat(exact); err == nil && info.IsDir() {
+		return exact, nil
+	}
+
+	runs, err := runDirs(projectDir)
+	if err != nil {
+		return "", err
+	}
+	var matches []string
+	for _, candidate := range runs {
+		if strings.HasPrefix(filepath.Base(candidate), runID) {
+			matches = append(matches, candidate)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return exact, nil
+	case 1:
+		return matches[0], nil
+	default:
+		names := make([]string, 0, len(matches))
+		for _, match := range matches {
+			names = append(names, filepath.Base(match))
+		}
+		return "", fmt.Errorf("run selector %q is ambiguous: %s", runID, strings.Join(names, ", "))
+	}
 }
 
 func RunConfigPath(projectDir, runID string) (string, error) {

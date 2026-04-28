@@ -1,6 +1,7 @@
 package archive
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -56,5 +57,52 @@ func TestProjectRelativePath(t *testing.T) {
 	}
 	if got := ProjectRelativePath(projectDir, ""); got != "" {
 		t.Fatalf("ProjectRelativePath empty = %q, want empty", got)
+	}
+}
+
+func TestRunDirSelectors(t *testing.T) {
+	projectDir := t.TempDir()
+	runsDir := filepath.Join(projectDir, ".crucible", "runs")
+	for _, name := range []string{
+		"20260428-100000-first",
+		"20260428-110000-second",
+		"20260428-120000-third",
+	} {
+		if err := os.MkdirAll(filepath.Join(runsDir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for selector, want := range map[string]string{
+		"":                      "20260428-120000-third",
+		"latest":                "20260428-120000-third",
+		"previous":              "20260428-110000-second",
+		"20260428-110000":       "20260428-110000-second",
+		"20260428-100000-first": "20260428-100000-first",
+	} {
+		got, err := RunDir(projectDir, selector)
+		if err != nil {
+			t.Fatalf("RunDir(%q) returned error: %v", selector, err)
+		}
+		if filepath.Base(got) != want {
+			t.Fatalf("RunDir(%q) = %q, want %q", selector, filepath.Base(got), want)
+		}
+	}
+}
+
+func TestRunDirAmbiguousPrefix(t *testing.T) {
+	projectDir := t.TempDir()
+	runsDir := filepath.Join(projectDir, ".crucible", "runs")
+	for _, name := range []string{
+		"20260428-100000-first",
+		"20260428-100500-second",
+	} {
+		if err := os.MkdirAll(filepath.Join(runsDir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := RunDir(projectDir, "20260428-10"); err == nil {
+		t.Fatal("RunDir succeeded for ambiguous prefix")
 	}
 }

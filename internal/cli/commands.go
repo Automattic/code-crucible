@@ -399,6 +399,8 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 	cpuLimit := fs.Int("cpu-limit", 0, "optional CPU limit for evaluator processes; local mode uses taskset affinity")
 	warmups := fs.Int("warmups", 0, "number of evaluator warmup runs to discard before measured repetitions")
 	repetitions := fs.Int("repetitions", 1, "number of measured evaluator repetitions to aggregate")
+	outlierMode := fs.String("outliers", "none", "outlier handling for measured repetitions: none or trim-min-max")
+	sampleStat := fs.String("sample-stat", "mean", "aggregate statistic for measured repetitions: mean, median, min, or max")
 	sandboxProfile := fs.String("sandbox-profile", "default", "evaluator sandbox profile: default, strict, or networked")
 	sandboxEngine := fs.String("sandbox-engine", "local", "evaluator sandbox engine: local, docker, or podman")
 	sandboxImage := fs.String("sandbox-image", "", "container image for docker or podman evaluator sandboxes")
@@ -437,6 +439,14 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 	}
 	if *repetitions < 1 {
 		fmt.Fprintf(stderr, "evolve failed: --repetitions must be at least 1\n")
+		return 2
+	}
+	if !validOutlierMode(*outlierMode) {
+		fmt.Fprintf(stderr, "evolve failed: --outliers must be none or trim-min-max\n")
+		return 2
+	}
+	if !validSampleStat(*sampleStat) {
+		fmt.Fprintf(stderr, "evolve failed: --sample-stat must be mean, median, min, or max\n")
 		return 2
 	}
 	if *pidsLimit < 0 {
@@ -494,6 +504,8 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 			CPULimit:    *cpuLimit,
 			Warmups:     *warmups,
 			Repetitions: *repetitions,
+			OutlierMode: *outlierMode,
+			SampleStat:  *sampleStat,
 			Env:         []string(env),
 			Sandbox:     evaluatorSandbox,
 		})
@@ -569,6 +581,8 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	cpuLimit := fs.Int("cpu-limit", 0, "optional CPU limit for evaluator processes; local mode uses taskset affinity")
 	warmups := fs.Int("warmups", 0, "number of evaluator warmup runs to discard before measured repetitions")
 	repetitions := fs.Int("repetitions", 1, "number of measured evaluator repetitions to aggregate")
+	outlierMode := fs.String("outliers", "none", "outlier handling for measured repetitions: none or trim-min-max")
+	sampleStat := fs.String("sample-stat", "mean", "aggregate statistic for measured repetitions: mean, median, min, or max")
 	sandboxProfile := fs.String("sandbox-profile", "default", "evaluator sandbox profile: default, strict, or networked")
 	sandboxEngine := fs.String("sandbox-engine", "local", "evaluator sandbox engine: local, docker, or podman")
 	sandboxImage := fs.String("sandbox-image", "", "container image for docker or podman evaluator sandboxes")
@@ -601,6 +615,14 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	}
 	if *repetitions < 1 {
 		fmt.Fprintf(stderr, "evaluate failed: --repetitions must be at least 1\n")
+		return 2
+	}
+	if !validOutlierMode(*outlierMode) {
+		fmt.Fprintf(stderr, "evaluate failed: --outliers must be none or trim-min-max\n")
+		return 2
+	}
+	if !validSampleStat(*sampleStat) {
+		fmt.Fprintf(stderr, "evaluate failed: --sample-stat must be mean, median, min, or max\n")
 		return 2
 	}
 	if *pidsLimit < 0 {
@@ -641,6 +663,8 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 		CPULimit:    *cpuLimit,
 		Warmups:     *warmups,
 		Repetitions: *repetitions,
+		OutlierMode: *outlierMode,
+		SampleStat:  *sampleStat,
 		Env:         []string(env),
 		Sandbox:     sandbox,
 	})
@@ -726,6 +750,24 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func validOutlierMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "none", "trim-min-max":
+		return true
+	default:
+		return false
+	}
+}
+
+func validSampleStat(stat string) bool {
+	switch strings.ToLower(strings.TrimSpace(stat)) {
+	case "", "mean", "median", "min", "max":
+		return true
+	default:
+		return false
+	}
 }
 
 type repeatedStrings []string

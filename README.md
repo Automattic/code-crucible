@@ -186,6 +186,8 @@ crucible report
 
 By default, reports are written to `.crucible/runs/<run-id>/reports/leaderboard.html`. Use `--output report.html` to choose a different path.
 
+Commands that accept `--run` can use a full run ID, a unique run ID prefix, `latest`, or `previous`. Omitting `--run` is the same as `--run latest`.
+
 Inspect a candidate:
 
 ```bash
@@ -359,10 +361,14 @@ crucible evaluate \
 Use `--warmups` and `--repetitions` when one evaluator run is too noisy:
 
 ```bash
-crucible evaluate --warmups 1 --repetitions 5
+crucible evaluate \
+  --warmups 1 \
+  --repetitions 5 \
+  --outliers trim-min-max \
+  --sample-stat median
 ```
 
-Warmup runs are discarded. Measured repetitions are aggregated into `metrics.json`, with per-sample details archived in `evaluation-samples.json`. Aggregated metrics include runtime mean/min/max/stddev and the measured repetition count.
+Warmup runs are discarded. Measured repetitions are aggregated into `metrics.json`, with per-sample details archived in `evaluation-samples.json`. Aggregated metrics include runtime mean/min/median/max/stddev, standard error, approximate 95% confidence half-width, the selected sample statistic, and the measured repetition count. `--outliers trim-min-max` removes one low and one high measured sample before aggregation when at least three measured samples exist.
 
 Container sandboxes bind-mount the run archive read/write and the host project read-only at their original absolute paths, run with network isolation by default, and pass `--cpu-limit` through as a container CPU quota. Container runs execute an archived resource wrapper inside the sandbox, so CPU and wall-time resource metrics describe the evaluator process inside the container instead of the host Docker or Podman client.
 
@@ -536,8 +542,8 @@ Base functionality roadmap:
 - [ ] Validate semantic drop-in replacement contracts before benchmarking
 - [x] Improve no-source-path generation so the agent extracts and archives the baseline before creating competitors
 - [x] Add repeated evaluation controls for warmups, repetitions, and runtime spread metrics
-- [ ] Add outlier handling, confidence summaries, and configurable statistical score inputs
-- [ ] Add run selection helpers so commands and interactive flows do not always imply the latest run
+- [x] Add outlier handling, confidence summaries, and configurable statistical score inputs
+- [x] Add run selection helpers so commands do not always imply the latest run
 
 Model-agnostic agent roadmap:
 

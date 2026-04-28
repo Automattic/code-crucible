@@ -191,11 +191,100 @@ JSON
 	if metrics.RuntimeStddevMS < 8.16 || metrics.RuntimeStddevMS > 8.17 {
 		t.Fatalf("runtime_stddev_ms = %f, want about 8.165", metrics.RuntimeStddevMS)
 	}
+	if metrics.RuntimeMedianMS != 30 {
+		t.Fatalf("runtime_median_ms = %f, want 30", metrics.RuntimeMedianMS)
+	}
+	if metrics.RuntimeStdErrorMS < 4.71 || metrics.RuntimeStdErrorMS > 4.72 {
+		t.Fatalf("runtime_std_error_ms = %f, want about 4.714", metrics.RuntimeStdErrorMS)
+	}
+	if metrics.RuntimeCI95HalfWidthMS < 9.23 || metrics.RuntimeCI95HalfWidthMS > 9.24 {
+		t.Fatalf("runtime_ci95_half_width_ms = %f, want about 9.238", metrics.RuntimeCI95HalfWidthMS)
+	}
 	if metrics.P95LatencyMS != 60 {
 		t.Fatalf("p95_latency_ms = %f, want 60", metrics.P95LatencyMS)
 	}
 	if metrics.MemoryPeakBytes != 400 {
 		t.Fatalf("memory_peak_bytes = %d, want 400", metrics.MemoryPeakBytes)
+	}
+}
+
+func TestEvaluateCandidatesTrimsOutliersAndUsesConfiguredSampleStat(t *testing.T) {
+	projectDir, created := createEvaluationFixture(t)
+
+	evaluator := `#!/usr/bin/env bash
+set -euo pipefail
+candidate_dir="$1"
+metrics_out="$3"
+verdict_out="$4"
+counter="$candidate_dir/evaluation-counter"
+current=0
+if [[ -f "$counter" ]]; then
+  current="$(cat "$counter")"
+fi
+current=$((current + 1))
+printf '%s' "$current" > "$counter"
+case "$current" in
+  1) runtime=10 ;;
+  2) runtime=30 ;;
+  3) runtime=40 ;;
+  *) runtime=1000 ;;
+esac
+cat > "$metrics_out" <<JSON
+{
+  "runtime_mean_ms": $runtime,
+  "p95_latency_ms": $runtime
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+`
+	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluator), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCandidates(EvaluationOptions{
+		ProjectDir:  projectDir,
+		RunID:       created.ID,
+		CandidateID: "candidate-0000-baseline",
+		Adopt:       false,
+		Repetitions: 4,
+		OutlierMode: "trim-min-max",
+		SampleStat:  "median",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("evaluated results = %d, want one", len(report.Results))
+	}
+
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics := board.Results[0].Metrics
+	if metrics.EvaluationOutlierMode != "trim-min-max" {
+		t.Fatalf("outlier mode = %q", metrics.EvaluationOutlierMode)
+	}
+	if metrics.EvaluationSampleStat != "median" {
+		t.Fatalf("sample stat = %q", metrics.EvaluationSampleStat)
+	}
+	if metrics.EvaluationOutliersRemoved != 2 {
+		t.Fatalf("outliers removed = %d, want 2", metrics.EvaluationOutliersRemoved)
+	}
+	if metrics.EvaluationRepetitions != 2 {
+		t.Fatalf("included repetitions = %d, want 2", metrics.EvaluationRepetitions)
+	}
+	if metrics.RuntimeMeanMS != 35 || metrics.P95LatencyMS != 35 {
+		t.Fatalf("runtime/p95 = %f/%f, want 35/35", metrics.RuntimeMeanMS, metrics.P95LatencyMS)
+	}
+	if metrics.RuntimeMinMS != 30 || metrics.RuntimeMaxMS != 40 {
+		t.Fatalf("runtime min/max = %f/%f, want 30/40", metrics.RuntimeMinMS, metrics.RuntimeMaxMS)
 	}
 }
 

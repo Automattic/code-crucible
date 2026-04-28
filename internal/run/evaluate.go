@@ -25,6 +25,8 @@ type EvaluationOptions struct {
 	CPULimit    int
 	Warmups     int
 	Repetitions int
+	OutlierMode string
+	SampleStat  string
 	Env         []string
 	Sandbox     SandboxOptions
 }
@@ -142,6 +144,8 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 				CPULimit:    opts.CPULimit,
 				Warmups:     opts.Warmups,
 				Repetitions: opts.Repetitions,
+				OutlierMode: opts.OutlierMode,
+				SampleStat:  opts.SampleStat,
 				Env:         evaluatorEnv,
 				ProjectDir:  absProject,
 				Sandbox:     opts.Sandbox,
@@ -156,6 +160,8 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 			CPULimit:    opts.CPULimit,
 			Warmups:     opts.Warmups,
 			Repetitions: opts.Repetitions,
+			OutlierMode: opts.OutlierMode,
+			SampleStat:  opts.SampleStat,
 			Env:         evaluatorEnv,
 			ProjectDir:  absProject,
 			Sandbox:     opts.Sandbox,
@@ -185,6 +191,8 @@ type evaluatorExecutionOptions struct {
 	CPULimit    int
 	Warmups     int
 	Repetitions int
+	OutlierMode string
+	SampleStat  string
 	Env         []string
 	ProjectDir  string
 	Sandbox     SandboxOptions
