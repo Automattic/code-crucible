@@ -442,8 +442,18 @@ func TestInteractiveGeneratePromptsForAdvancedOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	editor := filepath.Join(t.TempDir(), "editor.sh")
+	editorLog := filepath.Join(t.TempDir(), "editor.log")
+	editorScript := "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$@\" > \"$EDITOR_LOG\"\n"
+	if err := os.WriteFile(editor, []byte(editorScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", editor)
+	t.Setenv("EDITOR_LOG", editorLog)
+
 	finalPath := filepath.Join(projectDir, "codex-final.md")
-	input := "\n3\n\n\ny\ngpt-test\n" + finalPath + "\nprofile-a\nread-only\non-request\ny\nq\n"
+	input := "\n3\n\n\nedit\n\ny\ngpt-test\n" + finalPath + "\nprofile-a\nread-only\non-request\ny\nq\n"
 	var stdout, stderr bytes.Buffer
 	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
@@ -459,6 +469,15 @@ func TestInteractiveGeneratePromptsForAdvancedOptions(t *testing.T) {
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
+		}
+	}
+	editorData, err := os.ReadFile(editorLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"docs/interfaces.md", "evaluator/evaluator.sh", "prompts/generation-round-0001.md"} {
+		if !strings.Contains(string(editorData), want) {
+			t.Fatalf("editor did not receive %q:\n%s", want, string(editorData))
 		}
 	}
 }

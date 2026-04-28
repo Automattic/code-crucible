@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -31,6 +32,11 @@ type interactiveRunOptions struct {
 	ExternalMode    string
 	Fixtures        string
 	AllowHosts      []string
+}
+
+type reviewArtifact struct {
+	Label string
+	Path  string
 }
 
 func runInteractive(stdin io.Reader, stdout, stderr io.Writer) int {
@@ -145,6 +151,14 @@ func (s interactiveSession) menu(projectDir string) int {
 			args := []string{"--project-dir", projectDir, "--run", runSelector}
 			if generationAgent != "" {
 				args = append(args, "--agent", generationAgent)
+			}
+			proceed, ok := s.reviewRunArtifactsBeforeGeneration(projectDir, runSelector)
+			if !ok {
+				return 0
+			}
+			if !proceed {
+				fmt.Fprintln(s.stdout, "Generation skipped.")
+				continue
 			}
 			advancedArgs, ok := s.askAdvancedGenerationOptions(projectDir, runSelector, generationAgent)
 			if !ok {
@@ -598,6 +612,99 @@ func (s interactiveSession) askAdvancedGenerationOptions(projectDir, runSelector
 		args = append(args, "--dry-run")
 	}
 	return args, true
+}
+
+func (s interactiveSession) reviewRunArtifactsBeforeGeneration(projectDir, runSelector string) (bool, bool) {
+	artifacts, err := runReviewArtifacts(projectDir, runSelector)
+	if err != nil {
+		fmt.Fprintf(s.stderr, "review failed: %v\n", err)
+		return false, false
+	}
+	fmt.Fprintln(s.stdout, "Run artifacts to review before generation:")
+	for _, artifact := range artifacts {
+		fmt.Fprintf(s.stdout, "- %s: %s\n", artifact.Label, artifact.Path)
+	}
+	for {
+		answer, ok := s.ask("Review action [continue/edit/skip]: ")
+		if !ok {
+			return false, false
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "", "c", "continue":
+			return true, true
+		case "s", "skip":
+			return false, true
+		case "e", "edit", "open":
+			proceed, ok := s.editReviewArtifacts(artifacts)
+			if !ok || !proceed {
+				return proceed, ok
+			}
+			return true, true
+		default:
+			fmt.Fprintln(s.stdout, "Please choose continue, edit, or skip.")
+		}
+	}
+}
+
+func (s interactiveSession) editReviewArtifacts(artifacts []reviewArtifact) (bool, bool) {
+	editor := strings.TrimSpace(os.Getenv("VISUAL"))
+	if editor == "" {
+		editor = strings.TrimSpace(os.Getenv("EDITOR"))
+	}
+	if editor == "" {
+		fmt.Fprintln(s.stdout, "VISUAL and EDITOR are not set. Open the listed files manually if needed.")
+		return s.confirm("Continue with generation?", true)
+	}
+	args := strings.Fields(editor)
+	if len(args) == 0 {
+		fmt.Fprintln(s.stdout, "Editor command is empty. Open the listed files manually if needed.")
+		return s.confirm("Continue with generation?", true)
+	}
+	for _, artifact := range artifacts {
+		args = append(args, artifact.Path)
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(s.stderr, "editor failed: %v\n", err)
+		return false, false
+	}
+	return s.confirm("Continue with generation?", true)
+}
+
+func runReviewArtifacts(projectDir, runSelector string) ([]reviewArtifact, error) {
+	configPath, err := archive.RunConfigPath(projectDir, runSelector)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := archive.LoadRunConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+	runDir := cfg.RunDir
+	if runDir == "" {
+		runDir = filepath.Dir(configPath)
+	} else {
+		runDir = archive.ProjectPath(projectDir, runDir)
+	}
+	artifacts := []reviewArtifact{
+		{Label: "Interface docs", Path: archive.ProjectPath(projectDir, cfg.InterfaceDocs)},
+		{Label: "Evaluator scaffold", Path: filepath.Join(runDir, "evaluator", "evaluator.sh")},
+		{Label: "Generation prompt", Path: archive.ProjectPath(projectDir, cfg.PromptPath)},
+	}
+	for _, artifact := range []reviewArtifact{
+		{Label: "Agent discovery JSON", Path: filepath.Join(runDir, "docs", "agent-discovery.json")},
+		{Label: "Agent discovery Markdown", Path: filepath.Join(runDir, "docs", "agent-discovery.md")},
+	} {
+		if _, err := os.Stat(artifact.Path); err == nil {
+			artifacts = append(artifacts, artifact)
+		} else if err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+	return artifacts, nil
 }
 
 func (s interactiveSession) resolveInteractiveGenerationProvider(projectDir, runSelector, generationAgent string) (agent.ProviderDefinition, error) {
