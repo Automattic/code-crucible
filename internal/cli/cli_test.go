@@ -375,6 +375,47 @@ func TestInteractiveIndexPromptsForRunAndJSON(t *testing.T) {
 	}
 }
 
+func TestInteractiveGeneratePromptsForAdvancedOptions(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		SourcePath:   "internal/search/rank.go",
+		Variants:     1,
+		ExternalMode: "deny",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	finalPath := filepath.Join(projectDir, "codex-final.md")
+	input := "\n3\n\n\ny\ngpt-test\n" + finalPath + "\nprofile-a\nread-only\non-request\ny\nq\n"
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Codex command:",
+		"--model gpt-test",
+		"--profile profile-a",
+		"--sandbox read-only",
+		"--ask-for-approval on-request",
+		"Final message: " + finalPath,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestInteractiveAgentSettingsUpdatesDefaultAgent(t *testing.T) {
 	projectDir := t.TempDir()
 	chdir(t, projectDir)

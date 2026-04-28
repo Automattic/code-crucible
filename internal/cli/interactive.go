@@ -136,6 +136,11 @@ func (s interactiveSession) menu(projectDir string) int {
 			if generationAgent != "" {
 				args = append(args, "--agent", generationAgent)
 			}
+			advancedArgs, ok := s.askAdvancedGenerationOptions(projectDir, runSelector, generationAgent)
+			if !ok {
+				return 0
+			}
+			args = append(args, advancedArgs...)
 			if code := runGenerate(args, s.stdout, s.stderr); code != 0 {
 				return code
 			}
@@ -434,6 +439,81 @@ func (s interactiveSession) standaloneDiscovery(projectDir string) int {
 	}
 	args := []string{"--project-dir", projectDir, "--agent", discoveryAgent, request}
 	return runDiscover(args, s.stdout, s.stderr)
+}
+
+func (s interactiveSession) askAdvancedGenerationOptions(projectDir, runSelector, generationAgent string) ([]string, bool) {
+	configure, ok := s.confirm("Configure advanced generation options?", false)
+	if !ok || !configure {
+		return nil, ok
+	}
+	provider, err := s.resolveInteractiveGenerationProvider(projectDir, runSelector, generationAgent)
+	if err != nil {
+		fmt.Fprintf(s.stderr, "generate options failed: %v\n", err)
+		return nil, false
+	}
+
+	var args []string
+	modelName, ok := s.ask("Model override [default]: ")
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(modelName) != "" {
+		args = append(args, "--model", strings.TrimSpace(modelName))
+	}
+	outputPath, ok := s.ask("Final response output path [artifact default]: ")
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(outputPath) != "" {
+		args = append(args, "--output-last-message", strings.TrimSpace(outputPath))
+	}
+	if provider.Kind == agent.ProviderCodex {
+		profile, ok := s.ask("Codex profile [default]: ")
+		if !ok {
+			return nil, false
+		}
+		if strings.TrimSpace(profile) != "" {
+			args = append(args, "--profile", strings.TrimSpace(profile))
+		}
+		sandbox, ok := s.ask(fmt.Sprintf("Codex sandbox [%s]: ", agent.DefaultCodexSandbox))
+		if !ok {
+			return nil, false
+		}
+		if strings.TrimSpace(sandbox) != "" {
+			args = append(args, "--sandbox", strings.TrimSpace(sandbox))
+		}
+		approval, ok := s.ask(fmt.Sprintf("Codex approval mode [%s]: ", agent.DefaultApprovalPolicy))
+		if !ok {
+			return nil, false
+		}
+		if strings.TrimSpace(approval) != "" {
+			args = append(args, "--approval", strings.TrimSpace(approval))
+		}
+	}
+	dryRun, ok := s.confirm("Dry run only?", false)
+	if !ok {
+		return nil, false
+	}
+	if dryRun {
+		args = append(args, "--dry-run")
+	}
+	return args, true
+}
+
+func (s interactiveSession) resolveInteractiveGenerationProvider(projectDir, runSelector, generationAgent string) (agent.ProviderDefinition, error) {
+	configPath, err := archive.RunConfigPath(projectDir, runSelector)
+	if err != nil {
+		return agent.ProviderDefinition{}, err
+	}
+	cfg, err := archive.LoadRunConfig(configPath)
+	if err != nil {
+		return agent.ProviderDefinition{}, err
+	}
+	absProject, err := filepath.Abs(projectDir)
+	if err != nil {
+		return agent.ProviderDefinition{}, err
+	}
+	return resolveGenerationProvider(absProject, cfg, generationAgent)
 }
 
 func (s interactiveSession) queryArchive(projectDir string) int {
