@@ -30,6 +30,7 @@ type CancellationEvent struct {
 	EventPath         string    `json:"event_path"`
 	UpdatedCandidates []string  `json:"updated_candidates,omitempty"`
 	SkippedCandidates []string  `json:"skipped_candidates,omitempty"`
+	PartialCandidates []string  `json:"partial_candidates,omitempty"`
 }
 
 func MarkCanceled(opts CancellationOptions) (*CancellationEvent, error) {
@@ -73,8 +74,24 @@ func MarkCanceled(opts CancellationOptions) (*CancellationEvent, error) {
 	leaderboardPath := filepath.Join(runDir, "leaderboard.json")
 	if board, err := archive.LoadLeaderboard(leaderboardPath); err == nil {
 		event.LeaderboardPath = filepath.ToSlash(leaderboardPath)
-		if event.Action == "evaluate" {
+		switch event.Action {
+		case "evaluate":
 			markCanceledEvaluationCandidates(board, event)
+			if len(event.UpdatedCandidates) > 0 {
+				if err := archive.SaveJSON(leaderboardPath, board); err != nil {
+					return nil, err
+				}
+			}
+		case "generate":
+			roundDir := cfg.RoundDir
+			if roundDir == "" {
+				roundDir = filepath.Join(runDir, "round-0001")
+			} else {
+				roundDir = archive.ProjectPath(absProject, roundDir)
+			}
+			if err := markCanceledGeneratedCandidates(board, event, absProject, roundDir, cfg.External.Mode); err != nil {
+				return nil, err
+			}
 			if len(event.UpdatedCandidates) > 0 {
 				if err := archive.SaveJSON(leaderboardPath, board); err != nil {
 					return nil, err
@@ -115,6 +132,80 @@ func markCanceledEvaluationCandidates(board *model.Leaderboard, event *Cancellat
 		result.Verdict.Notes = appendMissingStrings(result.Verdict.Notes, []string{event.Reason})
 		event.UpdatedCandidates = append(event.UpdatedCandidates, result.Candidate.ID)
 	}
+}
+
+func markCanceledGeneratedCandidates(board *model.Leaderboard, event *CancellationEvent, projectDir, roundDir string, externalMode model.ExternalMode) error {
+	if !externalMode.Valid() {
+		externalMode = model.ExternalModeDeny
+	}
+	seen := make(map[string]bool, len(board.Results))
+	for _, result := range board.Results {
+		seen[result.Candidate.ID] = true
+	}
+	entries, err := os.ReadDir(roundDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	roundNumber := roundNumberFromDir(roundDir)
+	if roundNumber <= 0 {
+		roundNumber = 1
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		id := entry.Name()
+		if id == "candidate-0000-baseline" || !strings.HasPrefix(id, "candidate-") {
+			continue
+		}
+		if !generatedCandidateIDPattern.MatchString(id) {
+			event.PartialCandidates = append(event.PartialCandidates, filepath.ToSlash(filepath.Join(roundDir, id))+": generated candidate directories must use candidate-NNNN")
+			continue
+		}
+		if seen[id] {
+			continue
+		}
+		candidateDir := filepath.Join(roundDir, id)
+		candidate, issue := loadAdoptableCandidate(candidateDir, roundDir, id, roundNumber, AdoptionOptions{
+			ProjectDir: projectDir,
+		})
+		if issue != nil {
+			event.PartialCandidates = append(event.PartialCandidates, fmt.Sprintf("%s: %s", filepath.ToSlash(issue.Path), issue.Reason))
+			continue
+		}
+		if candidate.Agent == "" {
+			candidate.Agent = "unknown"
+		}
+		if candidate.SourcePath == "" {
+			candidate.SourcePath = archive.ProjectRelativePath(projectDir, filepath.Join(candidateDir, "src"))
+		}
+		board.Results = append(board.Results, model.CandidateResult{
+			Candidate: candidate,
+			External: model.ExternalCallTrace{
+				Mode:         externalMode,
+				PolicyPassed: false,
+			},
+			Verdict: model.Verdict{
+				CorrectnessPassed:    false,
+				BenchmarkPassed:      false,
+				ExternalPolicyPassed: false,
+				Notes: []string{
+					event.Reason,
+				},
+			},
+			ScoreExplanation: &model.ScoreExplanation{
+				Scoreable: false,
+				Reason:    "candidate generation canceled",
+			},
+			Status: model.CandidateStatusCanceled,
+		})
+		seen[id] = true
+		event.UpdatedCandidates = append(event.UpdatedCandidates, id)
+	}
+	return nil
 }
 
 func candidateStatusCancelable(status string) bool {

@@ -21,12 +21,11 @@ Code Crucible uses Bubble Tea v1.2.x and Bubbles v0.20.x because that pair suppo
 - Use the existing `internal/cli.WorkflowController` from prompt mode and the TUI so both interfaces share command construction and execution.
 - The first implementation includes a run dashboard: latest or selected run status, leaderboard rows, selected candidate detail, and common next action commands.
 - Forms cover run creation, discovery, generation, evaluation, reports, and archive queries. They use Bubbles text inputs, execute through the shared CLI controller, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured output in a scrollable viewport after completion.
-- Cancellation is conservative: Code Crucible records a cancellation event and marks affected unevaluated evaluation candidates as `canceled`, but does not overwrite completed `passed` or `failed` results.
+- Cancellation is conservative: Code Crucible records a cancellation event and marks affected unevaluated evaluation candidates as `canceled`, but does not overwrite completed `passed` or `failed` results. Canceled generation records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the same event stream.
 - Candidate selection uses the Bubbles table widget, and candidate details use a scrollable viewport.
 - Keep tests focused on state transitions and command construction. Avoid terminal snapshot tests until the UI stabilizes.
 
 ## Deferred
 
 - Exact screen layout and keybindings.
-- Richer cancellation cleanup for partial generation artifacts once generated candidate lifecycle tracking is more detailed.
 - A full async app shell with richer background job management, including logs, history, parallel jobs, and detailed progress displays.

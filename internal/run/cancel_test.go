@@ -111,6 +111,66 @@ func TestEvaluateCandidatesHonorsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestMarkCanceledGenerateAdoptsValidArtifactsAsCanceled(t *testing.T) {
+	projectDir := t.TempDir()
+	created, err := Create(Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		Variants:     1,
+		ExternalMode: "deny",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeCandidateArtifact(t, filepath.Join(created.RunDir, "round-0001", "candidate-0001"), model.Candidate{
+		ID:         "candidate-0001",
+		Name:       "generated before cancel",
+		Round:      1,
+		ParentIDs:  []string{"candidate-0000-baseline"},
+		Agent:      "codex",
+		SourcePath: "src",
+	})
+	if err := os.MkdirAll(filepath.Join(created.RunDir, "round-0001", "candidate-0002", "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	event, err := MarkCanceled(CancellationOptions{
+		ProjectDir: projectDir,
+		RunID:      created.ID,
+		Action:     "generate",
+		Reason:     "user canceled generation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(event.UpdatedCandidates) != 1 || event.UpdatedCandidates[0] != "candidate-0001" {
+		t.Fatalf("UpdatedCandidates = %#v, want valid generated candidate", event.UpdatedCandidates)
+	}
+	if len(event.PartialCandidates) != 1 || !strings.Contains(event.PartialCandidates[0], "candidate-0002") {
+		t.Fatalf("PartialCandidates = %#v, want partial candidate-0002", event.PartialCandidates)
+	}
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, result := range board.Results {
+		if result.Candidate.ID != "candidate-0001" {
+			continue
+		}
+		found = true
+		if result.Status != model.CandidateStatusCanceled {
+			t.Fatalf("candidate-0001 status = %q, want canceled", result.Status)
+		}
+		if result.ScoreExplanation == nil || result.ScoreExplanation.Scoreable {
+			t.Fatalf("candidate-0001 score explanation = %#v, want unscoreable", result.ScoreExplanation)
+		}
+	}
+	if !found {
+		t.Fatalf("leaderboard did not include canceled generated candidate: %#v", board.Results)
+	}
+}
+
 func TestMarkCanceledCanTargetOneCandidate(t *testing.T) {
 	projectDir := t.TempDir()
 	created, err := Create(Options{
