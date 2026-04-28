@@ -132,6 +132,14 @@ func Load(projectDir string) (*Config, error) {
 	return &cfg, nil
 }
 
+func Save(projectDir string, cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+	NormalizeConfig(cfg)
+	return writeJSON(ConfigPath(projectDir), cfg, 0o644)
+}
+
 func NormalizeConfig(cfg *Config) {
 	if cfg.Version == 0 {
 		cfg.Version = 1

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Automattic/code-crucible/internal/agent"
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/discovery"
 	"github.com/Automattic/code-crucible/internal/model"
@@ -97,6 +98,7 @@ func (s interactiveSession) menu(projectDir string) int {
 		fmt.Fprintln(s.stdout, "  6. HTML report")
 		fmt.Fprintln(s.stdout, "  7. Inspect candidate")
 		fmt.Fprintln(s.stdout, "  8. Rebuild index")
+		fmt.Fprintln(s.stdout, "  9. Agent settings")
 		fmt.Fprintln(s.stdout, "  q. Quit")
 		choice, ok := s.ask("Choose an action [q]: ")
 		if !ok {
@@ -114,7 +116,15 @@ func (s interactiveSession) menu(projectDir string) int {
 				return code
 			}
 		case "3", "generate":
-			if code := runGenerate([]string{"--project-dir", projectDir}, s.stdout, s.stderr); code != 0 {
+			generationAgent, ok := s.askGenerationAgent(projectDir)
+			if !ok {
+				return 0
+			}
+			args := []string{"--project-dir", projectDir}
+			if generationAgent != "" {
+				args = append(args, "--agent", generationAgent)
+			}
+			if code := runGenerate(args, s.stdout, s.stderr); code != 0 {
 				return code
 			}
 		case "4", "evaluate":
@@ -130,7 +140,15 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			if code := runEvolve([]string{"--project-dir", projectDir, "--rounds", strconv.Itoa(rounds), "--parents", strconv.Itoa(parents)}, s.stdout, s.stderr); code != 0 {
+			generationAgent, ok := s.askGenerationAgent(projectDir)
+			if !ok {
+				return 0
+			}
+			args := []string{"--project-dir", projectDir, "--rounds", strconv.Itoa(rounds), "--parents", strconv.Itoa(parents)}
+			if generationAgent != "" {
+				args = append(args, "--agent", generationAgent)
+			}
+			if code := runEvolve(args, s.stdout, s.stderr); code != 0 {
 				return code
 			}
 		case "6", "report":
@@ -151,6 +169,10 @@ func (s interactiveSession) menu(projectDir string) int {
 			}
 		case "8", "index":
 			if code := runIndex([]string{"--project-dir", projectDir}, s.stdout, s.stderr); code != 0 {
+				return code
+			}
+		case "9", "agent", "agents", "agent settings":
+			if code := s.agentSettings(projectDir); code != 0 {
 				return code
 			}
 		default:
@@ -261,6 +283,84 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 	}
 	fmt.Fprintln(s.stdout)
 	return runLeaderboard([]string{"--project-dir", projectDir}, s.stdout, s.stderr)
+}
+
+func (s interactiveSession) askGenerationAgent(projectDir string) (string, bool) {
+	cfg, err := project.Load(projectDir)
+	defaultAgent := agent.ProviderCodex
+	if err == nil {
+		defaultAgent = cfg.DefaultAgent
+	}
+	s.printGenerationProviders(cfg)
+	answer, ok := s.ask(fmt.Sprintf("Generation agent [%s]: ", defaultAgent))
+	if !ok {
+		return "", false
+	}
+	answer = agent.NormalizeProviderName(answer)
+	if answer == "" || answer == defaultAgent {
+		return "", true
+	}
+	if _, err := configuredProvider(projectDir, answer, "generation"); err != nil {
+		fmt.Fprintf(s.stdout, "%v\n", err)
+		return s.askGenerationAgent(projectDir)
+	}
+	return answer, true
+}
+
+func (s interactiveSession) agentSettings(projectDir string) int {
+	cfg, err := project.Load(projectDir)
+	if err != nil {
+		fmt.Fprintf(s.stderr, "agent settings failed: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(s.stdout, "Default generation agent: %s\n", cfg.DefaultAgent)
+	s.printGenerationProviders(cfg)
+	answer, ok := s.ask("New default generation agent [leave unchanged]: ")
+	if !ok {
+		return 0
+	}
+	answer = agent.NormalizeProviderName(answer)
+	if answer == "" {
+		return 0
+	}
+	provider, err := configuredProvider(projectDir, answer, "generation")
+	if err != nil {
+		fmt.Fprintf(s.stderr, "agent settings failed: %v\n", err)
+		return 1
+	}
+	cfg.DefaultAgent = provider.Name
+	if err := project.Save(projectDir, cfg); err != nil {
+		fmt.Fprintf(s.stderr, "agent settings failed: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(s.stdout, "Default generation agent updated to %s\n", cfg.DefaultAgent)
+	return 0
+}
+
+func (s interactiveSession) printGenerationProviders(cfg *project.Config) {
+	fmt.Fprintln(s.stdout, "Generation-capable agents:")
+	var providers []agent.ProviderDefinition
+	for _, name := range agent.ProviderNames() {
+		provider, _ := agent.Provider(name)
+		if provider.Supports("generation") {
+			providers = append(providers, provider)
+		}
+	}
+	if cfg != nil {
+		for _, provider := range cfg.AgentProviders {
+			if err := agent.ValidateProviderDefinition(provider); err == nil && provider.Supports("generation") {
+				providers = append(providers, provider)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for _, provider := range providers {
+		if seen[provider.Name] {
+			continue
+		}
+		seen[provider.Name] = true
+		fmt.Fprintf(s.stdout, "- %s (%s)\n", provider.Name, provider.Kind)
+	}
 }
 
 func (s interactiveSession) printSourceSuggestions(plan *discovery.Plan) {

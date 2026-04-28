@@ -210,6 +210,65 @@ func TestInteractiveExistingProjectShowsLeaderboard(t *testing.T) {
 	}
 }
 
+func TestInteractiveAgentSettingsUpdatesDefaultAgent(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	if err := os.MkdirAll(filepath.Join(projectDir, ".crucible"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	providerScript := filepath.Join(t.TempDir(), "provider.sh")
+	if err := os.WriteFile(providerScript, []byte("#!/usr/bin/env bash\ncat >/dev/null\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := struct {
+		Version               int                                 `json:"version"`
+		ProjectName           string                              `json:"project_name"`
+		DefaultAgent          string                              `json:"default_agent"`
+		AgentProviders        map[string]agent.ProviderDefinition `json:"agent_providers"`
+		DefaultExternalPolicy model.ExternalPolicy                `json:"default_external_policy"`
+		ArchiveDir            string                              `json:"archive_dir"`
+	}{
+		Version:      1,
+		ProjectName:  "fixture",
+		DefaultAgent: "codex",
+		AgentProviders: map[string]agent.ProviderDefinition{
+			"custom": {
+				Name:    "custom",
+				Kind:    "command",
+				Command: []string{providerScript},
+				Capabilities: agent.ProviderCapabilities{
+					SupportsGeneration: true,
+				},
+			},
+		},
+		DefaultExternalPolicy: model.ExternalPolicy{Mode: model.ExternalModeDeny},
+		ArchiveDir:            "runs",
+	}
+	configRaw, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, ".crucible", "config.json"), append(configRaw, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader("\n9\ncustom\nq\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Default generation agent updated to custom") {
+		t.Fatalf("stdout did not include default update:\n%s", stdout.String())
+	}
+	raw, err := os.ReadFile(filepath.Join(projectDir, ".crucible", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"default_agent": "custom"`) {
+		t.Fatalf("config was not updated:\n%s", raw)
+	}
+}
+
 func TestDiscoverCreatesPlan(t *testing.T) {
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "checkout")
