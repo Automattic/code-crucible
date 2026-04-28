@@ -89,13 +89,22 @@ Code Crucible starts the gateway on `CRUCIBLE_MOCK_GATEWAY_ADDR` before invoking
 http://127.0.0.1:18080
 ```
 
-In `allowlist` mode, HTTP clients that honor proxy environment variables are forwarded only when the request host appears in `CRUCIBLE_ALLOWED_HOSTS`; other hosts receive a gateway denial. HTTPS clients that honor `HTTPS_PROXY` use a normal `CONNECT` tunnel to allowlisted hosts. In `mock` and `replay` modes, HTTP clients that honor standard proxy environment variables can call the original `http://...` URL from the fixture, and the request will route through the mock gateway. HTTPS clients that honor `HTTPS_PROXY` and the exported trust variables can call the original `https://...` URL; the gateway handles `CONNECT`, terminates TLS with a run-local test CA, and serves the matching fixture. In `record` mode, proxied HTTP traffic is forwarded to live upstream hosts, summarized in `external-trace.json`, and captured in `recorded-http-fixtures.json` beside the candidate. Evaluators can also configure candidates to call `CRUCIBLE_MOCK_GATEWAY_URL` directly when that is easier. The current gateway is generated Go source, so sandbox images must include `go` until Code Crucible ships a packaged gateway binary.
+In `allowlist` mode, HTTP clients that honor proxy environment variables are forwarded only when the request host appears in `CRUCIBLE_ALLOWED_HOSTS`; other hosts receive a gateway denial. HTTPS clients that honor `HTTPS_PROXY` use a normal `CONNECT` tunnel to allowlisted hosts. In `mock` and `replay` modes, HTTP clients that honor standard proxy environment variables can call the original `http://...` URL from the fixture, and the request will route through the mock gateway. HTTPS clients that honor `HTTPS_PROXY` and the exported trust variables can call the original `https://...` URL; the gateway handles `CONNECT`, terminates TLS with a run-local test CA, and serves the matching fixture. In `record` mode, proxied HTTP traffic is forwarded to live upstream hosts, summarized in `external-trace.json`, and captured in `recorded-http-fixtures.json` beside the candidate. The current gateway is generated Go source, so sandbox images must include `go` until Code Crucible ships a packaged gateway binary.
+
+For HTTP clients that do not honor proxy environment variables but can be pointed at a base URL, the gateway also supports direct-routed requests:
+
+```text
+http://127.0.0.1:18080/__crucible/http/api.example.com/users
+http://127.0.0.1:18080/__crucible/https/api.example.com/users
+```
+
+The gateway maps those paths back to `http://api.example.com/users` or `https://api.example.com/users` for fixture lookup, allowlist checks, recording, and trace output. Evaluators can also send `X-Crucible-Target-URL` or a `crucible_url` query parameter when rewriting paths is easier.
 
 `mock-ca-key.pem` is a generated test-only private key scoped to the run archive. Do not install this CA globally or reuse it outside the evaluation sandbox.
 
 Current limits:
 
-- Only clients that honor proxy environment variables are routed automatically; raw sockets and custom transports must be configured by the evaluator.
+- Clients that honor proxy environment variables are routed automatically. Clients that ignore proxy variables must either be configured to use direct-routed gateway URLs or handled by evaluator-specific routing.
 - HTTPS replay depends on the client trusting the exported mock CA variables; some runtimes may require evaluator-specific trust configuration.
 - Record mode captures HTTP response bodies from proxied HTTP requests; HTTPS CONNECT tunnels are traced as tunnel events but their encrypted payloads are not converted into replay fixtures yet.
-- Local gateway-backed evaluation still cannot block unrelated host-network access; use evaluator-specific isolation when clients can ignore proxy variables.
+- Local gateway-backed evaluation still cannot block unrelated host-network access; use evaluator-specific isolation for raw sockets or fully transparent network interception.

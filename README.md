@@ -30,7 +30,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Candidate adoption from generated `candidate-NNNN` artifacts into `leaderboard.json`
 - Local evaluator execution through `crucible evaluate`
 - Docker and Podman evaluator sandboxing with in-container resource metrics
-- Fixture-backed mock gateway startup and HTTP/HTTPS proxy env wiring for sandboxed `mock` and `replay` evaluations
+- Gateway startup, proxy wiring, direct-routed URLs, allowlist checks, replay, and record capture for external-call policies
 - `crucible next-round` for preparing follow-up generation prompts from passed candidates
 - `crucible evolve` for chaining generation, evaluation, and next-round preparation
 - Ranked human-readable leaderboard output for passed candidates
@@ -382,7 +382,7 @@ crucible run \
 
 For `deny` mode, container evaluation enforces network isolation with `--sandbox-network none`. A deny-mode container evaluation fails closed if a different sandbox network is requested. Local deny-mode runs are marked advisory because the framework cannot prevent host-network access around an arbitrary local evaluator.
 
-For `allowlist` mode, Code Crucible starts the archived gateway as an HTTP/HTTPS proxy and denies proxied requests to hosts outside `--allow-hosts`. This is partial enforcement: clients that ignore proxy environment variables still require evaluator-specific isolation, and live allowlisted hosts may be unreachable when the container sandbox network is `none`.
+For `allowlist` mode, Code Crucible starts the archived gateway as an HTTP/HTTPS proxy and denies proxied requests to hosts outside `--allow-hosts`. This is partial enforcement: clients that ignore proxy environment variables can use direct-routed gateway URLs when their base URL is configurable, but raw sockets and fully transparent routing still require evaluator-specific isolation. Live allowlisted hosts may be unreachable when the container sandbox network is `none`.
 
 Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock`, `replay`, and `record` evaluation, Code Crucible exports gateway and proxy environment variables, then starts the archived gateway before running the evaluator. Record mode captures proxied HTTP responses into each candidate's `recorded-http-fixtures.json` and writes `external-trace.json`; transparent HTTPS tunnels are traced but not replay-captured yet. Container mode can combine this with `--sandbox-network none`; local mode still cannot block unrelated host-network access. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
 
@@ -479,7 +479,8 @@ Evaluator roadmap:
 
 - [x] Enforce `allowlist` mode for proxied HTTP and HTTPS traffic
 - [x] Add external trace collection and `record` mode capture
-- [ ] Add lower-level routing for clients that ignore proxy environment variables
+- [x] Add direct-routed gateway URLs for clients that ignore proxy environment variables
+- [ ] Add transparent routing for raw socket clients
 - [ ] Package the fixture gateway for sandbox images without Go
 
 ## License

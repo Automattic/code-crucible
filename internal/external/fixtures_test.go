@@ -188,11 +188,80 @@ func TestMockGatewaySourceIncludesProxyRouting(t *testing.T) {
 		"proxyConnect",
 		"traceSummary",
 		"record-fixtures",
+		"X-Crucible-Target-URL",
+		"/__crucible/",
 		"BodySHA256",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("mock gateway source missing %q", want)
 		}
+	}
+}
+
+func TestGeneratedMockGatewayServesDirectRoutedFixture(t *testing.T) {
+	dir := t.TempDir()
+	gatewayPath := filepath.Join(dir, MockGatewayName)
+	if err := WriteMockGateway(gatewayPath); err != nil {
+		t.Fatal(err)
+	}
+	fixturesPath := filepath.Join(dir, HTTPFixturesName)
+	if err := SaveHTTPFixtureSet(fixturesPath, HTTPFixtureSet{
+		Version: HTTPFixtureVersion,
+		Fixtures: []HTTPFixture{
+			{
+				ID: "direct-users",
+				Request: HTTPFixtureRequest{
+					Method: "GET",
+					URL:    "http://api.example.test/users?active=1",
+				},
+				Response: HTTPFixtureResponse{
+					Status: 200,
+					Headers: map[string]string{
+						"content-type": "application/json",
+					},
+					Body: "[]",
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	addr := freeLocalAddress(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "run", gatewayPath, "-fixtures", fixturesPath, "-addr", addr)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+		}
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+		}
+	})
+	waitForTCP(t, addr, &stderr)
+
+	resp, err := http.Get("http://" + addr + "/__crucible/http/api.example.test/users?active=1")
+	if err != nil {
+		t.Fatalf("direct routed GET failed: %v\nstderr:\n%s", err, stderr.String())
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 || string(body) != "[]" {
+		t.Fatalf("direct response = %d %q, want 200 []\nstderr:\n%s", resp.StatusCode, body, stderr.String())
 	}
 }
 

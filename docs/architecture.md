@@ -118,7 +118,7 @@ Supported modes:
 
 The current implementation records and communicates the policy. Container evaluation enforces `deny` mode by running with `--sandbox-network none`; deny-mode container evaluations fail closed if a different sandbox network is requested. For `allowlist`, `mock`, `replay`, and `record`, evaluators receive gateway and proxy environment variables. Local evaluation starts the archived gateway on loopback before the evaluator runs, and container evaluation starts the gateway inside the resource wrapper. `allowlist` mode denies proxied HTTP requests and HTTPS CONNECT tunnels to hosts outside the configured allowlist. `record` mode captures proxied HTTP responses for future replay and writes candidate-scoped trace summaries. Local mode still cannot block unrelated host-network access, and modes other than `deny`, `allowlist`, `mock`, `replay`, and `record` remain evaluator-advisory until DNS overrides or protocol-specific adapters are implemented.
 
-For `allowlist`, `mock`, `replay`, and `record` modes, each run archives an HTTP fixture file at `external/http-fixtures.json`. If `--external-fixtures` is provided, the file is validated and copied into the run archive; otherwise an empty fixture template is created. The generated `external/mock-gateway.go` is the first gateway artifact. It is started automatically for local and sandboxed `allowlist`, `mock`, `replay`, and `record` evaluations. In `allowlist` mode it forwards only allowlisted proxy traffic to live upstream hosts. In `mock` and `replay` modes it serves standard HTTP proxy requests and HTTPS CONNECT replay. In `record` mode it forwards live proxied HTTP traffic, writes `external-trace.json`, and records HTTP fixtures beside the evaluated candidate. Protocol-specific routing remains planned work for clients that ignore proxy environment variables.
+For `allowlist`, `mock`, `replay`, and `record` modes, each run archives an HTTP fixture file at `external/http-fixtures.json`. If `--external-fixtures` is provided, the file is validated and copied into the run archive; otherwise an empty fixture template is created. The generated `external/mock-gateway.go` is the first gateway artifact. It is started automatically for local and sandboxed `allowlist`, `mock`, `replay`, and `record` evaluations. In `allowlist` mode it forwards only allowlisted gateway traffic to live upstream hosts. In `mock` and `replay` modes it serves standard HTTP proxy requests, direct-routed gateway URLs, and HTTPS CONNECT replay. In `record` mode it forwards live gateway traffic, writes `external-trace.json`, and records HTTP fixtures beside the evaluated candidate. Raw socket routing and fully transparent interception remain planned work.
 
 ## Agent Integration
 
@@ -194,7 +194,7 @@ The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads 
 
 The planned evaluator layer will add:
 
-- Lower-level routing for clients that ignore proxy environment variables
+- Transparent routing for raw socket clients that cannot use proxy variables or direct-routed gateway URLs
 
 ## Data Model
 

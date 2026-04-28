@@ -279,7 +279,23 @@ func (g *gateway) proxyHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	out := r.Clone(r.Context())
 	out.RequestURI = ""
-	if out.URL != nil && !out.URL.IsAbs() {
+	if target, ok := directTargetURL(r); ok {
+		parsed, err := http.NewRequestWithContext(r.Context(), r.Method, target, nil)
+		if err != nil {
+			g.recordTrace(traceEvent{
+				Method:    r.Method,
+				URL:       target,
+				Host:      host,
+				Status:    http.StatusBadRequest,
+				BytesSent: int64(len(reqBody)),
+				Error:     err.Error(),
+			})
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		out.URL = parsed.URL
+		out.Host = parsed.Host
+	} else if out.URL != nil && !out.URL.IsAbs() {
 		out.URL.Scheme = "http"
 		out.URL.Host = r.Host
 	}
@@ -287,6 +303,7 @@ func (g *gateway) proxyHTTP(w http.ResponseWriter, r *http.Request) {
 	out.ContentLength = int64(len(reqBody))
 	out.Header = cloneHeader(r.Header)
 	out.Header.Del("Proxy-Connection")
+	out.Header.Del("X-Crucible-Target-URL")
 	resp, err := g.transport.RoundTrip(out)
 	if err != nil {
 		g.recordTrace(traceEvent{
@@ -664,10 +681,53 @@ func connectHost(authority string) string {
 }
 
 func requestHost(r *http.Request) string {
+	if target, ok := directTargetURL(r); ok {
+		if parsed, err := http.NewRequest(r.Method, target, nil); err == nil {
+			return normalizeHost(parsed.URL.Host)
+		}
+	}
 	if r.URL != nil && r.URL.Host != "" {
 		return normalizeHost(r.URL.Host)
 	}
 	return normalizeHost(r.Host)
+}
+
+func directTargetURL(r *http.Request) (string, bool) {
+	if value := strings.TrimSpace(r.Header.Get("X-Crucible-Target-URL")); value != "" {
+		return value, true
+	}
+	if r.URL == nil {
+		return "", false
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("crucible_url")); value != "" {
+		return value, true
+	}
+	const prefix = "/__crucible/"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(r.URL.Path, prefix)
+	parts := strings.SplitN(rest, "/", 3)
+	if len(parts) < 2 {
+		return "", false
+	}
+	scheme := parts[0]
+	if scheme != "http" && scheme != "https" {
+		return "", false
+	}
+	host := parts[1]
+	path := "/"
+	if len(parts) == 3 && parts[2] != "" {
+		path += parts[2]
+	}
+	query := r.URL.Query()
+	query.Del("crucible_url")
+	rawQuery := query.Encode()
+	target := scheme + "://" + host + path
+	if rawQuery != "" {
+		target += "?" + rawQuery
+	}
+	return target, true
 }
 
 func normalizeHost(value string) string {
@@ -748,6 +808,9 @@ func validateRequest(r *http.Request, fixture fixture, body []byte) error {
 }
 
 func requestURL(r *http.Request) string {
+	if target, ok := directTargetURL(r); ok {
+		return target
+	}
 	if r.URL != nil && r.URL.IsAbs() {
 		return r.URL.String()
 	}
