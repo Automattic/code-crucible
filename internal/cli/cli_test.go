@@ -1181,6 +1181,7 @@ printf 'evaluator provider complete\n'
 	}
 	for _, want := range []string{
 		"evaluator provider complete",
+		"Validation:",
 		"Evaluator generation complete",
 		"Ready for evaluation: candidate-0000-baseline",
 	} {
@@ -1195,6 +1196,20 @@ printf 'evaluator provider complete\n'
 	}
 	if !runCfg.EvaluatorGenerated {
 		t.Fatal("run config was not marked evaluator_generated")
+	}
+	var validation struct {
+		Status      string `json:"status"`
+		CandidateID string `json:"candidate_id"`
+	}
+	validationRaw, err := os.ReadFile(filepath.Join(created.RunDir, "evaluator", "validation.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(validationRaw, &validation); err != nil {
+		t.Fatal(err)
+	}
+	if validation.Status != "passed" || validation.CandidateID != "candidate-0000-baseline" {
+		t.Fatalf("validation = %#v, want passed baseline", validation)
 	}
 	board, err = archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
 	if err != nil {
@@ -1223,6 +1238,119 @@ printf 'evaluator provider complete\n'
 	}
 	if len(matches) != 1 {
 		t.Fatalf("expected one command provider invocation, found %d", len(matches))
+	}
+}
+
+func TestEvaluatorGenerateRejectsEvaluatorThatFailsBaseline(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n\nfunc Rank() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	providerScript := filepath.Join(t.TempDir(), "provider.sh")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+cat > "$CRUCIBLE_RUN_DIR/evaluator/evaluator.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+metrics_out="${3:?metrics path required}"
+verdict_out="${4:?verdict path required}"
+cat > "$metrics_out" <<'JSON'
+{"runtime_mean_ms": 1}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": false,
+  "benchmark_passed": true,
+  "external_policy_passed": true,
+  "errors": ["baseline failed intentionally"]
+}
+JSON
+SH
+printf 'bad evaluator provider complete\n'
+`
+	if err := os.WriteFile(providerScript, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := project.Init(projectDir, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DefaultAgent = "custom"
+	cfg.AgentProviders = map[string]agent.ProviderDefinition{
+		"custom": {
+			Name:    "custom",
+			Kind:    "command",
+			Command: []string{providerScript},
+			Capabilities: agent.ProviderCapabilities{
+				SupportsGeneration: true,
+			},
+		},
+	}
+	if err := project.Save(projectDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	created, err := run.Create(run.Options{
+		ProjectDir: projectDir,
+		Optimize:   "make ranking faster",
+		SourcePath: "internal/search/rank.go",
+		Variants:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"evaluator",
+		"generate",
+		"--project", projectDir,
+		"--run", created.ID,
+		"--agent", "custom",
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("evaluator generate returned %d, want 1\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "generated evaluator validation failed") {
+		t.Fatalf("stderr did not include validation failure:\n%s", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Validation:") {
+		t.Fatalf("stdout did not include validation report:\n%s", stdout.String())
+	}
+
+	runCfg, err := archive.LoadRunConfig(filepath.Join(created.RunDir, "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runCfg.EvaluatorGenerated {
+		t.Fatal("run config was marked evaluator_generated despite validation failure")
+	}
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if board.Results[0].Status != model.CandidateStatusNeedsEvaluator {
+		t.Fatalf("baseline status = %q, want needs-evaluator", board.Results[0].Status)
+	}
+	var validation struct {
+		Status string   `json:"status"`
+		Errors []string `json:"errors"`
+	}
+	validationRaw, err := os.ReadFile(filepath.Join(created.RunDir, "evaluator", "validation.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(validationRaw, &validation); err != nil {
+		t.Fatal(err)
+	}
+	if validation.Status != "failed" || !strings.Contains(strings.Join(validation.Errors, "\n"), "baseline candidate did not pass the generated evaluator") {
+		t.Fatalf("validation = %#v, want failed baseline error", validation)
 	}
 }
 

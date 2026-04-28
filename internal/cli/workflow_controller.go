@@ -29,6 +29,12 @@ type GenerateWorkflowOptions struct {
 	ExtraArgs   []string
 }
 
+type EvaluatorGenerateWorkflowOptions struct {
+	RunSelector string
+	Agent       string
+	ExtraArgs   []string
+}
+
 type EvaluateWorkflowOptions struct {
 	RunSelector string
 	ExtraArgs   []string
@@ -110,6 +116,15 @@ func (c WorkflowController) Generate(opts GenerateWorkflowOptions) int {
 	}
 	args = append(args, opts.ExtraArgs...)
 	return runGenerateWithContext(c.context(), args, c.Stdout, c.Stderr)
+}
+
+func (c WorkflowController) EvaluatorGenerate(opts EvaluatorGenerateWorkflowOptions) int {
+	args := []string{"--project-dir", c.ProjectDir, "--run", opts.RunSelector}
+	if strings.TrimSpace(opts.Agent) != "" {
+		args = append(args, "--agent", strings.TrimSpace(opts.Agent))
+	}
+	args = append(args, opts.ExtraArgs...)
+	return runEvaluatorGenerateWithContext(c.context(), args, c.Stdout, c.Stderr)
 }
 
 func (c WorkflowController) Evaluate(opts EvaluateWorkflowOptions) int {

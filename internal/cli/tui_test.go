@@ -152,6 +152,21 @@ func TestTUIFormsBuildCommandPreviews(t *testing.T) {
 			t.Fatalf("run preview did not contain %q:\n%s", want, preview)
 		}
 	}
+
+	dashboard.openForm(tuiActionEvaluator)
+	setTUIFormValue(&dashboard.form, "validation_timeout", "45s")
+	preview = dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
+	for _, want := range []string{
+		"crucible evaluator generate",
+		"--project-dir '/tmp/code crucible fixture'",
+		"--run run-1",
+		"--agent codex",
+		"--validation-timeout 45s",
+	} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("evaluator preview did not contain %q:\n%s", want, preview)
+		}
+	}
 }
 
 func TestTUIFormEditingAcceptsSpacesAndBackspace(t *testing.T) {

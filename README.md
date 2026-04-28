@@ -72,7 +72,7 @@ cd /path/to/your/project
 crucible
 ```
 
-The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run discovery through a configured agent before creating the run. When the agent returns clarifying questions, the wizard records the answers in the run request. When the agent recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the generation agent to discover the involved code. The wizard prompts for evaluator setup before run creation, defaulting to agent-generated evaluator drafting while still allowing a supplied evaluator command or script. The wizard then shows the current leaderboard and offers actions such as new run, standalone discovery, leaderboard, generate, adopt, evaluate, next round, evolve, query, report, inspect, index rebuild, and agent settings. Interactive run creation can opt into advanced external/round/exploration options, run actions auto-select the only available run and prompt only when multiple runs exist, generate/evolve actions can select a generation agent, generate can review or edit run artifacts with `$VISUAL`/`$EDITOR` before invocation, generate can opt into advanced model/output/dry-run and Codex profile/sandbox/approval options, evaluate can opt into candidate/resource/sandbox options, reports can choose output/JSON options, index rebuilds can scope to one run or print JSON, discovery can run locally or through an agent, and agent settings can update the project `default_agent`.
+The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run discovery through a configured agent before creating the run. When the agent returns clarifying questions, the wizard records the answers in the run request. When the agent recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the generation agent to discover the involved code. The wizard prompts for evaluator setup before run creation, defaulting to agent-generated evaluator drafting while still allowing a supplied evaluator command or script. The wizard then shows the current leaderboard and offers actions such as new run, standalone discovery, evaluator generation, leaderboard, generate, adopt, evaluate, next round, evolve, query, report, inspect, index rebuild, and agent settings. Interactive run creation can opt into advanced external/round/exploration options, run actions auto-select the only available run and prompt only when multiple runs exist, generate/evolve/evaluator actions can select a generation-capable agent, generate can review or edit run artifacts with `$VISUAL`/`$EDITOR` before invocation, generate can opt into advanced model/output/dry-run and Codex profile/sandbox/approval options, evaluate can opt into candidate/resource/sandbox options, reports can choose output/JSON options, index rebuilds can scope to one run or print JSON, discovery can run locally or through an agent, and agent settings can update the project `default_agent`.
 
 For a run-review dashboard, use the explicit TUI command:
 
@@ -81,7 +81,7 @@ crucible tui
 crucible tui --run previous
 ```
 
-The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and basic forms for creating runs, discovery, generation, evaluation, reports, and archive queries. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
+The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and basic forms for creating runs, discovery, evaluator generation, competitor generation, evaluation, reports, and archive queries. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
 
 Create a tournament run from inside an existing project:
 
@@ -218,7 +218,7 @@ When you do not already have an evaluator, ask the selected agent to draft one f
 crucible evaluator generate
 ```
 
-This writes `prompts/evaluator-generation.md`, asks the configured provider to replace `evaluator/evaluator.sh`, and records design notes under `evaluator/evaluator.md` when the provider supplies them. After a successful generation, baselines that were waiting on evaluator setup move from `needs-evaluator` to `pending`.
+This writes `prompts/evaluator-generation.md`, asks the configured provider to replace `evaluator/evaluator.sh`, and records design notes under `evaluator/evaluator.md` when the provider supplies them. Code Crucible then runs the generated evaluator against the baseline candidate and writes the result to `evaluator/validation.json`. Only a baseline-passing evaluator moves candidates that were waiting on evaluator setup from `needs-evaluator` to `pending`.
 
 This creates a run under:
 
@@ -233,6 +233,7 @@ run.json
 README.md
 docs/interfaces.md
 evaluator/evaluator.sh
+evaluator/validation.json
 external/policy.json
 prompts/generation-round-0001.md
 round-0001/candidate-0000-baseline/
@@ -663,10 +664,11 @@ Current priorities:
 - [x] Auto-select the only available run in interactive actions instead of prompting
 - [x] Mark new baselines as `needs-evaluator` when no evaluator is configured
 - [x] Add agent-generated evaluator setup and interactive prompts to generate, supply, or skip the evaluator
+- [x] Validate agent-generated evaluators against the baseline before marking runs evaluator-ready
+- [x] Add prompt and TUI actions for evaluator generation on existing runs
 
 Deferred roadmap:
 
-- [ ] Add richer evaluator-generation validation that runs the drafted evaluator against the baseline before marking it ready
 - [ ] Add a full provider install or marketplace flow after provider templates prove useful
 - [ ] Add a full TUI job manager with logs, history, parallel jobs, cancellation, and richer progress displays
 - [ ] Revisit pre-release planning after stability work has run for a few days
@@ -741,6 +743,7 @@ Interactive interface roadmap:
 - [x] Add interactive controls for advanced `evaluate` options: candidate, jobs, timeout, nice, CPU limit, sandbox engine/image/profile/network, memory limit, and PID limit
 - [x] Add interactive controls for report/index JSON and output-path options
 - [x] Add `$EDITOR`-based review/edit prompts for generated interface docs, evaluator scaffold, and discovery handoff before generation
+- [x] Add interactive and TUI evaluator-generation actions for existing runs
 
 Evaluator and external policy roadmap:
 

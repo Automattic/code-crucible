@@ -65,12 +65,13 @@ const (
 type tuiAction string
 
 const (
-	tuiActionRun      tuiAction = "run"
-	tuiActionDiscover tuiAction = "discover"
-	tuiActionGenerate tuiAction = "generate"
-	tuiActionEvaluate tuiAction = "evaluate"
-	tuiActionReport   tuiAction = "report"
-	tuiActionQuery    tuiAction = "query"
+	tuiActionRun       tuiAction = "run"
+	tuiActionDiscover  tuiAction = "discover"
+	tuiActionGenerate  tuiAction = "generate"
+	tuiActionEvaluator tuiAction = "evaluator"
+	tuiActionEvaluate  tuiAction = "evaluate"
+	tuiActionReport    tuiAction = "report"
+	tuiActionQuery     tuiAction = "query"
 )
 
 type tuiForm struct {
@@ -297,6 +298,8 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openForm(tuiActionDiscover)
 		case "g":
 			m.openForm(tuiActionGenerate)
+		case "v":
+			m.openForm(tuiActionEvaluator)
 		case "e":
 			m.openForm(tuiActionEvaluate)
 		case "r":
@@ -374,7 +377,7 @@ func (m tuiDashboardModel) dashboardView() string {
 	for _, action := range m.nextActions() {
 		fmt.Fprintf(&b, "%s\n", action)
 	}
-	b.WriteString("\nKeys: n new run, d discover, g generate, e evaluate, r report, s query, j/k select, q quit\n")
+	b.WriteString("\nKeys: n new run, d discover, g generate, v evaluator, e evaluate, r report, s query, j/k select, q quit\n")
 	return b.String()
 }
 
@@ -572,6 +575,16 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 				{Name: "agent", Label: "Agent", Value: agent},
 			},
 		}
+	case tuiActionEvaluator:
+		return tuiForm{
+			Action: action,
+			Title:  "Generate Evaluator",
+			Fields: []tuiFormField{
+				{Name: "run", Label: "Run", Value: runID, Required: true},
+				{Name: "agent", Label: "Agent", Value: agent},
+				{Name: "validation_timeout", Label: "Validation timeout", Value: "60s"},
+			},
+		}
 	case tuiActionEvaluate:
 		return tuiForm{
 			Action: action,
@@ -630,6 +643,16 @@ func runTUIFormAction(controller WorkflowController, form tuiForm) int {
 			RunSelector: form.value("run"),
 			Agent:       form.value("agent"),
 		})
+	case tuiActionEvaluator:
+		extraArgs := []string{}
+		if timeout := strings.TrimSpace(form.value("validation_timeout")); timeout != "" {
+			extraArgs = append(extraArgs, "--validation-timeout", timeout)
+		}
+		return controller.EvaluatorGenerate(EvaluatorGenerateWorkflowOptions{
+			RunSelector: form.value("run"),
+			Agent:       form.value("agent"),
+			ExtraArgs:   extraArgs,
+		})
 	case tuiActionEvaluate:
 		extraArgs := []string{}
 		if candidate := strings.TrimSpace(form.value("candidate")); candidate != "" {
@@ -668,7 +691,7 @@ func markTUIActionCanceled(projectDir string, form tuiForm) (*cruciblerun.Cancel
 	runSelector := strings.TrimSpace(form.value("run"))
 	candidateID := strings.TrimSpace(form.value("candidate"))
 	switch form.Action {
-	case tuiActionGenerate, tuiActionEvaluate, tuiActionReport:
+	case tuiActionGenerate, tuiActionEvaluator, tuiActionEvaluate, tuiActionReport:
 		if runSelector == "" {
 			runSelector = "latest"
 		}
@@ -710,6 +733,12 @@ func (f tuiForm) validate() error {
 				return fmt.Errorf("Jobs must be a number")
 			}
 		}
+	case tuiActionEvaluator:
+		if value := strings.TrimSpace(f.value("validation_timeout")); value != "" {
+			if _, err := time.ParseDuration(value); err != nil {
+				return fmt.Errorf("Validation timeout must be a duration such as 60s")
+			}
+		}
 	case tuiActionQuery:
 		if kind := strings.TrimSpace(f.value("kind")); kind != "" && kind != "runs" && kind != "candidates" {
 			return fmt.Errorf("Kind must be runs or candidates")
@@ -748,6 +777,15 @@ func (f tuiForm) commandPreview(projectDir, runID string) string {
 		args := []string{"crucible", "generate", "--project-dir", project, "--run", shellQuote(defaultString(f.value("run"), runID))}
 		if agent := strings.TrimSpace(f.value("agent")); agent != "" {
 			args = append(args, "--agent", shellQuote(agent))
+		}
+		return strings.Join(args, " ")
+	case tuiActionEvaluator:
+		args := []string{"crucible", "evaluator", "generate", "--project-dir", project, "--run", shellQuote(defaultString(f.value("run"), runID))}
+		if agent := strings.TrimSpace(f.value("agent")); agent != "" {
+			args = append(args, "--agent", shellQuote(agent))
+		}
+		if timeout := strings.TrimSpace(f.value("validation_timeout")); timeout != "" {
+			args = append(args, "--validation-timeout", shellQuote(timeout))
 		}
 		return strings.Join(args, " ")
 	case tuiActionEvaluate:
@@ -1117,13 +1155,17 @@ func (m tuiDashboardModel) nextActions() []string {
 			"Discovery form:     press d",
 		}
 	}
-	actions := []string{
+	actions := []string{}
+	if !runConfigHasEvaluator(&m.data.Config) {
+		actions = append(actions, fmt.Sprintf("Generate evaluator:   crucible evaluator generate --project-dir %s --run %s", project, shellQuote(runID)))
+	}
+	actions = append(actions,
 		fmt.Sprintf("Generate competitors: crucible generate --project-dir %s --run %s", project, shellQuote(runID)),
 		fmt.Sprintf("Evaluate candidates:  crucible evaluate --project-dir %s --run %s", project, shellQuote(runID)),
 		fmt.Sprintf("Open leaderboard:     crucible leaderboard --project-dir %s --run %s", project, shellQuote(runID)),
 		fmt.Sprintf("Write HTML report:    crucible report --project-dir %s --run %s", project, shellQuote(runID)),
 		fmt.Sprintf("Prepare next round:   crucible next-round --project-dir %s --run %s", project, shellQuote(runID)),
-	}
+	)
 	if len(m.data.Results) > 0 {
 		candidateID := m.data.Results[m.selected].Candidate.ID
 		actions = append(actions, fmt.Sprintf("Inspect selected:     crucible inspect --project-dir %s --run %s %s", project, shellQuote(runID), shellQuote(candidateID)))

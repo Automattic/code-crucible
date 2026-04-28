@@ -132,6 +132,7 @@ func (s interactiveSession) menu(projectDir string) int {
 		fmt.Fprintln(s.stdout, "  11. Adopt generated candidates")
 		fmt.Fprintln(s.stdout, "  12. Prepare next round")
 		fmt.Fprintln(s.stdout, "  13. Query archive")
+		fmt.Fprintln(s.stdout, "  14. Generate evaluator")
 		fmt.Fprintln(s.stdout, "  q. Quit")
 		choice, ok := s.ask("Choose an action [q]: ")
 		if !ok {
@@ -323,6 +324,30 @@ func (s interactiveSession) menu(projectDir string) int {
 			}
 		case "13", "query":
 			if code := s.queryArchive(controller); code != 0 {
+				return code
+			}
+		case "14", "evaluator", "evaluator generate", "generate evaluator":
+			runSelector, ok := s.askRunSelector(projectDir)
+			if !ok {
+				return 0
+			}
+			evaluatorAgent, ok := s.askGenerationAgent(projectDir)
+			if !ok {
+				return 0
+			}
+			validationTimeout, ok := s.ask("Validation timeout [60s]: ")
+			if !ok {
+				return 0
+			}
+			var extraArgs []string
+			if validationTimeout = strings.TrimSpace(validationTimeout); validationTimeout != "" {
+				extraArgs = append(extraArgs, "--validation-timeout", validationTimeout)
+			}
+			if code := controller.EvaluatorGenerate(EvaluatorGenerateWorkflowOptions{
+				RunSelector: runSelector,
+				Agent:       evaluatorAgent,
+				ExtraArgs:   extraArgs,
+			}); code != 0 {
 				return code
 			}
 		default:

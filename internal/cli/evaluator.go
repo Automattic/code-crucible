@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Automattic/code-crucible/internal/agent"
 	"github.com/Automattic/code-crucible/internal/archive"
@@ -28,6 +29,7 @@ type evaluatorGenerationOptions struct {
 	EventJSON         bool
 	SkipGitRepoCheck  bool
 	OutputLastMessage string
+	ValidationTimeout time.Duration
 	DryRun            bool
 }
 
@@ -53,6 +55,9 @@ func printEvaluatorHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
   crucible evaluator generate [--project-dir DIR] [--run RUN_ID] [--agent AGENT] [--dry-run]
 
+Options:
+  --validation-timeout DURATION  Baseline validation timeout after generation.
+
 `)
 }
 
@@ -74,6 +79,7 @@ func runEvaluatorGenerateWithContext(ctx context.Context, args []string, stdout,
 	eventJSON := fs.Bool("event-json", true, "ask Codex to emit JSONL events")
 	skipGitRepoCheck := fs.Bool("skip-git-repo-check", true, "allow Codex to run when the host project is not a git repository")
 	outputLastMessage := fs.String("output-last-message", "", "path for provider final response; defaults to a run artifact")
+	validationTimeout := fs.Duration("validation-timeout", run.DefaultEvaluatorValidationTimeout, "timeout for generated evaluator baseline validation")
 	dryRun := fs.Bool("dry-run", false, "print the provider invocation without running it")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -92,6 +98,7 @@ func runEvaluatorGenerateWithContext(ctx context.Context, args []string, stdout,
 		EventJSON:         *eventJSON,
 		SkipGitRepoCheck:  *skipGitRepoCheck,
 		OutputLastMessage: *outputLastMessage,
+		ValidationTimeout: *validationTimeout,
 		DryRun:            *dryRun,
 	}, stdout, stderr)
 }
@@ -195,7 +202,7 @@ func evaluatorGenerateWithOptions(opts evaluatorGenerationOptions, stdout, stder
 		fmt.Fprintf(stderr, "evaluator generate failed: %v\n", err)
 		return 1
 	}
-	return finishEvaluatorGeneration(projectDir, cfg.ID, evaluatorPath, designPath, before, result.InvocationPath, result.StdoutPath, result.StderrPath, result.FinalPath, stdout, stderr)
+	return finishEvaluatorGeneration(projectDir, cfg.ID, evaluatorPath, designPath, before, opts.ValidationTimeout, result.InvocationPath, result.StdoutPath, result.StderrPath, result.FinalPath, stdout, stderr)
 }
 
 func runCommandEvaluatorProvider(provider agent.ProviderDefinition, projectDir, runDir, promptPath, evaluatorPath, designPath string, cfg *model.RunConfig, before []byte, opts evaluatorGenerationOptions, stdout, stderr io.Writer) int {
@@ -223,10 +230,10 @@ func runCommandEvaluatorProvider(provider agent.ProviderDefinition, projectDir, 
 		fmt.Fprintf(stderr, "evaluator generate failed: %v\n", err)
 		return 1
 	}
-	return finishEvaluatorGeneration(projectDir, cfg.ID, evaluatorPath, designPath, before, result.InvocationPath, result.StdoutPath, result.StderrPath, result.FinalPath, stdout, stderr)
+	return finishEvaluatorGeneration(projectDir, cfg.ID, evaluatorPath, designPath, before, opts.ValidationTimeout, result.InvocationPath, result.StdoutPath, result.StderrPath, result.FinalPath, stdout, stderr)
 }
 
-func finishEvaluatorGeneration(projectDir, runID, evaluatorPath, designPath string, before []byte, invocationPath, stdoutPath, stderrPath, finalPath string, stdout, stderr io.Writer) int {
+func finishEvaluatorGeneration(projectDir, runID, evaluatorPath, designPath string, before []byte, validationTimeout time.Duration, invocationPath, stdoutPath, stderrPath, finalPath string, stdout, stderr io.Writer) int {
 	after, err := os.ReadFile(evaluatorPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "evaluator generate failed: evaluator was not written: %v\n", err)
@@ -237,6 +244,20 @@ func finishEvaluatorGeneration(projectDir, runID, evaluatorPath, designPath stri
 		return 1
 	}
 	if err := os.Chmod(evaluatorPath, 0o755); err != nil {
+		fmt.Fprintf(stderr, "evaluator generate failed: %v\n", err)
+		return 1
+	}
+	validation, err := run.ValidateGeneratedEvaluator(run.EvaluatorValidationOptions{
+		ProjectDir: projectDir,
+		RunID:      runID,
+		Timeout:    validationTimeout,
+	})
+	if validation != nil {
+		fmt.Fprintf(stdout, "Validation: %s\n", validation.ReportPath)
+		fmt.Fprintf(stdout, "Validation stdout: %s\n", validation.StdoutPath)
+		fmt.Fprintf(stdout, "Validation stderr: %s\n", validation.StderrPath)
+	}
+	if err != nil {
 		fmt.Fprintf(stderr, "evaluator generate failed: %v\n", err)
 		return 1
 	}
