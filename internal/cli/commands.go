@@ -26,11 +26,15 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	projectDir := projectDirFlag(fs, "project directory to initialize")
 	name := fs.String("name", "", "project name")
+	defaultAgent := fs.String("default-agent", "", "default agent provider for generation and evolution")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	cfg, err := project.Init(*projectDir, *name)
+	cfg, err := project.InitWithOptions(*projectDir, project.InitOptions{
+		Name:         *name,
+		DefaultAgent: *defaultAgent,
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "init failed: %v\n", err)
 		return 1
@@ -39,6 +43,7 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	abs, _ := filepath.Abs(*projectDir)
 	fmt.Fprintf(stdout, "Initialized Code Crucible work area for %s\n", cfg.ProjectName)
 	fmt.Fprintf(stdout, "Work area: %s\n", project.WorkDir(abs))
+	fmt.Fprintf(stdout, "Default agent: %s\n", cfg.DefaultAgent)
 	return 0
 }
 

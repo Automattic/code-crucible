@@ -81,6 +81,14 @@ crucible run "reduce p95 latency of the search ranking function"
 
 `run` creates `.crucible/` automatically when the project does not have one yet.
 
+To initialize explicitly and set the project default generation agent:
+
+```bash
+crucible init --default-agent codex
+```
+
+The default is stored in `.crucible/config.json` as `default_agent`. Built-in providers currently include `codex` for discovery, generation, and evolution, plus `local` for heuristic discovery that does not invoke a model.
+
 If the source path or evaluator boundary is unclear, create a discovery plan first:
 
 ```bash
@@ -566,12 +574,12 @@ Base functionality roadmap:
 
 Model-agnostic agent roadmap:
 
-- [ ] Define a stable provider contract for discovery, generation, and evolution agents
-- [ ] Add a project-level default agent setting in `.crucible/config.json`
+- [x] Define a stable provider contract for discovery, generation, and evolution agents
+- [x] Add a project-level default agent setting in `.crucible/config.json`
 - [ ] Add per-run and per-command agent selection flags consistently across `discover`, `run`, `generate`, and `evolve`
 - [ ] Archive selected agent name, model, provider command, environment policy, prompt path, stdout/stderr, final response, and exit status for reproducibility
 - [ ] Support configurable local command providers in addition to the built-in Codex provider
-- [ ] Add provider capability metadata, such as supports-discovery, supports-generation, supports-json-output, and requires-git-repo
+- [x] Add provider capability metadata, such as supports-discovery, supports-generation, supports-json-output, and requires-git-repo
 - [ ] Add validation and dry-run output for provider command construction
 - [ ] Add interactive agent selection and project default-agent management
 - [ ] Keep Codex as the first concrete provider while avoiding Codex-specific assumptions in shared prompt, archive, and tournament code

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Automattic/code-crucible/internal/agent"
 	"github.com/Automattic/code-crucible/internal/model"
 )
 
@@ -31,6 +32,15 @@ func ConfigPath(projectDir string) string {
 }
 
 func Init(projectDir, name string) (*Config, error) {
+	return InitWithOptions(projectDir, InitOptions{Name: name})
+}
+
+type InitOptions struct {
+	Name         string
+	DefaultAgent string
+}
+
+func InitWithOptions(projectDir string, opts InitOptions) (*Config, error) {
 	abs, err := filepath.Abs(projectDir)
 	if err != nil {
 		return nil, err
@@ -40,15 +50,22 @@ func Init(projectDir, name string) (*Config, error) {
 		return existing, nil
 	}
 
-	if strings.TrimSpace(name) == "" {
-		name = filepath.Base(abs)
+	if strings.TrimSpace(opts.Name) == "" {
+		opts.Name = filepath.Base(abs)
+	}
+	opts.DefaultAgent = agent.NormalizeProviderName(opts.DefaultAgent)
+	if opts.DefaultAgent == "" {
+		opts.DefaultAgent = agent.ProviderCodex
+	}
+	if err := agent.ValidateProvider(opts.DefaultAgent); err != nil {
+		return nil, err
 	}
 
 	cfg := &Config{
 		Version:      1,
-		ProjectName:  name,
+		ProjectName:  opts.Name,
 		CreatedAt:    time.Now().UTC(),
-		DefaultAgent: "codex",
+		DefaultAgent: opts.DefaultAgent,
 		DefaultExternalPolicy: model.ExternalPolicy{
 			Mode: model.ExternalModeDeny,
 		},
@@ -77,7 +94,7 @@ func Init(projectDir, name string) (*Config, error) {
 	}
 
 	readmePath := filepath.Join(WorkDir(abs), "README.md")
-	if err := writeIfMissing(readmePath, workAreaReadme(name), 0o644); err != nil {
+	if err := writeIfMissing(readmePath, workAreaReadme(opts.Name), 0o644); err != nil {
 		return nil, err
 	}
 
@@ -110,7 +127,24 @@ func Load(projectDir string) (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("read crucible config: %w", err)
 	}
+	NormalizeConfig(&cfg)
 	return &cfg, nil
+}
+
+func NormalizeConfig(cfg *Config) {
+	if cfg.Version == 0 {
+		cfg.Version = 1
+	}
+	cfg.DefaultAgent = agent.NormalizeProviderName(cfg.DefaultAgent)
+	if cfg.DefaultAgent == "" {
+		cfg.DefaultAgent = agent.ProviderCodex
+	}
+	if cfg.DefaultExternalPolicy.Mode == "" {
+		cfg.DefaultExternalPolicy.Mode = model.ExternalModeDeny
+	}
+	if strings.TrimSpace(cfg.ArchiveDir) == "" {
+		cfg.ArchiveDir = "runs"
+	}
 }
 
 func writeJSON(path string, value any, mode os.FileMode) error {

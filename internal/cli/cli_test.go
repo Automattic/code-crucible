@@ -45,6 +45,31 @@ func TestInteractiveCreatesRun(t *testing.T) {
 	}
 }
 
+func TestInitStoresDefaultAgent(t *testing.T) {
+	projectDir := t.TempDir()
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"init",
+		"--project", projectDir,
+		"--name", "checkout",
+		"--default-agent", "codex",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("init returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Default agent: codex") {
+		t.Fatalf("stdout did not include default agent:\n%s", stdout.String())
+	}
+	raw, err := os.ReadFile(filepath.Join(projectDir, ".crucible", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"default_agent": "codex"`) {
+		t.Fatalf("config did not store default agent:\n%s", raw)
+	}
+}
+
 func TestInteractiveCodexDiscoveryCreatesRunFromAgentPlan(t *testing.T) {
 	projectDir := t.TempDir()
 	chdir(t, projectDir)

@@ -65,7 +65,7 @@ func printHelp(w io.Writer) {
 
 Usage:
   crucible
-  crucible init [--project-dir DIR] [--name NAME]
+  crucible init [--project-dir DIR] [--name NAME] [--default-agent AGENT]
   crucible discover "OPTIMIZATION REQUEST" [--project-dir DIR] [--agent local|codex]
   crucible run "OPTIMIZATION REQUEST" [--project-dir DIR] [--source-path PATH] [--agent-plan PATH] [--variants N] [--generate]
   crucible run (--optimize TEXT | --task-file PATH) [--project-dir DIR] [--source-path PATH] [--agent-plan PATH] [--variants N] [--generate]

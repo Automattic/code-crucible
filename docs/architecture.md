@@ -136,7 +136,11 @@ For `allowlist`, `mock`, `replay`, and `record` modes, each run archives an HTTP
 
 ## Agent Integration
 
-The first live agent integration is Codex CLI. Code Crucible still writes a prompt package:
+Agent integration is routed through a small provider contract. A provider declares whether it supports discovery, generation, evolution, JSON output, and whether it requires a Git repository. Built-in providers currently include `codex`, which supports discovery, generation, and evolution through Codex CLI, and `local`, which supports heuristic discovery without invoking a model.
+
+Each project can store a default provider in `.crucible/config.json` as `default_agent`. New work areas default to `codex`, and `crucible init --default-agent codex` can set it explicitly.
+
+The first live model-backed integration is Codex CLI. Code Crucible still writes a prompt package:
 
 ```text
 prompts/generation-round-0001.md
