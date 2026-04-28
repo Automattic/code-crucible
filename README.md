@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, route standard HTTP and HTTPS proxy traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, and rebuild a SQLite index from filesystem artifacts. Reporting is still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, route standard HTTP and HTTPS proxy traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, rebuild a SQLite index from filesystem artifacts, and write static HTML run reports. Reporting is still under active development.
 
 ## Why
 
@@ -37,6 +37,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Machine-readable score explanations in `leaderboard.json`
 - File-backed leaderboard and candidate metadata
 - Rebuildable `.crucible/index.sqlite` summary for runs and candidates
+- Static HTML run reports through `crucible report`
 - Core Go interfaces and types for agents, evaluation, scoring, metrics, and archive data
 
 ## Install From Source
@@ -132,6 +133,14 @@ crucible index
 ```
 
 The index lives at `.crucible/index.sqlite` and contains run and candidate summary tables suitable for reports, ad hoc queries, and future UI work. It is not authoritative; delete it or rebuild it whenever the filesystem archive changes. `crucible index` tracks the index schema version and resets the derivative database automatically when the stored schema is stale or missing.
+
+Write a static HTML report for the latest run:
+
+```bash
+crucible report
+```
+
+By default, reports are written to `.crucible/runs/<run-id>/reports/leaderboard.html`. Use `--output report.html` to choose a different path.
 
 Inspect a candidate:
 
@@ -436,10 +445,10 @@ Cleanup before more feature work:
 
 Feature roadmap:
 
-- Add HTML reports
-- Add richer SQLite queries for reports and automation
-- Expand sandbox profiles and limits
-- Add CI regression tournament jobs
+- [x] Add HTML reports
+- [ ] Add richer SQLite queries for reports and automation
+- [ ] Expand sandbox profiles and limits
+- [ ] Add CI regression tournament jobs
 
 ## License
 

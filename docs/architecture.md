@@ -18,7 +18,7 @@ optimization request
   -> next generation prompt
 ```
 
-The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP/HTTPS proxy env routing, next-round prompt preparation, automated multi-round execution loops, leaderboard scoring, resource metric archival, and a rebuildable SQLite index. Richer reporting is the next major archive-layer gap.
+The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP/HTTPS proxy env routing, next-round prompt preparation, automated multi-round execution loops, leaderboard scoring, resource metric archival, a rebuildable SQLite index, and static HTML run reports. Richer query and reporting workflows remain active work.
 
 ## Project Mode
 
@@ -214,3 +214,5 @@ The Go data model currently includes:
 The filesystem archive remains the source of truth. `crucible index` rebuilds `.crucible/index.sqlite` from `run.json` and `leaderboard.json`, replacing stale rows with summaries of runs and candidates. The database currently contains `runs`, `candidates`, and `index_meta` tables, plus indexes that support leaderboard-style report queries. It records the schema version in `index_meta`; if the stored schema is missing or stale, Code Crucible deletes the derivative database and rebuilds it from the archive. It is local metadata, so rebuild it from the archive instead of editing it by hand.
 
 The human-readable leaderboard view sorts passed candidates by score, then p95 latency. Scores are relative to the best passed candidate in the run, with each latency doubling costing points so large performance gaps remain visible. The table shows score-driving metrics, including baseline-relative speedup, memory usage, memory usage relative to the baseline, and evaluator CPU time; evaluator CPU time is labeled separately because it includes harness overhead and is not the same as per-operation cost. External call counts are shown as `Ext Calls` only when at least one candidate reports external communication. The JSON output preserves the archived result data for automation and includes `score_explanation` penalty components for each evaluated candidate.
+
+`crucible report` renders a self-contained HTML report for one run. The default output is `reports/leaderboard.html` inside the run archive, and the report is generated from `run.json` plus `leaderboard.json` so it remains reproducible and does not require the derivative SQLite index.

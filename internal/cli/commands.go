@@ -14,6 +14,7 @@ import (
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/indexer"
 	"github.com/Automattic/code-crucible/internal/project"
+	"github.com/Automattic/code-crucible/internal/report"
 	"github.com/Automattic/code-crucible/internal/run"
 )
 
@@ -179,6 +180,47 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "Runs: %d\n", report.Runs)
 	fmt.Fprintf(stdout, "Candidates: %d\n", report.Candidates)
+	return 0
+}
+
+func runReport(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("report", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	runID := fs.String("run", "", "run ID; defaults to latest run")
+	outputPath := fs.String("output", "", "HTML output path; defaults to reports/leaderboard.html in the run archive")
+	jsonOut := fs.Bool("json", false, "print raw report metadata JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	generated, err := report.GenerateHTML(report.Options{
+		ProjectDir: *projectDir,
+		RunID:      *runID,
+		OutputPath: *outputPath,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "report failed: %v\n", err)
+		return 1
+	}
+
+	if *jsonOut {
+		data, err := json.MarshalIndent(generated, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "report failed: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%s\n", data)
+		return 0
+	}
+
+	fmt.Fprintf(stdout, "Wrote HTML report\n")
+	fmt.Fprintf(stdout, "Report: %s\n", generated.OutputPath)
+	fmt.Fprintf(stdout, "Run: %s\n", generated.RunID)
+	fmt.Fprintf(stdout, "Candidates: %d\n", generated.Candidates)
+	fmt.Fprintf(stdout, "Passed: %d\n", generated.Passed)
+	fmt.Fprintf(stdout, "Failed: %d\n", generated.Failed)
+	fmt.Fprintf(stdout, "Pending: %d\n", generated.Pending)
 	return 0
 }
 

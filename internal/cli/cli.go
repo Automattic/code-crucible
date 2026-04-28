@@ -38,6 +38,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runLeaderboard(args[1:], stdout, stderr)
 	case "index":
 		return runIndex(args[1:], stdout, stderr)
+	case "report":
+		return runReport(args[1:], stdout, stderr)
 	case "inspect":
 		return runInspect(args[1:], stdout, stderr)
 	default:
@@ -60,6 +62,7 @@ Usage:
   crucible evolve [--project DIR] [--run RUN_ID] [--rounds N] [--parents N]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]
   crucible index [--project DIR] [--run RUN_ID] [--json]
+  crucible report [--project DIR] [--run RUN_ID] [--output PATH] [--json]
   crucible inspect [--project DIR] [--run RUN_ID] [candidate-id]
   crucible version
 
@@ -72,6 +75,7 @@ Core workflow:
   6. Run "crucible next-round" to prepare the next generation prompt from passed candidates.
   7. Run "crucible evolve --rounds N" to automate generate/evaluate/next-round cycles.
   8. Run "crucible index" to rebuild the SQLite summary from filesystem artifacts.
+  9. Run "crucible report" to write a static HTML report for the selected run.
 
 `)
 }

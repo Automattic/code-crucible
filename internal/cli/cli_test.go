@@ -265,6 +265,59 @@ func TestIndexCommandRebuildsSQLiteIndex(t *testing.T) {
 	}
 }
 
+func TestReportCommandWritesHTMLReport(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--optimize", "make ranking faster",
+		"--target-path", "internal/search/rank.go",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	outputPath := filepath.Join(projectDir, "report.html")
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"report",
+		"--project", projectDir,
+		"--output", outputPath,
+		"--json",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("report returned %d, stderr: %s", code, stderr.String())
+	}
+
+	var report struct {
+		OutputPath string `json:"output_path"`
+		Candidates int    `json:"candidates"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("report output was not JSON: %v\n%s", err, stdout.String())
+	}
+	if report.OutputPath != filepath.ToSlash(outputPath) || report.Candidates != 1 {
+		t.Fatalf("report metadata = path %q candidates %d", report.OutputPath, report.Candidates)
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "Code Crucible Report") {
+		t.Fatalf("HTML report missing title:\n%s", string(data))
+	}
+}
+
 func TestNextRoundCommandPreparesActiveRound(t *testing.T) {
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "search")
