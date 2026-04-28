@@ -254,7 +254,18 @@ func runTournamentWithContext(ctx context.Context, args []string, stdout, stderr
 		}, stdout, stderr)
 	}
 
+	printCreatedRunNextSteps(stdout, *projectDir, created.ID, *evaluator, *evaluatorScript)
 	return 0
+}
+
+func printCreatedRunNextSteps(stdout io.Writer, projectDir, runID, evaluatorCommand, evaluatorScript string) {
+	fmt.Fprintln(stdout)
+	fmt.Fprintln(stdout, "Run setup complete; no generation or evaluation process is still running.")
+	fmt.Fprintf(stdout, "Generate candidates: %s\n", agent.FormatCommand([]string{"crucible", "generate", "--project-dir", projectDir, "--run", runID}))
+	fmt.Fprintf(stdout, "Evaluate candidates: %s\n", agent.FormatCommand([]string{"crucible", "evaluate", "--project-dir", projectDir, "--run", runID}))
+	if strings.TrimSpace(evaluatorCommand) == "" && strings.TrimSpace(evaluatorScript) == "" {
+		fmt.Fprintln(stdout, "Evaluator warning: this run uses the placeholder evaluator scaffold. Configure evaluator/evaluator.sh or create the run with --evaluator/--evaluator-script before expecting candidates to pass or produce meaningful metrics.")
+	}
 }
 
 func configuredProvider(projectDir, name, capability string) (agent.ProviderDefinition, error) {

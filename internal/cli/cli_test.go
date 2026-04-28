@@ -967,6 +967,9 @@ JSON
 	if !strings.Contains(stdout.String(), "Added: candidate-0001") {
 		t.Fatalf("stdout did not include adoption result:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "Evaluator warning: this run uses the placeholder evaluator scaffold.") {
+		t.Fatalf("stdout did not include evaluator warning:\n%s", stdout.String())
+	}
 
 	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "agents", "codex-final.md"))
 	if err != nil {
@@ -1169,6 +1172,16 @@ func TestRunPositionalOptimizeCreatesRun(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Created run") {
 		t.Fatalf("stdout did not include run creation:\n%s", stdout.String())
+	}
+	for _, want := range []string{
+		"Run setup complete; no generation or evaluation process is still running.",
+		"Generate candidates: crucible generate --project-dir",
+		"Evaluate candidates: crucible evaluate --project-dir",
+		"Evaluator warning: this run uses the placeholder evaluator scaffold.",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
+		}
 	}
 }
 

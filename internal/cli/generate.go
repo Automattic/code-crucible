@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/Automattic/code-crucible/internal/agent"
 	"github.com/Automattic/code-crucible/internal/archive"
@@ -117,7 +118,7 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 	}
 
 	if provider.Kind == "command" {
-		return runCommandGenerationProvider(provider, projectDir, runDir, promptPath, cfg.ID, opts, stdout, stderr)
+		return runCommandGenerationProvider(provider, projectDir, runDir, promptPath, cfg, opts, stdout, stderr)
 	}
 	if provider.Kind != "codex" {
 		fmt.Fprintf(stderr, "generate failed: provider %q is not implemented for generation yet\n", provider.Name)
@@ -180,10 +181,11 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 		return 1
 	}
 	printAdoptionReport(stdout, stderr, report)
+	printPostGenerationNextSteps(stdout, projectDir, cfg)
 	return 0
 }
 
-func runCommandGenerationProvider(provider agent.ProviderDefinition, projectDir, runDir, promptPath, runID string, opts generationOptions, stdout, stderr io.Writer) int {
+func runCommandGenerationProvider(provider agent.ProviderDefinition, projectDir, runDir, promptPath string, cfg *model.RunConfig, opts generationOptions, stdout, stderr io.Writer) int {
 	if opts.OutputLastMessage == filepath.Join(runDir, "agents", "codex-final.md") {
 		opts.OutputLastMessage = filepath.Join(runDir, "agents", provider.Name+"-final.md")
 	}
@@ -198,6 +200,10 @@ func runCommandGenerationProvider(provider agent.ProviderDefinition, projectDir,
 		return 0
 	}
 
+	runID := ""
+	if cfg != nil {
+		runID = cfg.ID
+	}
 	fmt.Fprintf(stdout, "Running %s for run %s\n", provider.Name, runID)
 	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
 	ctx := opts.Context
@@ -239,7 +245,19 @@ func runCommandGenerationProvider(provider agent.ProviderDefinition, projectDir,
 		return 1
 	}
 	printAdoptionReport(stdout, stderr, report)
+	printPostGenerationNextSteps(stdout, projectDir, cfg)
 	return 0
+}
+
+func printPostGenerationNextSteps(stdout io.Writer, projectDir string, cfg *model.RunConfig) {
+	if cfg == nil {
+		return
+	}
+	fmt.Fprintln(stdout)
+	fmt.Fprintf(stdout, "Evaluate candidates: %s\n", agent.FormatCommand([]string{"crucible", "evaluate", "--project-dir", projectDir, "--run", cfg.ID}))
+	if strings.TrimSpace(cfg.Evaluator) == "" && strings.TrimSpace(cfg.EvaluatorScript) == "" {
+		fmt.Fprintln(stdout, "Evaluator warning: this run uses the placeholder evaluator scaffold. Configure evaluator/evaluator.sh before expecting candidates to pass or produce meaningful metrics.")
+	}
 }
 
 func resolveGenerationProvider(projectDir string, cfg *model.RunConfig, requested string) (agent.ProviderDefinition, error) {

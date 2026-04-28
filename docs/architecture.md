@@ -180,6 +180,8 @@ Codex uses the host project as its working root. The prompt instructs it to writ
 
 `crucible run --generate` is an explicit shortcut. It creates the run archive first, then calls the selected generation provider with the newly-created run ID. The separate `run` and `generate` commands remain the safer default workflow when the operator wants to review or edit interface docs, evaluator scripts, or prompts before spending a model run.
 
+When `crucible run` is used without `--generate`, the CLI explicitly reports that setup is complete and no generation or evaluation process is still running. It prints the follow-up `generate` and `evaluate` commands, and warns when the run still has only the placeholder evaluator scaffold.
+
 After successful generation, Code Crucible adopts valid `candidate-NNNN` directories into `leaderboard.json`. The same adoption step is available manually with `crucible adopt`.
 
 After evaluation produces passed candidates, `crucible next-round` selects the top passed parents by score, updates the active round in `run.json`, and writes the next generation prompt with historical metrics and parent IDs. The next `crucible generate` invocation uses that active prompt and round directory.
