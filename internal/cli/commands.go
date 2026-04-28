@@ -397,6 +397,8 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 	jobs := fs.Int("jobs", 1, "maximum number of candidates to evaluate concurrently")
 	nice := fs.Int("nice", 10, "nice priority for evaluator processes; 0 disables priority adjustment")
 	cpuLimit := fs.Int("cpu-limit", 0, "optional CPU limit for evaluator processes; local mode uses taskset affinity")
+	warmups := fs.Int("warmups", 0, "number of evaluator warmup runs to discard before measured repetitions")
+	repetitions := fs.Int("repetitions", 1, "number of measured evaluator repetitions to aggregate")
 	sandboxProfile := fs.String("sandbox-profile", "default", "evaluator sandbox profile: default, strict, or networked")
 	sandboxEngine := fs.String("sandbox-engine", "local", "evaluator sandbox engine: local, docker, or podman")
 	sandboxImage := fs.String("sandbox-image", "", "container image for docker or podman evaluator sandboxes")
@@ -427,6 +429,14 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 	}
 	if *cpuLimit < 0 {
 		fmt.Fprintf(stderr, "evolve failed: --cpu-limit must be at least 0\n")
+		return 2
+	}
+	if *warmups < 0 {
+		fmt.Fprintf(stderr, "evolve failed: --warmups must be at least 0\n")
+		return 2
+	}
+	if *repetitions < 1 {
+		fmt.Fprintf(stderr, "evolve failed: --repetitions must be at least 1\n")
 		return 2
 	}
 	if *pidsLimit < 0 {
@@ -475,15 +485,17 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 		}
 
 		report, err := run.EvaluateCandidates(run.EvaluationOptions{
-			ProjectDir: *projectDir,
-			RunID:      *runID,
-			Timeout:    timeout,
-			Adopt:      false,
-			Jobs:       *jobs,
-			Nice:       *nice,
-			CPULimit:   *cpuLimit,
-			Env:        []string(env),
-			Sandbox:    evaluatorSandbox,
+			ProjectDir:  *projectDir,
+			RunID:       *runID,
+			Timeout:     timeout,
+			Adopt:       false,
+			Jobs:        *jobs,
+			Nice:        *nice,
+			CPULimit:    *cpuLimit,
+			Warmups:     *warmups,
+			Repetitions: *repetitions,
+			Env:         []string(env),
+			Sandbox:     evaluatorSandbox,
 		})
 		if err != nil {
 			fmt.Fprintf(stderr, "evolve failed: %v\n", err)
@@ -555,6 +567,8 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	jobs := fs.Int("jobs", 1, "maximum number of candidates to evaluate concurrently")
 	nice := fs.Int("nice", 10, "nice priority for evaluator processes; 0 disables priority adjustment")
 	cpuLimit := fs.Int("cpu-limit", 0, "optional CPU limit for evaluator processes; local mode uses taskset affinity")
+	warmups := fs.Int("warmups", 0, "number of evaluator warmup runs to discard before measured repetitions")
+	repetitions := fs.Int("repetitions", 1, "number of measured evaluator repetitions to aggregate")
 	sandboxProfile := fs.String("sandbox-profile", "default", "evaluator sandbox profile: default, strict, or networked")
 	sandboxEngine := fs.String("sandbox-engine", "local", "evaluator sandbox engine: local, docker, or podman")
 	sandboxImage := fs.String("sandbox-image", "", "container image for docker or podman evaluator sandboxes")
@@ -579,6 +593,14 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	}
 	if *cpuLimit < 0 {
 		fmt.Fprintf(stderr, "evaluate failed: --cpu-limit must be at least 0\n")
+		return 2
+	}
+	if *warmups < 0 {
+		fmt.Fprintf(stderr, "evaluate failed: --warmups must be at least 0\n")
+		return 2
+	}
+	if *repetitions < 1 {
+		fmt.Fprintf(stderr, "evaluate failed: --repetitions must be at least 1\n")
 		return 2
 	}
 	if *pidsLimit < 0 {
@@ -617,6 +639,8 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 		Jobs:        *jobs,
 		Nice:        *nice,
 		CPULimit:    *cpuLimit,
+		Warmups:     *warmups,
+		Repetitions: *repetitions,
 		Env:         []string(env),
 		Sandbox:     sandbox,
 	})

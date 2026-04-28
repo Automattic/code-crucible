@@ -116,6 +116,89 @@ JSON
 	}
 }
 
+func TestEvaluateCandidatesAggregatesRepeatedSamples(t *testing.T) {
+	projectDir, created := createEvaluationFixture(t)
+
+	evaluator := `#!/usr/bin/env bash
+set -euo pipefail
+candidate_dir="$1"
+metrics_out="$3"
+verdict_out="$4"
+counter="$candidate_dir/evaluation-counter"
+current=0
+if [[ -f "$counter" ]]; then
+  current="$(cat "$counter")"
+fi
+current=$((current + 1))
+printf '%s' "$current" > "$counter"
+runtime=$((current * 10))
+p95=$((runtime * 2))
+memory=$((current * 100))
+cat > "$metrics_out" <<JSON
+{
+  "runtime_mean_ms": $runtime,
+  "p95_latency_ms": $p95,
+  "memory_peak_bytes": $memory
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+`
+	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluator), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCandidates(EvaluationOptions{
+		ProjectDir:  projectDir,
+		RunID:       created.ID,
+		CandidateID: "candidate-0000-baseline",
+		Adopt:       false,
+		Warmups:     1,
+		Repetitions: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("evaluated results = %d, want one", len(report.Results))
+	}
+	if report.Results[0].SamplesPath == "" {
+		t.Fatal("SamplesPath is empty")
+	}
+	if _, err := os.Stat(filepath.FromSlash(report.Results[0].SamplesPath)); err != nil {
+		t.Fatalf("evaluation samples missing: %v", err)
+	}
+
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics := board.Results[0].Metrics
+	if metrics.EvaluationWarmups != 1 || metrics.EvaluationRepetitions != 3 {
+		t.Fatalf("warmups/repetitions = %d/%d, want 1/3", metrics.EvaluationWarmups, metrics.EvaluationRepetitions)
+	}
+	if metrics.RuntimeMeanMS != 30 {
+		t.Fatalf("runtime_mean_ms = %f, want 30", metrics.RuntimeMeanMS)
+	}
+	if metrics.RuntimeMinMS != 20 || metrics.RuntimeMaxMS != 40 {
+		t.Fatalf("runtime min/max = %f/%f, want 20/40", metrics.RuntimeMinMS, metrics.RuntimeMaxMS)
+	}
+	if metrics.RuntimeStddevMS < 8.16 || metrics.RuntimeStddevMS > 8.17 {
+		t.Fatalf("runtime_stddev_ms = %f, want about 8.165", metrics.RuntimeStddevMS)
+	}
+	if metrics.P95LatencyMS != 60 {
+		t.Fatalf("p95_latency_ms = %f, want 60", metrics.P95LatencyMS)
+	}
+	if metrics.MemoryPeakBytes != 400 {
+		t.Fatalf("memory_peak_bytes = %d, want 400", metrics.MemoryPeakBytes)
+	}
+}
+
 func TestEvaluateCandidatesAppliesEnvironment(t *testing.T) {
 	projectDir, created := createEvaluationFixture(t)
 

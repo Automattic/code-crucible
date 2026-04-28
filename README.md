@@ -356,6 +356,14 @@ crucible evaluate \
   --cpu-limit 2
 ```
 
+Use `--warmups` and `--repetitions` when one evaluator run is too noisy:
+
+```bash
+crucible evaluate --warmups 1 --repetitions 5
+```
+
+Warmup runs are discarded. Measured repetitions are aggregated into `metrics.json`, with per-sample details archived in `evaluation-samples.json`. Aggregated metrics include runtime mean/min/max/stddev and the measured repetition count.
+
 Container sandboxes bind-mount the run archive read/write and the host project read-only at their original absolute paths, run with network isolation by default, and pass `--cpu-limit` through as a container CPU quota. Container runs execute an archived resource wrapper inside the sandbox, so CPU and wall-time resource metrics describe the evaluator process inside the container instead of the host Docker or Podman client.
 
 Evaluator sandbox profiles are:
@@ -527,7 +535,8 @@ Base functionality roadmap:
 - [x] Add pre-evaluation Go function signature checks when discovery names a Go drop-in interface
 - [ ] Validate semantic drop-in replacement contracts before benchmarking
 - [x] Improve no-source-path generation so the agent extracts and archives the baseline before creating competitors
-- [ ] Add repeated evaluation controls: warmups, repetitions, outlier handling, confidence summaries, and configurable statistical score inputs
+- [x] Add repeated evaluation controls for warmups, repetitions, and runtime spread metrics
+- [ ] Add outlier handling, confidence summaries, and configurable statistical score inputs
 - [ ] Add run selection helpers so commands and interactive flows do not always imply the latest run
 
 Model-agnostic agent roadmap:

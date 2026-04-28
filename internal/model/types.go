@@ -60,9 +60,14 @@ type Candidate struct {
 
 type Metrics struct {
 	RuntimeMeanMS              float64 `json:"runtime_mean_ms,omitempty"`
+	RuntimeMinMS               float64 `json:"runtime_min_ms,omitempty"`
+	RuntimeMaxMS               float64 `json:"runtime_max_ms,omitempty"`
+	RuntimeStddevMS            float64 `json:"runtime_stddev_ms,omitempty"`
 	P95LatencyMS               float64 `json:"p95_latency_ms,omitempty"`
 	BenchmarkNsPerOp           float64 `json:"benchmark_ns_per_op,omitempty"`
 	BenchmarkRuns              int     `json:"benchmark_runs,omitempty"`
+	EvaluationWarmups          int     `json:"evaluation_warmups,omitempty"`
+	EvaluationRepetitions      int     `json:"evaluation_repetitions,omitempty"`
 	MemoryPeakBytes            int64   `json:"memory_peak_bytes,omitempty"`
 	WallTimeMS                 float64 `json:"wall_time_ms,omitempty"`
 	CPUUserSeconds             float64 `json:"cpu_user_seconds,omitempty"`

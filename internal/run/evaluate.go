@@ -23,6 +23,8 @@ type EvaluationOptions struct {
 	Jobs        int
 	Nice        int
 	CPULimit    int
+	Warmups     int
+	Repetitions int
 	Env         []string
 	Sandbox     SandboxOptions
 }
@@ -43,6 +45,7 @@ type CandidateEvaluation struct {
 	ScoreExplanation   *model.ScoreExplanation          `json:"score_explanation,omitempty"`
 	MetricsPath        string                           `json:"metrics_path"`
 	ResourcePath       string                           `json:"resource_metrics_path,omitempty"`
+	SamplesPath        string                           `json:"evaluation_samples_path,omitempty"`
 	ExternalTracePath  string                           `json:"external_trace_path,omitempty"`
 	RecordFixturesPath string                           `json:"record_fixtures_path,omitempty"`
 	VerdictPath        string                           `json:"verdict_path"`
@@ -134,24 +137,28 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 	if jobs <= 1 {
 		for _, index := range indexes {
 			evaluation, updated := evaluateOne(cfg, evaluatorPath, runDir, board.Results[index], evaluatorExecutionOptions{
-				Timeout:    opts.Timeout,
-				Nice:       opts.Nice,
-				CPULimit:   opts.CPULimit,
-				Env:        evaluatorEnv,
-				ProjectDir: absProject,
-				Sandbox:    opts.Sandbox,
+				Timeout:     opts.Timeout,
+				Nice:        opts.Nice,
+				CPULimit:    opts.CPULimit,
+				Warmups:     opts.Warmups,
+				Repetitions: opts.Repetitions,
+				Env:         evaluatorEnv,
+				ProjectDir:  absProject,
+				Sandbox:     opts.Sandbox,
 			})
 			board.Results[index] = updated
 			report.Results = append(report.Results, evaluation)
 		}
 	} else {
 		results := evaluateParallel(cfg, evaluatorPath, runDir, board.Results, indexes, jobs, evaluatorExecutionOptions{
-			Timeout:    opts.Timeout,
-			Nice:       opts.Nice,
-			CPULimit:   opts.CPULimit,
-			Env:        evaluatorEnv,
-			ProjectDir: absProject,
-			Sandbox:    opts.Sandbox,
+			Timeout:     opts.Timeout,
+			Nice:        opts.Nice,
+			CPULimit:    opts.CPULimit,
+			Warmups:     opts.Warmups,
+			Repetitions: opts.Repetitions,
+			Env:         evaluatorEnv,
+			ProjectDir:  absProject,
+			Sandbox:     opts.Sandbox,
 		})
 		for _, result := range results {
 			board.Results[result.index] = result.updated
@@ -173,12 +180,14 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 }
 
 type evaluatorExecutionOptions struct {
-	Timeout    time.Duration
-	Nice       int
-	CPULimit   int
-	Env        []string
-	ProjectDir string
-	Sandbox    SandboxOptions
+	Timeout     time.Duration
+	Nice        int
+	CPULimit    int
+	Warmups     int
+	Repetitions int
+	Env         []string
+	ProjectDir  string
+	Sandbox     SandboxOptions
 }
 
 type evaluationResult struct {
@@ -257,6 +266,7 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	candidateDir := candidateDirectory(execOpts.ProjectDir, result.Candidate)
 	metricsPath := filepath.Join(candidateDir, "metrics.json")
 	resourcePath := filepath.Join(candidateDir, "resource-metrics.json")
+	samplesPath := filepath.Join(candidateDir, "evaluation-samples.json")
 	verdictPath := filepath.Join(candidateDir, "verdict.json")
 	stdoutPath := filepath.Join(candidateDir, "evaluation.stdout.log")
 	stderrPath := filepath.Join(candidateDir, "evaluation.stderr.log")
@@ -288,7 +298,7 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	evaluation.Warnings = append(evaluation.Warnings, policyEnforcement.Warnings...)
 	evaluation.Errors = append(evaluation.Errors, policyEnforcement.Errors...)
 
-	if err := removeEvaluationOutputs(metricsPath, resourcePath, tracePath, recordFixturesPath, verdictPath); err != nil {
+	if err := removeEvaluationOutputs(metricsPath, resourcePath, samplesPath, tracePath, recordFixturesPath, verdictPath); err != nil {
 		evaluation.Warnings = append(evaluation.Warnings, err.Error())
 	}
 	policyFailed := len(policyEnforcement.Errors) > 0
@@ -299,20 +309,22 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	}
 	var evaluatorErrors []string
 	var resourceMetrics model.Metrics
+	var metrics model.Metrics
+	var verdict model.Verdict
 	if !policyFailed && !contractFailed {
-		var runErr error
-		resourceMetrics, runErr = runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, stdoutPath, stderrPath, candidateExecOpts)
-		if runErr != nil {
-			evaluatorErrors = append(evaluatorErrors, runErr.Error())
-			evaluation.Errors = append(evaluation.Errors, evaluatorErrors...)
-		}
+		samples := runEvaluatorSampleSet(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, tracePath, recordFixturesPath, verdictPath, stdoutPath, stderrPath, samplesPath, candidateExecOpts)
+		evaluation.SamplesPath = filepath.ToSlash(samplesPath)
+		resourceMetrics = samples.Resource
+		metrics = samples.Metrics
+		verdict = samples.Verdict
+		evaluatorErrors = append(evaluatorErrors, samples.Errors...)
+		evaluation.Errors = append(evaluation.Errors, samples.Errors...)
+		evaluation.Warnings = append(evaluation.Warnings, samples.Warnings...)
 	}
 	if err := archive.SaveJSON(resourcePath, resourceMetrics); err != nil {
 		evaluation.Warnings = append(evaluation.Warnings, fmt.Sprintf("save resource metrics: %v", err))
 	}
 
-	var metrics model.Metrics
-	var verdict model.Verdict
 	if policyFailed || contractFailed {
 		verdict = model.Verdict{
 			CorrectnessPassed:    !contractFailed,
@@ -321,24 +333,6 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 		}
 		if contractFailed {
 			verdict.Errors = append(verdict.Errors, contractErrors...)
-		}
-	} else {
-		var err error
-		metrics, err = loadMetrics(metricsPath)
-		if err != nil {
-			evaluation.Warnings = append(evaluation.Warnings, err.Error())
-		}
-
-		verdict, err = loadVerdict(verdictPath)
-		if err != nil {
-			verdict = model.Verdict{
-				CorrectnessPassed:    false,
-				BenchmarkPassed:      false,
-				ExternalPolicyPassed: false,
-				Errors: []string{
-					err.Error(),
-				},
-			}
 		}
 	}
 	externalTrace := model.ExternalCallTrace{Mode: cfg.External.Mode}
@@ -364,7 +358,7 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 		evaluation.Warnings = append(evaluation.Warnings, fmt.Sprintf("save merged metrics: %v", err))
 	}
 	if len(evaluatorErrors) > 0 {
-		verdict.Errors = append(verdict.Errors, evaluatorErrors...)
+		verdict.Errors = appendMissingStrings(verdict.Errors, evaluatorErrors)
 		verdict.BenchmarkPassed = false
 	}
 	if policyFailed {
@@ -471,6 +465,22 @@ func removeEvaluationOutputs(paths ...string) error {
 		}
 	}
 	return nil
+}
+
+func appendMissingStrings(values []string, additions []string) []string {
+	for _, addition := range additions {
+		found := false
+		for _, value := range values {
+			if value == addition {
+				found = true
+				break
+			}
+		}
+		if !found {
+			values = append(values, addition)
+		}
+	}
+	return values
 }
 
 func loadExternalTrace(path string) (model.ExternalCallTrace, error) {
