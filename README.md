@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, and invoke Codex CLI as the first concrete agent provider. Container execution, proxy enforcement, and automated evaluation loops are still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, and archive leaderboard metrics. External mock/replay enforcement, multi-round evolution, and automated reporting are still under active development.
 
 ## Why
 
@@ -29,7 +29,9 @@ The goal is not just "does it work", but which implementation works best under m
 - Codex CLI generation adapter through `codex exec`
 - Candidate adoption from generated `candidate-NNNN` artifacts into `leaderboard.json`
 - Local evaluator execution through `crucible evaluate`
+- Docker and Podman evaluator sandboxing with in-container resource metrics
 - Ranked human-readable leaderboard output for passed candidates
+- Machine-readable score explanations in `leaderboard.json`
 - File-backed leaderboard and candidate metadata
 - Core Go interfaces and types for agents, evaluation, scoring, metrics, and archive data
 
@@ -44,9 +46,10 @@ go build -o bin/crucible ./cmd/crucible
 ## Requirements
 
 - Go 1.22 or newer
-- Linux for process resource metrics and `--cpu-limit` CPU affinity behavior
-- `taskset` when using `crucible evaluate --cpu-limit`
+- Linux for process resource metrics
+- `taskset` when using `crucible evaluate --cpu-limit` in local mode
 - Codex CLI when using `crucible generate --agent codex`
+- Docker or Podman when using containerized evaluator sandboxes
 
 Core run creation, adoption, inspection, and filesystem archive workflows use only the Go standard library.
 
@@ -226,7 +229,7 @@ crucible run \
   --model gpt-5.5
 ```
 
-The generated prompt explicitly tells Codex to avoid modifying host project source outside `.crucible`. Temporary verification work is directed to the run's `.crucible/runs/<run-id>/tmp/` scratch area, and the prompt tells Codex to avoid destructive cleanup commands so blocked cleanup attempts do not pollute generation logs. Sandbox enforcement currently allows workspace writes; stricter write isolation is planned with container execution.
+The generated prompt explicitly tells Codex to avoid modifying host project source outside `.crucible`. Temporary verification work is directed to the run's `.crucible/runs/<run-id>/tmp/` scratch area, and the prompt tells Codex to avoid destructive cleanup commands so blocked cleanup attempts do not pollute generation logs. Codex generation sandboxing is controlled by Codex CLI; evaluator sandboxing is handled separately by `crucible evaluate --sandbox-engine`.
 
 ## Evaluation
 
@@ -321,7 +324,7 @@ crucible run \
   --allow-hosts api.example.com,auth.example.com
 ```
 
-Proxy enforcement is not implemented yet. Container evaluation can enforce `--sandbox-network none`, while the current external policy scaffold still records the intended policy and requires generated competitors and evaluators to respect it.
+For `deny` mode, container evaluation enforces network isolation with `--sandbox-network none`. A deny-mode container evaluation fails closed if a different sandbox network is requested. Local deny-mode runs are marked advisory because the framework cannot prevent host-network access around an arbitrary local evaluator. Allowlist, mock, replay, and record modes are currently documented and surfaced to agents and evaluators, but framework-level proxy/mock/replay enforcement is still on the roadmap.
 
 ## Project Work Area
 
@@ -381,12 +384,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 ## Roadmap
 
-- Add proxy or mock gateway enforcement
-- Expand sandbox profiles and resource accounting
-- Add SQLite index alongside filesystem artifacts
-- Add replay fixture format and mock handler generator
+- Add replay fixture format and mock/proxy gateway enforcement
 - Add multi-round evolution strategy
+- Add SQLite index alongside filesystem artifacts
 - Add HTML reports
+- Expand sandbox profiles and limits
 - Add CI regression tournament jobs
 
 ## License

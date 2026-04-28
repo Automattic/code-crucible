@@ -279,6 +279,38 @@ func TestMergeResourceMetricsCopiesSource(t *testing.T) {
 	}
 }
 
+func TestExternalPolicyEnforcement(t *testing.T) {
+	enforcement := externalPolicyEnforcement(model.ExternalPolicy{Mode: model.ExternalModeDeny}, SandboxOptions{
+		Engine:  "docker",
+		Image:   "golang:1.22",
+		Network: "none",
+	})
+	if enforcement.Status != "enforced" {
+		t.Fatalf("deny container status = %q, want enforced", enforcement.Status)
+	}
+	if len(enforcement.Errors) != 0 {
+		t.Fatalf("deny container errors = %#v, want none", enforcement.Errors)
+	}
+
+	enforcement = externalPolicyEnforcement(model.ExternalPolicy{Mode: model.ExternalModeDeny}, SandboxOptions{
+		Engine:  "docker",
+		Image:   "golang:1.22",
+		Network: "bridge",
+	})
+	if enforcement.Status != "failed" || len(enforcement.Errors) == 0 {
+		t.Fatalf("deny bridge enforcement = %#v, want failed with error", enforcement)
+	}
+
+	enforcement = externalPolicyEnforcement(model.ExternalPolicy{Mode: model.ExternalModeReplay}, SandboxOptions{
+		Engine:  "podman",
+		Image:   "golang:1.22",
+		Network: "none",
+	})
+	if enforcement.Status != "partial" || len(enforcement.Warnings) == 0 {
+		t.Fatalf("replay container enforcement = %#v, want partial with warning", enforcement)
+	}
+}
+
 func TestEvaluateCandidatesFailsClosedWhenVerdictMissing(t *testing.T) {
 	projectDir, created := createEvaluationFixture(t)
 
@@ -388,6 +420,67 @@ exit 7
 	}
 	if result.Verdict.BenchmarkPassed {
 		t.Fatalf("benchmark_passed = true, want evaluator process failure to fail closed")
+	}
+}
+
+func TestEvaluateCandidatesFailsClosedWhenDenyPolicyIsNotIsolated(t *testing.T) {
+	projectDir, created := createEvaluationFixture(t)
+
+	evaluator := `#!/usr/bin/env bash
+set -euo pipefail
+metrics_out="$3"
+verdict_out="$4"
+cat > "$metrics_out" <<'JSON'
+{
+  "runtime_mean_ms": 1
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+`
+	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluator), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCandidates(EvaluationOptions{
+		ProjectDir:  projectDir,
+		RunID:       created.ID,
+		CandidateID: "candidate-0000-baseline",
+		Adopt:       false,
+		Sandbox: SandboxOptions{
+			Engine:  "docker",
+			Image:   "golang:1.22",
+			Network: "bridge",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("evaluated results = %d, want one", len(report.Results))
+	}
+	if report.Results[0].ExternalPolicy == nil || report.Results[0].ExternalPolicy.Status != "failed" {
+		t.Fatalf("report external policy = %#v, want failed", report.Results[0].ExternalPolicy)
+	}
+
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := board.Results[0]
+	if result.Status != "failed" {
+		t.Fatalf("status = %q, want failed", result.Status)
+	}
+	if result.External.PolicyEnforcement == nil || result.External.PolicyEnforcement.Status != "failed" {
+		t.Fatalf("leaderboard external policy = %#v, want failed", result.External.PolicyEnforcement)
+	}
+	if result.Verdict.ExternalPolicyPassed {
+		t.Fatalf("external_policy_passed = true, want false")
 	}
 }
 

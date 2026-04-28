@@ -38,18 +38,19 @@ type SandboxOptions struct {
 }
 
 type CandidateEvaluation struct {
-	ID               string                  `json:"id"`
-	Status           string                  `json:"status"`
-	Score            float64                 `json:"score"`
-	ScoreExplanation *model.ScoreExplanation `json:"score_explanation,omitempty"`
-	MetricsPath      string                  `json:"metrics_path"`
-	ResourcePath     string                  `json:"resource_metrics_path,omitempty"`
-	VerdictPath      string                  `json:"verdict_path"`
-	StdoutPath       string                  `json:"stdout_path"`
-	StderrPath       string                  `json:"stderr_path"`
-	Sandbox          *SandboxOptions         `json:"sandbox,omitempty"`
-	Errors           []string                `json:"errors,omitempty"`
-	Warnings         []string                `json:"warnings,omitempty"`
+	ID               string                           `json:"id"`
+	Status           string                           `json:"status"`
+	Score            float64                          `json:"score"`
+	ScoreExplanation *model.ScoreExplanation          `json:"score_explanation,omitempty"`
+	MetricsPath      string                           `json:"metrics_path"`
+	ResourcePath     string                           `json:"resource_metrics_path,omitempty"`
+	VerdictPath      string                           `json:"verdict_path"`
+	StdoutPath       string                           `json:"stdout_path"`
+	StderrPath       string                           `json:"stderr_path"`
+	Sandbox          *SandboxOptions                  `json:"sandbox,omitempty"`
+	ExternalPolicy   *model.ExternalPolicyEnforcement `json:"external_policy,omitempty"`
+	Errors           []string                         `json:"errors,omitempty"`
+	Warnings         []string                         `json:"warnings,omitempty"`
 }
 
 type EvaluationReport struct {
@@ -264,41 +265,67 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 		sandbox := execOpts.Sandbox
 		evaluation.Sandbox = &sandbox
 	}
+	policyEnforcement := externalPolicyEnforcement(cfg.External, execOpts.Sandbox)
+	evaluation.ExternalPolicy = &policyEnforcement
+	evaluation.Warnings = append(evaluation.Warnings, policyEnforcement.Warnings...)
+	evaluation.Errors = append(evaluation.Errors, policyEnforcement.Errors...)
 
 	if err := removeEvaluationOutputs(metricsPath, resourcePath, verdictPath); err != nil {
 		evaluation.Warnings = append(evaluation.Warnings, err.Error())
 	}
-	resourceMetrics, err := runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, stdoutPath, stderrPath, execOpts)
-	if err != nil {
-		evaluation.Errors = append(evaluation.Errors, err.Error())
+	policyFailed := len(policyEnforcement.Errors) > 0
+	var evaluatorErrors []string
+	var resourceMetrics model.Metrics
+	if !policyFailed {
+		var runErr error
+		resourceMetrics, runErr = runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, stdoutPath, stderrPath, execOpts)
+		if runErr != nil {
+			evaluatorErrors = append(evaluatorErrors, runErr.Error())
+			evaluation.Errors = append(evaluation.Errors, evaluatorErrors...)
+		}
 	}
 	if err := archive.SaveJSON(resourcePath, resourceMetrics); err != nil {
 		evaluation.Warnings = append(evaluation.Warnings, fmt.Sprintf("save resource metrics: %v", err))
 	}
 
-	metrics, err := loadMetrics(metricsPath)
-	if err != nil {
-		evaluation.Warnings = append(evaluation.Warnings, err.Error())
-	}
-
-	verdict, err := loadVerdict(verdictPath)
-	if err != nil {
+	var metrics model.Metrics
+	var verdict model.Verdict
+	if policyFailed {
 		verdict = model.Verdict{
-			CorrectnessPassed:    false,
-			BenchmarkPassed:      false,
+			CorrectnessPassed:    true,
+			BenchmarkPassed:      true,
 			ExternalPolicyPassed: false,
-			Errors: []string{
-				err.Error(),
-			},
+		}
+	} else {
+		var err error
+		metrics, err = loadMetrics(metricsPath)
+		if err != nil {
+			evaluation.Warnings = append(evaluation.Warnings, err.Error())
+		}
+
+		verdict, err = loadVerdict(verdictPath)
+		if err != nil {
+			verdict = model.Verdict{
+				CorrectnessPassed:    false,
+				BenchmarkPassed:      false,
+				ExternalPolicyPassed: false,
+				Errors: []string{
+					err.Error(),
+				},
+			}
 		}
 	}
 	metrics = mergeResourceMetrics(metrics, resourceMetrics)
 	if err := archive.SaveJSON(metricsPath, metrics); err != nil {
 		evaluation.Warnings = append(evaluation.Warnings, fmt.Sprintf("save merged metrics: %v", err))
 	}
-	if len(evaluation.Errors) > 0 {
-		verdict.Errors = append(verdict.Errors, evaluation.Errors...)
+	if len(evaluatorErrors) > 0 {
+		verdict.Errors = append(verdict.Errors, evaluatorErrors...)
 		verdict.BenchmarkPassed = false
+	}
+	if policyFailed {
+		verdict.Errors = append(verdict.Errors, policyEnforcement.Errors...)
+		verdict.ExternalPolicyPassed = false
 	}
 	if len(evaluation.Warnings) > 0 {
 		verdict.Warnings = append(verdict.Warnings, evaluation.Warnings...)
@@ -308,6 +335,8 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	result.Verdict = verdict
 	result.External.Mode = cfg.External.Mode
 	result.External.PolicyPassed = verdict.ExternalPolicyPassed
+	result.External.PolicyEnforcement = &policyEnforcement
+	result.External.PolicyViolations = append(result.External.PolicyViolations, policyEnforcement.Errors...)
 	result.Score = scoring.Score(result)
 	result.Status = statusForVerdict(verdict)
 
@@ -351,6 +380,48 @@ func NormalizeSandboxOptions(opts SandboxOptions) (SandboxOptions, error) {
 	default:
 		return SandboxOptions{}, fmt.Errorf("--sandbox-engine must be local, docker, or podman")
 	}
+}
+
+func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptions) model.ExternalPolicyEnforcement {
+	enforcement := model.ExternalPolicyEnforcement{
+		Mode:   policy.Mode,
+		Status: "advisory",
+	}
+
+	if sandboxEnabled(sandbox) {
+		enforcement.Mechanism = sandbox.Engine + "-network-" + sandbox.Network
+	} else {
+		enforcement.Mechanism = "evaluator-contract"
+	}
+
+	switch policy.Mode {
+	case model.ExternalModeDeny:
+		if sandboxEnabled(sandbox) {
+			if sandbox.Network == "none" {
+				enforcement.Status = "enforced"
+				return enforcement
+			}
+			enforcement.Status = "failed"
+			enforcement.Errors = append(enforcement.Errors, "external policy deny requires --sandbox-network none when using a container sandbox")
+			return enforcement
+		}
+		enforcement.Warnings = append(enforcement.Warnings, "external policy deny is advisory in local mode; use --sandbox-engine docker or podman with --sandbox-network none to enforce network isolation")
+	case model.ExternalModeMock, model.ExternalModeReplay:
+		if sandboxEnabled(sandbox) && sandbox.Network == "none" {
+			enforcement.Status = "partial"
+			enforcement.Warnings = append(enforcement.Warnings, "live network is blocked, but framework-level mock/replay fixture serving is not implemented yet")
+			return enforcement
+		}
+		enforcement.Warnings = append(enforcement.Warnings, "framework-level mock/replay fixture serving is not implemented yet")
+	case model.ExternalModeAllowlist:
+		enforcement.Warnings = append(enforcement.Warnings, "framework-level allowlist enforcement is not implemented yet")
+	case model.ExternalModeRecord:
+		enforcement.Warnings = append(enforcement.Warnings, "framework-level external recording is not implemented yet")
+	default:
+		enforcement.Warnings = append(enforcement.Warnings, "external policy mode is not recognized by the enforcement layer")
+	}
+
+	return enforcement
 }
 
 func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, stdoutPath, stderrPath string, opts evaluatorExecutionOptions) (model.Metrics, error) {

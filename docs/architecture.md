@@ -18,7 +18,7 @@ optimization request
   -> next generation prompt
 ```
 
-The initial implementation creates the archive, prompt package, Codex generation path, candidate adoption path, and local evaluator execution. Proxy enforcement and containerized execution are planned next.
+The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, leaderboard scoring, and resource metric archival. External mock/replay enforcement and multi-round evolution are the next major execution-layer gaps.
 
 ## Project Mode
 
@@ -106,7 +106,7 @@ Supported modes:
 - `replay`
 - `record`
 
-The current implementation records and communicates the policy. A later execution layer will enforce it through container networking, local mocks, proxying, DNS overrides, or protocol-specific adapters.
+The current implementation records and communicates the policy. Container evaluation enforces `deny` mode by running with `--sandbox-network none`; deny-mode container evaluations fail closed if a different sandbox network is requested. Local deny-mode runs and all non-deny modes remain evaluator-advisory until local mocks, proxying, DNS overrides, or protocol-specific adapters are implemented.
 
 ## Agent Integration
 
@@ -170,12 +170,14 @@ It passes:
 evaluator.sh <candidate-dir> <run-dir> <metrics-out> <verdict-out>
 ```
 
-The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads both files, adds process-level resource metrics collected around the evaluator invocation, updates `leaderboard.json`, computes a relative log-scaled score, and marks candidates as `passed` only when correctness, benchmark, and external policy verdicts all pass. Missing or malformed verdicts fail closed.
+The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads both files, merges resource metrics, updates `leaderboard.json`, computes a relative log-scaled score, and marks candidates as `passed` only when correctness, benchmark, and external policy verdicts all pass. Missing or malformed verdicts fail closed.
 
 The planned evaluator layer will add:
 
-- Richer sandbox profiles and resource accounting
+- Mock and replay fixture serving
+- Allowlist/proxy enforcement
 - External trace collection
+- Richer sandbox profiles
 
 ## Data Model
 

@@ -127,6 +127,15 @@ Compare resource metrics only within the same sandbox engine. Docker and Podman 
 
 If `verdict.json` is missing or invalid, Code Crucible marks the candidate as failed.
 
+`leaderboard.json` also stores `external.policy_enforcement` for each evaluated candidate. Its `status` can be:
+
+- `enforced`: the framework enforced the configured policy
+- `partial`: the framework enforced part of the policy, but another required piece is still advisory
+- `advisory`: the evaluator and generated code were instructed to honor the policy, but the framework did not enforce it
+- `failed`: the requested policy could not be enforced safely, so the candidate failed closed
+
+Currently, `deny` mode is enforced only for Docker or Podman evaluation with `--sandbox-network none`. Mock, replay, allowlist, and record enforcement are still planned.
+
 `p95_latency_ms` should be a true 95th percentile over the evaluator's sampled timings. Use `runtime_mean_ms` for averages and `benchmark_ns_per_op` for the mean `go test -bench` style operation time.
 
 ## Score Explanation

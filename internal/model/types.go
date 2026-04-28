@@ -80,17 +80,26 @@ type Metrics struct {
 }
 
 type ExternalCallTrace struct {
-	Mode             ExternalMode `json:"mode"`
-	RequestCount     int          `json:"request_count"`
-	UniqueHosts      []string     `json:"unique_hosts,omitempty"`
-	BytesSent        int64        `json:"bytes_sent,omitempty"`
-	BytesReceived    int64        `json:"bytes_received,omitempty"`
-	RetryCount       int          `json:"retry_count,omitempty"`
-	FailureCount     int          `json:"failure_count,omitempty"`
-	EstimatedCost    float64      `json:"estimated_cost,omitempty"`
-	TracePath        string       `json:"trace_path,omitempty"`
-	PolicyPassed     bool         `json:"policy_passed"`
-	PolicyViolations []string     `json:"policy_violations,omitempty"`
+	Mode              ExternalMode               `json:"mode"`
+	RequestCount      int                        `json:"request_count"`
+	UniqueHosts       []string                   `json:"unique_hosts,omitempty"`
+	BytesSent         int64                      `json:"bytes_sent,omitempty"`
+	BytesReceived     int64                      `json:"bytes_received,omitempty"`
+	RetryCount        int                        `json:"retry_count,omitempty"`
+	FailureCount      int                        `json:"failure_count,omitempty"`
+	EstimatedCost     float64                    `json:"estimated_cost,omitempty"`
+	TracePath         string                     `json:"trace_path,omitempty"`
+	PolicyPassed      bool                       `json:"policy_passed"`
+	PolicyViolations  []string                   `json:"policy_violations,omitempty"`
+	PolicyEnforcement *ExternalPolicyEnforcement `json:"policy_enforcement,omitempty"`
+}
+
+type ExternalPolicyEnforcement struct {
+	Mode      ExternalMode `json:"mode"`
+	Status    string       `json:"status"`
+	Mechanism string       `json:"mechanism,omitempty"`
+	Warnings  []string     `json:"warnings,omitempty"`
+	Errors    []string     `json:"errors,omitempty"`
 }
 
 type Verdict struct {
