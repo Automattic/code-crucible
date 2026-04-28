@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/model"
+	cruciblerun "github.com/Automattic/code-crucible/internal/run"
 	"github.com/Automattic/code-crucible/internal/scoring"
 )
 
@@ -44,6 +46,8 @@ type tuiDashboardModel struct {
 	busy         bool
 	actionStart  time.Time
 	actionCmd    string
+	actionCancel context.CancelFunc
+	canceling    bool
 	spinner      spinner.Model
 	table        table.Model
 	detail       viewport.Model
@@ -86,12 +90,15 @@ type tuiFormField struct {
 }
 
 type tuiActionDoneMsg struct {
-	Title  string
-	Code   int
-	Stdout string
-	Stderr string
-	Data   tuiDashboardData
-	Err    error
+	Title       string
+	Code        int
+	Stdout      string
+	Stderr      string
+	Data        tuiDashboardData
+	Err         error
+	Canceled    bool
+	CancelEvent *cruciblerun.CancellationEvent
+	CancelErr   error
 }
 
 func runTUI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -211,11 +218,32 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tuiActionDoneMsg:
 		m.busy = false
 		m.actionStart = time.Time{}
+		m.actionCancel = nil
+		m.canceling = false
 		m.mode = tuiModeActionResult
 		m.actionTitle = msg.Title
 		m.actionOutput = msg.Stdout
 		m.actionError = msg.Stderr
-		if msg.Err != nil {
+		if msg.Canceled {
+			m.message = fmt.Sprintf("%s canceled", msg.Title)
+			if msg.CancelEvent != nil {
+				if len(msg.CancelEvent.UpdatedCandidates) > 0 {
+					m.message += fmt.Sprintf("; marked canceled: %s", strings.Join(msg.CancelEvent.UpdatedCandidates, ", "))
+				}
+				if strings.TrimSpace(msg.CancelEvent.EventPath) != "" {
+					if strings.TrimSpace(m.actionOutput) != "" {
+						m.actionOutput += "\n"
+					}
+					m.actionOutput += "Cancellation event: " + msg.CancelEvent.EventPath + "\n"
+				}
+			}
+			if msg.CancelErr != nil {
+				if strings.TrimSpace(m.actionError) != "" {
+					m.actionError += "\n"
+				}
+				m.actionError += "Cancellation artifact update failed: " + msg.CancelErr.Error() + "\n"
+			}
+		} else if msg.Err != nil {
 			m.message = msg.Err.Error()
 		} else if msg.Code != 0 {
 			m.message = fmt.Sprintf("%s exited with status %d", msg.Title, msg.Code)
@@ -235,6 +263,14 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeyMsg:
 		if m.busy {
+			switch msg.String() {
+			case "ctrl+c", "esc", "c":
+				if !m.canceling && m.actionCancel != nil {
+					m.canceling = true
+					m.message = "Cancel requested; waiting for action cleanup."
+					m.actionCancel()
+				}
+			}
 			return m, nil
 		}
 		switch m.mode {
@@ -319,8 +355,8 @@ func (m tuiDashboardModel) dashboardView() string {
 			m.data.Config.Variants,
 			displayValue(string(m.data.Config.External.Mode)),
 		)
-		passed, failed, pending := tuiStatusCounts(m.data.Results)
-		fmt.Fprintf(&b, "Candidates: %d  Passed: %d  Failed: %d  Pending: %d\n\n", len(m.data.Results), passed, failed, pending)
+		passed, failed, canceled, pending := tuiStatusCounts(m.data.Results)
+		fmt.Fprintf(&b, "Candidates: %d  Passed: %d  Failed: %d  Canceled: %d  Pending: %d\n\n", len(m.data.Results), passed, failed, canceled, pending)
 	}
 
 	if len(m.data.Results) == 0 {
@@ -397,15 +433,28 @@ func (m tuiDashboardModel) submitForm() (tea.Model, tea.Cmd) {
 	m.actionError = ""
 	m.actionStart = time.Now()
 	m.actionCmd = form.commandPreview(projectDir, m.data.Config.ID)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.actionCancel = cancel
+	m.canceling = false
 	m.message = ""
 	runCmd := func() tea.Msg {
 		var stdout, stderr strings.Builder
 		controller := WorkflowController{
+			Context:    ctx,
 			ProjectDir: projectDir,
 			Stdout:     &stdout,
 			Stderr:     &stderr,
 		}
 		code := runTUIFormAction(controller, form)
+		canceled := ctx.Err() == context.Canceled
+		var cancelEvent *cruciblerun.CancellationEvent
+		var cancelErr error
+		if canceled {
+			cancelEvent, cancelErr = markTUIActionCanceled(projectDir, form)
+			if cancelEvent != nil && len(cancelEvent.UpdatedCandidates) > 0 {
+				fmt.Fprintf(&stdout, "Marked canceled candidates: %s\n", strings.Join(cancelEvent.UpdatedCandidates, ", "))
+			}
+		}
 		data, err := loadTUIDashboard(projectDir, "latest")
 		if err != nil {
 			data = m.data
@@ -414,12 +463,15 @@ func (m tuiDashboardModel) submitForm() (tea.Model, tea.Cmd) {
 			}
 		}
 		return tuiActionDoneMsg{
-			Title:  title,
-			Code:   code,
-			Stdout: stdout.String(),
-			Stderr: stderr.String(),
-			Data:   data,
-			Err:    err,
+			Title:       title,
+			Code:        code,
+			Stdout:      stdout.String(),
+			Stderr:      stderr.String(),
+			Data:        data,
+			Err:         err,
+			Canceled:    canceled,
+			CancelEvent: cancelEvent,
+			CancelErr:   cancelErr,
 		}
 	}
 	return m, tea.Batch(runCmd, tuiSpinnerTick(m.spinner))
@@ -474,7 +526,11 @@ func (m tuiDashboardModel) actionProgressView() string {
 		fmt.Fprintf(&b, "\nCommand\n%s\n", m.actionCmd)
 	}
 	b.WriteString("\nOutput will appear when the action finishes.\n")
-	b.WriteString("Cancellation is not available yet.\n")
+	if m.canceling {
+		b.WriteString("Cancel requested; waiting for action cleanup.\n")
+	} else {
+		b.WriteString("Keys: c or esc request cancellation\n")
+	}
 	return b.String()
 }
 
@@ -606,6 +662,33 @@ func runTUIFormAction(controller WorkflowController, form tuiForm) int {
 		fmt.Fprintf(controller.Stderr, "unsupported TUI action %q\n", form.Action)
 		return 2
 	}
+}
+
+func markTUIActionCanceled(projectDir string, form tuiForm) (*cruciblerun.CancellationEvent, error) {
+	runSelector := strings.TrimSpace(form.value("run"))
+	candidateID := strings.TrimSpace(form.value("candidate"))
+	switch form.Action {
+	case tuiActionGenerate, tuiActionEvaluate, tuiActionReport:
+		if runSelector == "" {
+			runSelector = "latest"
+		}
+	case tuiActionQuery:
+		if strings.TrimSpace(form.value("kind")) != "candidates" {
+			return nil, nil
+		}
+		if runSelector == "" {
+			runSelector = "latest"
+		}
+	default:
+		return nil, nil
+	}
+	return cruciblerun.MarkCanceled(cruciblerun.CancellationOptions{
+		ProjectDir:  projectDir,
+		RunID:       runSelector,
+		Action:      string(form.Action),
+		CandidateID: candidateID,
+		Reason:      fmt.Sprintf("%s canceled by user from TUI.", form.Title),
+	})
 }
 
 func (f tuiForm) validate() error {
@@ -1048,18 +1131,20 @@ func (m tuiDashboardModel) nextActions() []string {
 	return actions
 }
 
-func tuiStatusCounts(results []model.CandidateResult) (passed, failed, pending int) {
+func tuiStatusCounts(results []model.CandidateResult) (passed, failed, canceled, pending int) {
 	for _, result := range results {
 		switch result.Status {
-		case "passed":
+		case model.CandidateStatusPassed:
 			passed++
-		case "failed":
+		case model.CandidateStatusFailed:
 			failed++
+		case model.CandidateStatusCanceled:
+			canceled++
 		default:
 			pending++
 		}
 	}
-	return passed, failed, pending
+	return passed, failed, canceled, pending
 }
 
 func externalPolicyStatus(result model.CandidateResult) string {

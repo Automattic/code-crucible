@@ -80,7 +80,7 @@ crucible tui
 crucible tui --run previous
 ```
 
-The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and basic forms for creating runs, discovery, generation, evaluation, reports, and archive queries. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, and show captured command output when the action finishes.
+The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and basic forms for creating runs, discovery, generation, evaluation, reports, and archive queries. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results.
 
 Create a tournament run from inside an existing project:
 
@@ -648,10 +648,11 @@ Current priorities:
 
 - [x] Add provider setup templates and a dry-run CLI path for Claude
 - [x] Add async TUI action progress with spinner, elapsed time, and command preview
-- [ ] Add cancellable TUI long-running actions after async execution is factored cleanly
+- [x] Add cancellable TUI long-running actions with cancellation events and `canceled` candidate status
 
 Deferred roadmap:
 
+- [ ] Add richer cancellation cleanup for partial generation artifacts once generated candidate lifecycle tracking is more detailed
 - [ ] Add a full provider install or marketplace flow after provider templates prove useful
 - [ ] Add a full TUI job manager with logs, history, parallel jobs, cancellation, and richer progress displays
 - [ ] Revisit pre-release planning after stability work has run for a few days

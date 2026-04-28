@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"context"
 	"io"
 	"strconv"
 	"strings"
 )
 
 type WorkflowController struct {
+	Context    context.Context
 	ProjectDir string
 	Stdout     io.Writer
 	Stderr     io.Writer
@@ -94,7 +96,7 @@ func (c WorkflowController) Run(opts RunWorkflowOptions) int {
 	}
 	args = append(args, opts.ExtraArgs...)
 	args = append(args, opts.Optimize)
-	return runTournament(args, c.Stdout, c.Stderr)
+	return runTournamentWithContext(c.context(), args, c.Stdout, c.Stderr)
 }
 
 func (c WorkflowController) Leaderboard(runSelector string) int {
@@ -107,13 +109,13 @@ func (c WorkflowController) Generate(opts GenerateWorkflowOptions) int {
 		args = append(args, "--agent", strings.TrimSpace(opts.Agent))
 	}
 	args = append(args, opts.ExtraArgs...)
-	return runGenerate(args, c.Stdout, c.Stderr)
+	return runGenerateWithContext(c.context(), args, c.Stdout, c.Stderr)
 }
 
 func (c WorkflowController) Evaluate(opts EvaluateWorkflowOptions) int {
 	args := []string{"--project-dir", c.ProjectDir, "--run", opts.RunSelector}
 	args = append(args, opts.ExtraArgs...)
-	return runEvaluate(args, c.Stdout, c.Stderr)
+	return runEvaluateWithContext(c.context(), args, c.Stdout, c.Stderr)
 }
 
 func (c WorkflowController) Evolve(opts EvolveWorkflowOptions) int {
@@ -172,7 +174,7 @@ func (c WorkflowController) NextRound(opts NextRoundWorkflowOptions) int {
 }
 
 func (c WorkflowController) Discover(opts DiscoverWorkflowOptions) int {
-	return runDiscover([]string{"--project-dir", c.ProjectDir, "--agent", opts.Agent, opts.Request}, c.Stdout, c.Stderr)
+	return runDiscoverWithContext(c.context(), []string{"--project-dir", c.ProjectDir, "--agent", opts.Agent, opts.Request}, c.Stdout, c.Stderr)
 }
 
 func (c WorkflowController) Query(opts QueryWorkflowOptions) int {
@@ -188,4 +190,11 @@ func (c WorkflowController) Query(opts QueryWorkflowOptions) int {
 		}
 	}
 	return runQuery(args, c.Stdout, c.Stderr)
+}
+
+func (c WorkflowController) context() context.Context {
+	if c.Context != nil {
+		return c.Context
+	}
+	return context.Background()
 }

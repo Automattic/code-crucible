@@ -29,6 +29,7 @@ type RunSummary struct {
 	Candidates     int     `json:"candidates"`
 	Passed         int     `json:"passed"`
 	Failed         int     `json:"failed"`
+	Canceled       int     `json:"canceled"`
 	Pending        int     `json:"pending"`
 	BestCandidate  string  `json:"best_candidate,omitempty"`
 	BestScore      float64 `json:"best_score,omitempty"`
@@ -82,7 +83,8 @@ SELECT
 	COUNT(c.id) AS candidates,
 	COALESCE(SUM(CASE WHEN c.status = 'passed' THEN 1 ELSE 0 END), 0) AS passed,
 	COALESCE(SUM(CASE WHEN c.status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
-	COALESCE(SUM(CASE WHEN c.status NOT IN ('passed', 'failed') THEN 1 ELSE 0 END), 0) AS pending,
+	COALESCE(SUM(CASE WHEN c.status = 'canceled' THEN 1 ELSE 0 END), 0) AS canceled,
+	COALESCE(SUM(CASE WHEN c.status NOT IN ('passed', 'failed', 'canceled') THEN 1 ELSE 0 END), 0) AS pending,
 	COALESCE((
 		SELECT c2.id
 		FROM candidates c2
@@ -139,6 +141,7 @@ ORDER BY r.created_at DESC, r.id DESC`
 			&summary.Candidates,
 			&summary.Passed,
 			&summary.Failed,
+			&summary.Canceled,
 			&summary.Pending,
 			&summary.BestCandidate,
 			&summary.BestScore,

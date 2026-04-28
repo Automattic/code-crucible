@@ -126,7 +126,7 @@ func candidateDirectory(projectDir string, candidate model.Candidate) string {
 
 func statusForVerdict(verdict model.Verdict) string {
 	if verdict.CorrectnessPassed && verdict.BenchmarkPassed && verdict.ExternalPolicyPassed {
-		return "passed"
+		return model.CandidateStatusPassed
 	}
-	return "failed"
+	return model.CandidateStatusFailed
 }

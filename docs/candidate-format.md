@@ -136,7 +136,7 @@ Compare resource metrics only within the same sandbox engine. Docker and Podman 
 }
 ```
 
-If `verdict.json` is missing or invalid, Code Crucible marks the candidate as failed.
+If `verdict.json` is missing or invalid, Code Crucible marks the candidate as failed. If a TUI evaluation is canceled before an unevaluated candidate completes, Code Crucible marks that affected candidate as `canceled` and records a cancellation event under `events/cancellations.jsonl`. Completed `passed` and `failed` candidates are not overwritten by cancellation.
 
 `leaderboard.json` also stores `external.policy_enforcement` for each evaluated candidate. Its `status` can be:
 

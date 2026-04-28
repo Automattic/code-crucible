@@ -28,6 +28,7 @@ type HTMLReport struct {
 	Candidates int    `json:"candidates"`
 	Passed     int    `json:"passed"`
 	Failed     int    `json:"failed"`
+	Canceled   int    `json:"canceled"`
 	Pending    int    `json:"pending"`
 }
 
@@ -45,6 +46,7 @@ type reportSummary struct {
 	Candidates int
 	Passed     int
 	Failed     int
+	Canceled   int
 	Pending    int
 	Best       string
 	BestScore  string
@@ -122,6 +124,7 @@ func GenerateHTML(opts Options) (*HTMLReport, error) {
 		Candidates: page.Summary.Candidates,
 		Passed:     page.Summary.Passed,
 		Failed:     page.Summary.Failed,
+		Canceled:   page.Summary.Canceled,
 		Pending:    page.Summary.Pending,
 	}, nil
 }
@@ -144,14 +147,16 @@ func buildReportPage(cfg model.RunConfig, board model.Leaderboard, runDir, outpu
 		page.Rows = append(page.Rows, row)
 		page.Summary.Candidates++
 		switch result.Status {
-		case "passed":
+		case model.CandidateStatusPassed:
 			page.Summary.Passed++
 			if page.Summary.Best == "" {
 				page.Summary.Best = result.Candidate.ID
 				page.Summary.BestScore = formatNumber(result.Score)
 			}
-		case "failed":
+		case model.CandidateStatusFailed:
 			page.Summary.Failed++
+		case model.CandidateStatusCanceled:
+			page.Summary.Canceled++
 		default:
 			page.Summary.Pending++
 		}
@@ -204,7 +209,7 @@ func rankedResults(results []model.CandidateResult) []model.CandidateResult {
 		if statusPriority(left.Status) != statusPriority(right.Status) {
 			return statusPriority(left.Status) < statusPriority(right.Status)
 		}
-		if left.Status == "passed" && right.Status == "passed" {
+		if left.Status == model.CandidateStatusPassed && right.Status == model.CandidateStatusPassed {
 			if left.Score != right.Score {
 				return left.Score > right.Score
 			}
@@ -219,12 +224,14 @@ func rankedResults(results []model.CandidateResult) []model.CandidateResult {
 
 func statusPriority(status string) int {
 	switch status {
-	case "passed":
+	case model.CandidateStatusPassed:
 		return 0
-	case "failed":
+	case model.CandidateStatusFailed:
 		return 1
-	default:
+	case model.CandidateStatusCanceled:
 		return 2
+	default:
+		return 3
 	}
 }
 
@@ -501,6 +508,7 @@ var reportTemplate = template.Must(template.New("report").Parse(`<!doctype html>
         <div class="metric"><span>Candidates</span><strong>{{.Summary.Candidates}}</strong></div>
         <div class="metric"><span>Passed</span><strong>{{.Summary.Passed}}</strong></div>
         <div class="metric"><span>Failed</span><strong>{{.Summary.Failed}}</strong></div>
+        <div class="metric"><span>Canceled</span><strong>{{.Summary.Canceled}}</strong></div>
         <div class="metric"><span>Pending</span><strong>{{.Summary.Pending}}</strong></div>
         <div class="metric"><span>Best</span><strong>{{.Summary.Best}}</strong></div>
         <div class="metric"><span>Best Score</span><strong>{{.Summary.BestScore}}</strong></div>

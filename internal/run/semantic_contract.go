@@ -230,7 +230,10 @@ func semanticBool(value *bool, fallback bool) bool {
 func runSemanticCommand(command, role, workDir, runDir, candidateDir, otherSrc string, maxOutput int, timeout time.Duration, opts evaluatorExecutionOptions) semanticCommandResult {
 	stdout := &cappedBuffer{limit: maxOutput}
 	stderr := &cappedBuffer{limit: maxOutput}
-	ctx := context.Background()
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cancel := func() {}
 	if timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -259,6 +262,14 @@ func runSemanticCommand(command, role, workDir, runDir, candidateDir, otherSrc s
 	if ctx.Err() == context.DeadlineExceeded {
 		result.TimedOut = true
 		result.ExitCode = -1
+		return result
+	}
+	if ctx.Err() == context.Canceled {
+		result.ExitCode = -1
+		if strings.TrimSpace(result.Stderr) != "" {
+			result.Stderr += "\n"
+		}
+		result.Stderr += "semantic contract check canceled"
 		return result
 	}
 	if err == nil {

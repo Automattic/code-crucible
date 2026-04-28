@@ -15,6 +15,7 @@ import (
 )
 
 type generationOptions struct {
+	Context           context.Context
 	ProjectDir        string
 	RunID             string
 	AgentName         string
@@ -30,6 +31,10 @@ type generationOptions struct {
 }
 
 func runGenerate(args []string, stdout, stderr io.Writer) int {
+	return runGenerateWithContext(context.Background(), args, stdout, stderr)
+}
+
+func runGenerateWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	projectDir := projectDirFlag(fs, "project directory containing .crucible")
@@ -49,6 +54,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	}
 
 	return generateWithOptions(generationOptions{
+		Context:           ctx,
 		ProjectDir:        *projectDir,
 		RunID:             *runID,
 		AgentName:         *agentName,
@@ -65,6 +71,10 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 }
 
 func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	configPath, err := archive.RunConfigPath(opts.ProjectDir, opts.RunID)
 	if err != nil {
 		fmt.Fprintf(stderr, "generate failed: %v\n", err)
@@ -142,7 +152,7 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "Running %s for run %s\n", provider.Name, cfg.ID)
 	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
-	result, err := agent.RunCodex(context.Background(), codexOpts, stdout, stderr)
+	result, err := agent.RunCodex(ctx, codexOpts, stdout, stderr)
 	if err != nil {
 		if result != nil {
 			fmt.Fprintf(stderr, "Codex exited with status %d\n", result.ExitCode)
@@ -190,7 +200,11 @@ func runCommandGenerationProvider(provider agent.ProviderDefinition, projectDir,
 
 	fmt.Fprintf(stdout, "Running %s for run %s\n", provider.Name, runID)
 	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
-	result, err := agent.RunCommandProvider(context.Background(), agent.CommandProviderOptions{
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := agent.RunCommandProvider(ctx, agent.CommandProviderOptions{
 		Provider:          provider,
 		ProjectDir:        projectDir,
 		RunDir:            runDir,

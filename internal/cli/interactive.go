@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -997,9 +998,9 @@ func (s interactiveSession) maybeRunAgentDiscovery(projectDir string, plan *disc
 		fmt.Fprintln(s.stdout, "Local discovery plan already created; continuing without a structured agent handoff.")
 		return nil, provider.Name, true
 	case agent.ProviderCodex:
-		code = runCodexDiscovery(projectDir, plan, codexDiscoveryOptions{}, s.stdout, s.stderr)
+		code = runCodexDiscovery(context.Background(), projectDir, plan, codexDiscoveryOptions{}, s.stdout, s.stderr)
 	case "command":
-		code = runCommandDiscovery(projectDir, plan, provider, "", false, s.stdout, s.stderr)
+		code = runCommandDiscovery(context.Background(), projectDir, plan, provider, "", false, s.stdout, s.stderr)
 	default:
 		fmt.Fprintf(s.stderr, "discovery failed: provider %q is not implemented for discovery yet\n", provider.Name)
 		return nil, "", false

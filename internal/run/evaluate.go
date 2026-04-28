@@ -1,6 +1,7 @@
 package run
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 )
 
 type EvaluationOptions struct {
+	Context     context.Context
 	ProjectDir  string
 	RunID       string
 	CandidateID string
@@ -86,6 +88,10 @@ type EvaluationReport struct {
 }
 
 func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	projectDir := opts.ProjectDir
 	if strings.TrimSpace(projectDir) == "" {
 		projectDir = "."
@@ -167,6 +173,7 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 				Env:         evaluatorEnv,
 				ProjectDir:  absProject,
 				Sandbox:     opts.Sandbox,
+				Context:     ctx,
 			})
 			board.Results[index] = updated
 			report.Results = append(report.Results, evaluation)
@@ -183,6 +190,7 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 			Env:         evaluatorEnv,
 			ProjectDir:  absProject,
 			Sandbox:     opts.Sandbox,
+			Context:     ctx,
 		})
 		for _, result := range results {
 			board.Results[result.index] = result.updated
@@ -204,6 +212,7 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 }
 
 type evaluatorExecutionOptions struct {
+	Context     context.Context
 	Timeout     time.Duration
 	Nice        int
 	CPULimit    int
@@ -290,6 +299,7 @@ func evaluateParallel(cfg *model.RunConfig, evaluatorPath, runDir string, result
 }
 
 func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result model.CandidateResult, execOpts evaluatorExecutionOptions) (CandidateEvaluation, model.CandidateResult) {
+	originalResult := result
 	candidateDir := candidateDirectory(execOpts.ProjectDir, result.Candidate)
 	metricsPath := filepath.Join(candidateDir, "metrics.json")
 	resourcePath := filepath.Join(candidateDir, "resource-metrics.json")
@@ -324,6 +334,25 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	if sandboxEnabled(execOpts.Sandbox) {
 		sandbox := execOpts.Sandbox
 		evaluation.Sandbox = &sandbox
+	}
+	if execOpts.Context != nil && execOpts.Context.Err() == context.Canceled {
+		if !candidateStatusCancelable(result.Status) {
+			evaluation.Status = result.Status
+			evaluation.Score = result.Score
+			evaluation.ScoreExplanation = result.ScoreExplanation
+			return evaluation, result
+		}
+		result.Status = model.CandidateStatusCanceled
+		result.Score = 0
+		result.ScoreExplanation = &model.ScoreExplanation{
+			Scoreable: false,
+			Reason:    "candidate evaluation canceled",
+		}
+		result.Verdict.Notes = appendMissingStrings(result.Verdict.Notes, []string{"Evaluation canceled by user."})
+		evaluation.Status = result.Status
+		evaluation.Score = result.Score
+		evaluation.ScoreExplanation = result.ScoreExplanation
+		return evaluation, result
 	}
 	policyEnforcement := externalPolicyEnforcement(cfg.External, execOpts.Sandbox)
 	evaluation.ExternalPolicy = &policyEnforcement
@@ -440,6 +469,16 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 		}
 	}
 
+	canceled := candidateExecOpts.Context != nil && candidateExecOpts.Context.Err() == context.Canceled
+	if canceled {
+		if !candidateStatusCancelable(originalResult.Status) {
+			evaluation.Status = originalResult.Status
+			evaluation.Score = originalResult.Score
+			evaluation.ScoreExplanation = originalResult.ScoreExplanation
+			return evaluation, originalResult
+		}
+		verdict.Notes = appendMissingStrings(verdict.Notes, []string{"Evaluation canceled by user."})
+	}
 	result.Metrics = metrics
 	result.Verdict = verdict
 	result.External = externalTrace
@@ -447,11 +486,21 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	result.External.PolicyPassed = verdict.ExternalPolicyPassed
 	result.External.PolicyEnforcement = &policyEnforcement
 	result.External.PolicyViolations = append(result.External.PolicyViolations, policyEnforcement.Errors...)
-	result.Score = scoring.Score(result)
-	result.Status = statusForVerdict(verdict)
+	if canceled {
+		result.Score = 0
+		result.ScoreExplanation = &model.ScoreExplanation{
+			Scoreable: false,
+			Reason:    "candidate evaluation canceled",
+		}
+		result.Status = model.CandidateStatusCanceled
+	} else {
+		result.Score = scoring.Score(result)
+		result.Status = statusForVerdict(verdict)
+	}
 
 	evaluation.Status = result.Status
 	evaluation.Score = result.Score
+	evaluation.ScoreExplanation = result.ScoreExplanation
 	return evaluation, result
 }
 

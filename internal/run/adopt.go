@@ -145,7 +145,7 @@ func AdoptCandidates(opts AdoptionOptions) (*AdoptionReport, error) {
 					"Candidate adopted from generated artifacts but not evaluated yet.",
 				},
 			},
-			Status: "generated",
+			Status: model.CandidateStatusGenerated,
 		})
 		seen[id] = true
 		report.Added = append(report.Added, id)

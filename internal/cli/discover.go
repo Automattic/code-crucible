@@ -15,6 +15,10 @@ import (
 )
 
 func runDiscover(args []string, stdout, stderr io.Writer) int {
+	return runDiscoverWithContext(context.Background(), args, stdout, stderr)
+}
+
+func runDiscoverWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("discover", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	projectDir := projectDirFlag(fs, "project directory containing or receiving .crucible")
@@ -67,7 +71,7 @@ func runDiscover(args []string, stdout, stderr io.Writer) int {
 		printDiscoveryPlan(stdout, plan)
 		return 0
 	case agent.ProviderCodex:
-		return runCodexDiscovery(*projectDir, plan, codexDiscoveryOptions{
+		return runCodexDiscovery(ctx, *projectDir, plan, codexDiscoveryOptions{
 			CodexBin:         *codexBin,
 			Model:            *model,
 			Profile:          *profile,
@@ -78,7 +82,7 @@ func runDiscover(args []string, stdout, stderr io.Writer) int {
 			DryRun:           *dryRun,
 		}, stdout, stderr)
 	case "command":
-		return runCommandDiscovery(*projectDir, plan, provider, *model, *dryRun, stdout, stderr)
+		return runCommandDiscovery(ctx, *projectDir, plan, provider, *model, *dryRun, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "discover failed: provider %q is not implemented for discovery yet\n", provider.Name)
 		return 2
@@ -96,7 +100,7 @@ type codexDiscoveryOptions struct {
 	DryRun           bool
 }
 
-func runCodexDiscovery(projectDir string, plan *discovery.Plan, opts codexDiscoveryOptions, stdout, stderr io.Writer) int {
+func runCodexDiscovery(ctx context.Context, projectDir string, plan *discovery.Plan, opts codexDiscoveryOptions, stdout, stderr io.Writer) int {
 	absProject, err := filepath.Abs(projectDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "discover failed: %v\n", err)
@@ -131,7 +135,7 @@ func runCodexDiscovery(projectDir string, plan *discovery.Plan, opts codexDiscov
 		fmt.Fprintf(stdout, "Structured plan: %s\n", agentPlanPath)
 		return 0
 	}
-	result, err := agent.RunCodex(context.Background(), codexOpts, stdout, stderr)
+	result, err := agent.RunCodex(ctx, codexOpts, stdout, stderr)
 	if err != nil {
 		if result != nil {
 			fmt.Fprintf(stderr, "discover failed: Codex exited with status %d\n", result.ExitCode)
@@ -153,7 +157,7 @@ func runCodexDiscovery(projectDir string, plan *discovery.Plan, opts codexDiscov
 	return 0
 }
 
-func runCommandDiscovery(projectDir string, plan *discovery.Plan, provider agent.ProviderDefinition, modelName string, dryRun bool, stdout, stderr io.Writer) int {
+func runCommandDiscovery(ctx context.Context, projectDir string, plan *discovery.Plan, provider agent.ProviderDefinition, modelName string, dryRun bool, stdout, stderr io.Writer) int {
 	absProject, err := filepath.Abs(projectDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "discover failed: %v\n", err)
@@ -174,7 +178,7 @@ func runCommandDiscovery(projectDir string, plan *discovery.Plan, provider agent
 		fmt.Fprintf(stdout, "Structured plan: %s\n", agentPlanPath)
 		return 0
 	}
-	result, err := agent.RunCommandProvider(context.Background(), agent.CommandProviderOptions{
+	result, err := agent.RunCommandProvider(ctx, agent.CommandProviderOptions{
 		Provider:          provider,
 		ProjectDir:        absProject,
 		RunDir:            planDir,

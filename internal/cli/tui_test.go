@@ -199,7 +199,7 @@ func TestTUIActionProgressViewShowsElapsedAndCommand(t *testing.T) {
 		"crucible generate",
 		"--run run-1",
 		"Output will appear when the action finishes.",
-		"Cancellation is not available yet.",
+		"Keys: c or esc request cancellation",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("progress view did not contain %q:\n%s", want, view)
@@ -219,6 +219,49 @@ func TestTUISpinnerTickContinuesWhileBusy(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("spinner tick did not schedule the next tick")
+	}
+}
+
+func TestTUIBusyCancelRequestsCancellation(t *testing.T) {
+	dashboard := newTUIDashboardModel(tuiDashboardData{}, "")
+	dashboard.busy = true
+	dashboard.actionTitle = "Evaluate Candidates"
+	canceled := false
+	dashboard.actionCancel = func() { canceled = true }
+
+	updated, _ := dashboard.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	running := updated.(tuiDashboardModel)
+	if !canceled {
+		t.Fatal("cancel function was not called")
+	}
+	if !running.canceling {
+		t.Fatal("model did not enter canceling state")
+	}
+	if !strings.Contains(running.View(), "Cancel requested") {
+		t.Fatalf("progress view did not show cancel request:\n%s", running.View())
+	}
+}
+
+func TestTUIActionDoneCanceledShowsArtifactUpdate(t *testing.T) {
+	dashboard := newTUIDashboardModel(tuiDashboardData{}, "")
+	updated, _ := dashboard.Update(tuiActionDoneMsg{
+		Title:    "Evaluate Candidates",
+		Canceled: true,
+		CancelEvent: &run.CancellationEvent{
+			EventPath:         "/tmp/run/events/cancellations.jsonl",
+			UpdatedCandidates: []string{"candidate-0001"},
+		},
+	})
+	done := updated.(tuiDashboardModel)
+	view := done.View()
+	for _, want := range []string{
+		"Evaluate Candidates canceled",
+		"candidate-0001",
+		"Cancellation event: /tmp/run/events/cancellations.jsonl",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("canceled result view did not contain %q:\n%s", want, view)
+		}
 	}
 }
 

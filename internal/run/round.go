@@ -134,7 +134,7 @@ func selectRoundParents(results []model.CandidateResult, limit int) []model.Cand
 	}
 	passed := make([]model.CandidateResult, 0, len(results))
 	for _, result := range results {
-		if result.Status == "passed" {
+		if result.Status == model.CandidateStatusPassed {
 			passed = append(passed, result)
 		}
 	}

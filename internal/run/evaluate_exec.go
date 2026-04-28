@@ -37,7 +37,10 @@ func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resour
 	}
 	defer stderrFile.Close()
 
-	ctx := context.Background()
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cancel := func() {}
 	if opts.Timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
@@ -88,6 +91,9 @@ func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resour
 	}
 	if ctx.Err() == context.DeadlineExceeded {
 		return resourceMetrics, fmt.Errorf("evaluator timed out after %s", opts.Timeout)
+	}
+	if ctx.Err() == context.Canceled {
+		return resourceMetrics, context.Canceled
 	}
 	if err != nil {
 		return resourceMetrics, fmt.Errorf("evaluator failed: %w", err)

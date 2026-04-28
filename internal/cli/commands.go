@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -134,6 +135,10 @@ Available provider templates:
 }
 
 func runTournament(args []string, stdout, stderr io.Writer) int {
+	return runTournamentWithContext(context.Background(), args, stdout, stderr)
+}
+
+func runTournamentWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	projectDir := projectDirFlag(fs, "project directory containing or receiving .crucible")
@@ -234,6 +239,7 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	if *generateNow {
 		fmt.Fprintln(stdout)
 		return generateWithOptions(generationOptions{
+			Context:           ctx,
 			ProjectDir:        *projectDir,
 			RunID:             created.ID,
 			AgentName:         "",
@@ -713,6 +719,10 @@ func runAdopt(args []string, stdout, stderr io.Writer) int {
 }
 
 func runEvaluate(args []string, stdout, stderr io.Writer) int {
+	return runEvaluateWithContext(context.Background(), args, stdout, stderr)
+}
+
+func runEvaluateWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("evaluate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	projectDir := projectDirFlag(fs, "project directory containing .crucible")
@@ -799,6 +809,7 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	}
 
 	report, err := run.EvaluateCandidates(run.EvaluationOptions{
+		Context:     ctx,
 		ProjectDir:  *projectDir,
 		RunID:       *runID,
 		CandidateID: *candidateID,
