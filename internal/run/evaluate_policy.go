@@ -134,6 +134,7 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 			return enforcement
 		}
 		enforcement.Warnings = append(enforcement.Warnings, "external policy deny is advisory in local mode; use --sandbox-engine docker or podman with --sandbox-network none to enforce network isolation")
+		appendLocalRawSocketWarning(&enforcement, sandbox)
 	case model.ExternalModeMock, model.ExternalModeReplay:
 		if sandboxEnabled(sandbox) && sandbox.Network == "none" {
 			enforcement.Status = "partial"
@@ -141,6 +142,7 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 			return enforcement
 		}
 		enforcement.Warnings = append(enforcement.Warnings, "fixture gateway and proxy environment are available when fixtures are archived, but network isolation requires a container sandbox with --sandbox-network none")
+		appendLocalRawSocketWarning(&enforcement, sandbox)
 	case model.ExternalModeAllowlist:
 		if len(normalizedAllowlist(policy.Allowlist)) == 0 {
 			enforcement.Status = "failed"
@@ -150,6 +152,7 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 		enforcement.Status = "partial"
 		enforcement.Mechanism = "proxy-allowlist"
 		enforcement.Warnings = append(enforcement.Warnings, "allowlist policy is enforced for HTTP and HTTPS clients that honor proxy environment variables; clients that ignore proxy variables still require evaluator-specific isolation")
+		appendLocalRawSocketWarning(&enforcement, sandbox)
 		if sandboxEnabled(sandbox) && sandbox.Network == "none" {
 			enforcement.Warnings = append(enforcement.Warnings, "allowlisted live hosts may be unreachable when the container sandbox network is none")
 		}
@@ -157,11 +160,19 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 		enforcement.Status = "partial"
 		enforcement.Mechanism = "proxy-record"
 		enforcement.Warnings = append(enforcement.Warnings, "record mode captures HTTP proxy traffic and CONNECT metadata; clients that ignore proxy variables or opaque HTTPS tunnels still require evaluator-specific recording support")
+		appendLocalRawSocketWarning(&enforcement, sandbox)
 	default:
 		enforcement.Warnings = append(enforcement.Warnings, "external policy mode is not recognized by the enforcement layer")
 	}
 
 	return enforcement
+}
+
+func appendLocalRawSocketWarning(enforcement *model.ExternalPolicyEnforcement, sandbox SandboxOptions) {
+	if enforcement == nil || sandboxEnabled(sandbox) {
+		return
+	}
+	enforcement.Warnings = append(enforcement.Warnings, "local mode cannot block or transparently intercept raw socket traffic; use Docker or Podman sandbox routing when clients cannot use proxy variables or direct-routed gateway URLs")
 }
 
 func externalEvaluationEnv(policy model.ExternalPolicy, runDir string, env []string) []string {

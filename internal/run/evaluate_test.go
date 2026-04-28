@@ -834,10 +834,28 @@ func TestExternalPolicyEnforcement(t *testing.T) {
 	if enforcement.Status != "partial" || enforcement.Mechanism != "proxy-allowlist" || len(enforcement.Warnings) == 0 {
 		t.Fatalf("allowlist enforcement = %#v, want partial proxy warning", enforcement)
 	}
+	if !containsWarning(enforcement.Warnings, "raw socket") {
+		t.Fatalf("allowlist warnings = %#v, want local raw socket warning", enforcement.Warnings)
+	}
+
+	enforcement = externalPolicyEnforcement(model.ExternalPolicy{
+		Mode:      model.ExternalModeAllowlist,
+		Allowlist: []string{"api.example.com"},
+	}, SandboxOptions{
+		Engine:  "docker",
+		Image:   "golang:1.22",
+		Network: "bridge",
+	})
+	if containsWarning(enforcement.Warnings, "raw socket") {
+		t.Fatalf("container allowlist warnings = %#v, did not expect local raw socket warning", enforcement.Warnings)
+	}
 
 	enforcement = externalPolicyEnforcement(model.ExternalPolicy{Mode: model.ExternalModeRecord}, SandboxOptions{})
 	if enforcement.Status != "partial" || enforcement.Mechanism != "proxy-record" || len(enforcement.Warnings) == 0 {
 		t.Fatalf("record enforcement = %#v, want partial proxy record warning", enforcement)
+	}
+	if !containsWarning(enforcement.Warnings, "raw socket") {
+		t.Fatalf("record warnings = %#v, want local raw socket warning", enforcement.Warnings)
 	}
 }
 
@@ -1388,6 +1406,15 @@ func containsArg(args []string, want string) bool {
 func containsPrefix(args []string, want string) bool {
 	for _, arg := range args {
 		if strings.HasPrefix(arg, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsWarning(warnings []string, want string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning, want) {
 			return true
 		}
 	}

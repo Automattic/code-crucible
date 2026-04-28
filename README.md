@@ -490,7 +490,7 @@ For `deny` mode, container evaluation enforces network isolation with `--sandbox
 
 For `allowlist` mode, Code Crucible starts the archived gateway as an HTTP/HTTPS proxy and denies proxied requests to hosts outside `--allow-hosts`. This is partial enforcement: clients that ignore proxy environment variables can use direct-routed gateway URLs when their base URL is configurable, but raw sockets and fully transparent routing still require evaluator-specific isolation. Live allowlisted hosts may be unreachable when the container sandbox network is `none`.
 
-Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock`, `replay`, and `record` evaluation, Code Crucible exports gateway and proxy environment variables, then starts the archived gateway before running the evaluator. For container evaluation, Code Crucible builds an archived Linux gateway binary on the host when needed so sandbox images do not need Go just to start the gateway. Record mode captures proxied HTTP responses into each candidate's `recorded-http-fixtures.json` and writes `external-trace.json`; transparent HTTPS tunnels are traced but not replay-captured yet. Container mode can combine this with `--sandbox-network none`; local mode still cannot block unrelated host-network access. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
+Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock`, `replay`, and `record` evaluation, Code Crucible exports gateway and proxy environment variables, then starts the archived gateway before running the evaluator. For container evaluation, Code Crucible builds an archived Linux gateway binary on the host when needed so sandbox images do not need Go just to start the gateway. Record mode captures proxied HTTP responses into each candidate's `recorded-http-fixtures.json` and writes `external-trace.json`; transparent HTTPS tunnels are traced but not replay-captured yet. Container mode can combine this with `--sandbox-network none`; local mode still cannot block unrelated host-network access or transparently intercept raw sockets, and evaluation reports warn when this limitation applies. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
 
 ## Project Work Area
 
@@ -634,7 +634,7 @@ Evaluator and external policy roadmap:
 - [x] Decide raw socket routing scope: no local transparent interception; implement only inside Docker/Podman sandboxes
 - [ ] Design container-only raw socket routing with explicit sandbox/network setup
 - [ ] Implement container-only raw socket routing through an isolated evaluator network and gateway sidecar
-- [ ] Add local-mode warnings when raw socket/transparent routing would be required
+- [x] Add local-mode warnings when raw socket/transparent routing would be required
 - [ ] Extend external trace capture for container-routed raw socket traffic once interception exists
 
 TUI roadmap:
