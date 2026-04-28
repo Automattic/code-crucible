@@ -439,7 +439,13 @@ Run the end-to-end proof-of-concept smoke test:
 make smoke
 ```
 
-The smoke test creates ignored artifacts under `examples/go-ranking-poc/.crucible/`.
+Run the CI-style regression tournament, which extends the smoke test by rebuilding the index, querying passed candidates, and rendering an HTML report:
+
+```bash
+make regression-tournament
+```
+
+These targets create ignored artifacts under `examples/go-ranking-poc/.crucible/`.
 
 Remove local build, cache, and smoke-test artifacts with:
 
@@ -465,7 +471,7 @@ Feature roadmap:
 - [x] Add HTML reports
 - [x] Add richer SQLite queries for reports and automation
 - [x] Expand sandbox profiles and limits
-- [ ] Add CI regression tournament jobs
+- [x] Add CI regression tournament jobs
 
 ## License
 

@@ -28,6 +28,10 @@ Use this checklist before pushing to a remote, tagging, or preparing a public re
   ```bash
   make smoke
   ```
+- Run the CI-style regression tournament when reports, indexes, or tournament automation changed:
+  ```bash
+  make regression-tournament
+  ```
 
 ## Sensitive Data And Artifacts
 
@@ -41,7 +45,7 @@ Use this checklist before pushing to a remote, tagging, or preparing a public re
 
 - Confirm `README.md` reflects current commands and limitations.
 - Confirm `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md` are present.
-- Confirm GitHub Actions exists under `.github/workflows/ci.yml`.
+- Confirm GitHub Actions exists under `.github/workflows/ci.yml` and includes both Go checks and the regression tournament job.
 - Confirm the remote target is intentional before the first push:
   ```bash
   git remote -v

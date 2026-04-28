@@ -23,7 +23,13 @@ Run the end-to-end proof-of-concept smoke test:
 make smoke
 ```
 
-The smoke test creates ignored artifacts under `examples/go-ranking-poc/.crucible/`.
+Run the CI-style regression tournament when changing reporting, indexing, or the end-to-end workflow:
+
+```bash
+make regression-tournament
+```
+
+These targets create ignored artifacts under `examples/go-ranking-poc/.crucible/`.
 
 Clean ignored local artifacts:
 
@@ -38,6 +44,7 @@ make clean
 - Update README and `docs/` when user-facing commands or artifact formats change.
 - Run `make check` before opening a pull request.
 - Run `make smoke` for changes that affect run creation, evaluation, metrics, leaderboard output, or the Go PoC fixture.
+- Run `make regression-tournament` for changes that affect CI tournament artifacts, reports, or indexed automation views.
 
 ## Artifact Hygiene
 
