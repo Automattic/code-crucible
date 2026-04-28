@@ -512,7 +512,9 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 			AgentName:  evaluatorSetup.Agent,
 		}, s.stdout, s.stderr)
 		if code != 0 {
-			return code
+			fmt.Fprintln(s.stdout)
+			fmt.Fprintln(s.stdout, "Evaluator generation failed; the run remains available.")
+			fmt.Fprintf(s.stdout, "Retry evaluator generation: %s\n", agent.FormatCommand([]string{"crucible", "evaluator", "generate", "--project-dir", projectDir, "--run", created.ID}))
 		}
 	}
 	fmt.Fprintln(s.stdout)

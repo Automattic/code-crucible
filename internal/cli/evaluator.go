@@ -194,6 +194,10 @@ func evaluatorGenerateWithOptions(opts evaluatorGenerationOptions, stdout, stder
 		printEvaluatorDryRun(stdout, provider.Name, command, promptPath, projectDir, runDir, evaluatorPath, opts.OutputLastMessage)
 		return 0
 	}
+	if err := checkProviderExecutable(provider, command); err != nil {
+		fmt.Fprintf(stderr, "evaluator generate failed: %v\n", err)
+		return 1
+	}
 	fmt.Fprintf(stdout, "Running %s to generate evaluator for run %s\n", provider.Name, cfg.ID)
 	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
 	result, err := agent.RunCodex(ctx, codexOpts, stdout, stderr)
@@ -210,6 +214,10 @@ func runCommandEvaluatorProvider(provider agent.ProviderDefinition, projectDir, 
 	if opts.DryRun {
 		printEvaluatorDryRun(stdout, provider.Name, command, promptPath, projectDir, runDir, evaluatorPath, opts.OutputLastMessage)
 		return 0
+	}
+	if err := checkProviderExecutable(provider, command); err != nil {
+		fmt.Fprintf(stderr, "evaluator generate failed: %v\n", err)
+		return 1
 	}
 	fmt.Fprintf(stdout, "Running %s to generate evaluator for run %s\n", provider.Name, cfg.ID)
 	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))

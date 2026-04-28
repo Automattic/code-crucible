@@ -57,7 +57,7 @@ go build -o bin/crucible ./cmd/crucible
 - Go 1.22 or newer
 - Linux for process resource metrics
 - `taskset` when using `crucible evaluate --cpu-limit` in local mode
-- Codex CLI when using `crucible generate --agent codex`
+- Codex CLI on `PATH` when using `crucible generate --agent codex`, `crucible evaluator generate --agent codex`, or interactive agent generation. Use `--codex-bin` when the binary is installed outside `PATH`.
 - Docker or Podman when using containerized evaluator sandboxes
 - A pure-Go SQLite driver is included for `crucible index`
 
@@ -666,6 +666,7 @@ Current priorities:
 - [x] Add agent-generated evaluator setup and interactive prompts to generate, supply, or skip the evaluator
 - [x] Validate agent-generated evaluators against the baseline before marking runs evaluator-ready
 - [x] Add prompt and TUI actions for evaluator generation on existing runs
+- [x] Fail fast with clear guidance when a selected agent executable is unavailable
 
 Deferred roadmap:
 

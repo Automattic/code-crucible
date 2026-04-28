@@ -150,6 +150,10 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "Final message: %s\n", opts.OutputLastMessage)
 		return 0
 	}
+	if err := checkProviderExecutable(provider, command); err != nil {
+		fmt.Fprintf(stderr, "generate failed: %v\n", err)
+		return 1
+	}
 
 	fmt.Fprintf(stdout, "Running %s for run %s\n", provider.Name, cfg.ID)
 	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
@@ -198,6 +202,10 @@ func runCommandGenerationProvider(provider agent.ProviderDefinition, projectDir,
 		fmt.Fprintf(stdout, "Run archive: %s\n", runDir)
 		fmt.Fprintf(stdout, "Final message: %s\n", opts.OutputLastMessage)
 		return 0
+	}
+	if err := checkProviderExecutable(provider, command); err != nil {
+		fmt.Fprintf(stderr, "generate failed: %v\n", err)
+		return 1
 	}
 
 	runID := ""

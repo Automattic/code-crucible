@@ -94,6 +94,65 @@ func TestInteractiveNewRunPromptsForAdvancedOptions(t *testing.T) {
 	}
 }
 
+func TestInteractiveRunContinuesWhenEvaluatorGenerationProviderMissing(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	if err := os.WriteFile(filepath.Join(projectDir, "rank.php"), []byte("<?php function rank_scores() { return 1; }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := project.Init(projectDir, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DefaultAgent = "missing"
+	cfg.AgentProviders = map[string]agent.ProviderDefinition{
+		"missing": {
+			Name:    "missing",
+			Kind:    "command",
+			Command: []string{filepath.Join(projectDir, "missing-agent")},
+			Capabilities: agent.ProviderCapabilities{
+				SupportsGeneration: true,
+			},
+		},
+	}
+	if err := project.Save(projectDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	input := "\n1\nmake rank faster\n\nn\nn\ngenerate\n\nn\nq\n"
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s\nstdout:\n%s", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "evaluator generate failed: agent provider") {
+		t.Fatalf("stderr did not include evaluator generation failure:\n%s", stderr.String())
+	}
+	for _, want := range []string{
+		"Evaluator generation failed; the run remains available.",
+		"Retry evaluator generation: crucible evaluator generate",
+		"Run:",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not contain %q:\n%s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one leaderboard, found %d", len(matches))
+	}
+	board, err := archive.LoadLeaderboard(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if board.Results[0].Status != model.CandidateStatusNeedsEvaluator {
+		t.Fatalf("baseline status = %q, want needs-evaluator", board.Results[0].Status)
+	}
+}
+
 func TestInitStoresDefaultAgent(t *testing.T) {
 	projectDir := t.TempDir()
 
@@ -1351,6 +1410,60 @@ printf 'bad evaluator provider complete\n'
 	}
 	if validation.Status != "failed" || !strings.Contains(strings.Join(validation.Errors, "\n"), "baseline candidate did not pass the generated evaluator") {
 		t.Fatalf("validation = %#v, want failed baseline error", validation)
+	}
+}
+
+func TestEvaluatorGenerateReportsMissingCodexBinaryBeforeInvocation(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n\nfunc Rank() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	created, err := run.Create(run.Options{
+		ProjectDir: projectDir,
+		Optimize:   "make ranking faster",
+		SourcePath: "internal/search/rank.go",
+		Variants:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	missingCodex := filepath.Join(t.TempDir(), "missing-codex")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"evaluator",
+		"generate",
+		"--project", projectDir,
+		"--run", created.ID,
+		"--agent", "codex",
+		"--codex-bin", missingCodex,
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("evaluator generate returned %d, want 1\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "executable") || !strings.Contains(stderr.String(), "--codex-bin") {
+		t.Fatalf("stderr did not explain missing Codex binary:\n%s", stderr.String())
+	}
+	if strings.Contains(stdout.String(), "Running codex") {
+		t.Fatalf("stdout showed provider execution despite preflight failure:\n%s", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(created.RunDir, "agents", "codex-*-invocation.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected no Codex invocation archive, found %d", len(matches))
+	}
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if board.Results[0].Status != model.CandidateStatusNeedsEvaluator {
+		t.Fatalf("baseline status = %q, want needs-evaluator", board.Results[0].Status)
 	}
 }
 
