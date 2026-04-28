@@ -1,12 +1,15 @@
 package run
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Automattic/code-crucible/internal/archive"
+	"github.com/Automattic/code-crucible/internal/external"
+	"github.com/Automattic/code-crucible/internal/model"
 )
 
 func TestCreateRunCopiesFileBaseline(t *testing.T) {
@@ -140,5 +143,105 @@ func TestCreateRunCopiesEvaluatorScript(t *testing.T) {
 	}
 	if cfg.EvaluatorScript != "custom-evaluator.sh" {
 		t.Fatalf("EvaluatorScript = %q, want custom-evaluator.sh", cfg.EvaluatorScript)
+	}
+}
+
+func TestCreateRunArchivesHTTPFixtureTemplateForReplay(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := Create(Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		TargetPath:   "internal/search/rank.go",
+		Variants:     1,
+		ExternalMode: "replay",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := archive.LoadRunConfig(filepath.Join(created.RunDir, "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFixtures := filepath.Join(created.RunDir, "external", external.HTTPFixturesName)
+	if cfg.External.Fixtures != filepath.ToSlash(wantFixtures) {
+		t.Fatalf("fixtures path = %q, want %q", cfg.External.Fixtures, filepath.ToSlash(wantFixtures))
+	}
+	fixtures, err := external.LoadHTTPFixtureSet(wantFixtures)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixtures.Version != external.HTTPFixtureVersion || len(fixtures.Fixtures) != 0 {
+		t.Fatalf("fixtures = %#v, want empty fixture template", fixtures)
+	}
+	if _, err := os.Stat(filepath.Join(created.RunDir, "external", external.MockGatewayName)); err != nil {
+		t.Fatalf("mock gateway missing: %v", err)
+	}
+}
+
+func TestCreateRunCopiesHTTPFixturesIntoArchive(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sourceFixtures := filepath.Join(projectDir, "fixtures.json")
+	if err := external.SaveHTTPFixtureSet(sourceFixtures, external.HTTPFixtureSet{
+		Version: external.HTTPFixtureVersion,
+		Fixtures: []external.HTTPFixture{
+			{
+				ID: "checkout",
+				Request: external.HTTPFixtureRequest{
+					Method: "POST",
+					URL:    "https://api.example.com/checkout",
+				},
+				Response: external.HTTPFixtureResponse{
+					Status: 201,
+					Body:   `{"ok":true}`,
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := Create(Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make checkout deterministic",
+		TargetPath:   "internal/search/rank.go",
+		Variants:     1,
+		ExternalMode: "mock",
+		Fixtures:     filepath.Base(sourceFixtures),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	policyPath := filepath.Join(created.RunDir, "external", "policy.json")
+	data, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var policy model.ExternalPolicy
+	if err := json.Unmarshal(data, &policy); err != nil {
+		t.Fatal(err)
+	}
+	fixtures, err := external.LoadHTTPFixtureSet(policy.Fixtures)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixtures.Fixtures) != 1 || fixtures.Fixtures[0].ID != "checkout" {
+		t.Fatalf("fixtures = %#v, want archived checkout fixture", fixtures)
 	}
 }

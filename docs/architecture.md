@@ -50,6 +50,8 @@ README.md
 docs/interfaces.md
 evaluator/evaluator.sh
 external/policy.json
+external/http-fixtures.json
+external/mock-gateway.go
 prompts/generation-round-0001.md
 round-0001/
   candidate-0000-baseline/
@@ -107,6 +109,8 @@ Supported modes:
 - `record`
 
 The current implementation records and communicates the policy. Container evaluation enforces `deny` mode by running with `--sandbox-network none`; deny-mode container evaluations fail closed if a different sandbox network is requested. Local deny-mode runs and all non-deny modes remain evaluator-advisory until local mocks, proxying, DNS overrides, or protocol-specific adapters are implemented.
+
+For `mock`, `replay`, and `record` modes, each run archives an HTTP fixture file at `external/http-fixtures.json`. If `--external-fixtures` is provided, the file is validated and copied into the run archive; otherwise an empty fixture template is created. The generated `external/mock-gateway.go` is the first gateway artifact and will be wired into sandboxed evaluation in a later step.
 
 ## Agent Integration
 

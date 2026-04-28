@@ -326,6 +326,8 @@ crucible run \
 
 For `deny` mode, container evaluation enforces network isolation with `--sandbox-network none`. A deny-mode container evaluation fails closed if a different sandbox network is requested. Local deny-mode runs are marked advisory because the framework cannot prevent host-network access around an arbitrary local evaluator. Allowlist, mock, replay, and record modes are currently documented and surfaced to agents and evaluators, but framework-level proxy/mock/replay enforcement is still on the roadmap.
 
+Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format and current mock gateway artifact.
+
 ## Project Work Area
 
 `crucible init` creates:
@@ -384,7 +386,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 ## Roadmap
 
-- Add replay fixture format and mock/proxy gateway enforcement
+- Wire mock/proxy gateway into sandboxed evaluation
 - Add multi-round evolution strategy
 - Add SQLite index alongside filesystem artifacts
 - Add HTML reports

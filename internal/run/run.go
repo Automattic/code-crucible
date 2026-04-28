@@ -11,6 +11,7 @@ import (
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/discovery"
 	"github.com/Automattic/code-crucible/internal/evaluator"
+	externalfixtures "github.com/Automattic/code-crucible/internal/external"
 	"github.com/Automattic/code-crucible/internal/model"
 	"github.com/Automattic/code-crucible/internal/project"
 )
@@ -121,6 +122,10 @@ func Create(opts Options) (*CreatedRun, error) {
 		Mode:      mode,
 		Allowlist: opts.AllowHosts,
 		Fixtures:  opts.Fixtures,
+	}
+	external, err = externalfixtures.PrepareHTTPFixtures(absProject, runDir, external)
+	if err != nil {
+		return nil, err
 	}
 	promptPath := filepath.Join(runDir, "prompts", "generation-round-0001.md")
 	runConfig := model.RunConfig{
