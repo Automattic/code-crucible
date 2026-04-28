@@ -12,6 +12,15 @@ type WorkflowController struct {
 	Stderr     io.Writer
 }
 
+type RunWorkflowOptions struct {
+	Optimize   string
+	SourcePath string
+	Agent      string
+	Variants   int
+	Generate   bool
+	ExtraArgs  []string
+}
+
 type GenerateWorkflowOptions struct {
 	RunSelector string
 	Agent       string
@@ -67,6 +76,25 @@ type QueryWorkflowOptions struct {
 	Limit       int
 	RunSelector string
 	Status      string
+}
+
+func (c WorkflowController) Run(opts RunWorkflowOptions) int {
+	args := []string{"--project-dir", c.ProjectDir}
+	if strings.TrimSpace(opts.SourcePath) != "" {
+		args = append(args, "--source-path", strings.TrimSpace(opts.SourcePath))
+	}
+	if strings.TrimSpace(opts.Agent) != "" {
+		args = append(args, "--agent", strings.TrimSpace(opts.Agent))
+	}
+	if opts.Variants > 0 {
+		args = append(args, "--variants", strconv.Itoa(opts.Variants))
+	}
+	if opts.Generate {
+		args = append(args, "--generate")
+	}
+	args = append(args, opts.ExtraArgs...)
+	args = append(args, opts.Optimize)
+	return runTournament(args, c.Stdout, c.Stderr)
 }
 
 func (c WorkflowController) Leaderboard(runSelector string) int {

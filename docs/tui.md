@@ -19,11 +19,11 @@ Code Crucible uses Bubble Tea v1.2.x for the first TUI slice because it supports
 
 - Keep `crucible tui` as the explicit entrypoint instead of replacing bare `crucible`.
 - Use the existing `internal/cli.WorkflowController` from prompt mode and the future TUI so both interfaces share command construction and execution.
-- The first implementation is a read-only run dashboard: latest or selected run status, leaderboard rows, selected candidate detail, and common next action commands.
-- Add forms after the dashboard for run creation, discovery, generation, evaluation, reports, and queries.
+- The first implementation includes a run dashboard: latest or selected run status, leaderboard rows, selected candidate detail, and common next action commands.
+- Basic forms now cover run creation, discovery, generation, evaluation, reports, and archive queries. They execute through the shared CLI controller and show captured output after completion.
 - Keep tests focused on state transitions and command construction. Avoid terminal snapshot tests until the UI stabilizes.
 
 ## Deferred
 
 - Exact screen layout and keybindings.
-- Whether the forms slice should add Bubbles widgets immediately or continue with plain Bubble Tea state until the interaction model stabilizes.
+- Whether the forms should add Bubbles widgets immediately or continue with plain Bubble Tea state until the interaction model stabilizes.

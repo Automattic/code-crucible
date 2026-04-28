@@ -59,7 +59,7 @@ func TestTUIDashboardViewShowsRunCandidatesAndCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view := newTUIDashboardModel(data).View()
+	view := newTUIDashboardModel(data, "").View()
 	for _, want := range []string{
 		"Code Crucible",
 		"make ranking faster",
@@ -81,7 +81,7 @@ func TestTUIDashboardNavigationChangesSelectedCandidate(t *testing.T) {
 			{Candidate: model.Candidate{ID: "candidate-0000-baseline"}},
 			{Candidate: model.Candidate{ID: "candidate-0001"}},
 		},
-	})
+	}, "")
 
 	updated, _ := dashboard.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	navigated := updated.(tuiDashboardModel)
@@ -96,6 +96,110 @@ func TestTUIDashboardNavigationChangesSelectedCandidate(t *testing.T) {
 	navigated = updated.(tuiDashboardModel)
 	if navigated.selected != 0 {
 		t.Fatalf("selected after k = %d, want 0", navigated.selected)
+	}
+}
+
+func TestTUIStartsWithoutExistingRun(t *testing.T) {
+	projectDir := t.TempDir()
+	data, message, err := loadInitialTUIDashboard(projectDir, "latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.Config.ID != "" {
+		t.Fatalf("initial run ID = %q, want empty", data.Config.ID)
+	}
+	view := newTUIDashboardModel(data, message).View()
+	for _, want := range []string{"No run is loaded yet", "New run form", "Discovery form"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("empty dashboard did not contain %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestTUIFormsBuildCommandPreviews(t *testing.T) {
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		ProjectDir: "/tmp/code crucible fixture",
+		Config: model.RunConfig{
+			ID:       "run-1",
+			Agent:    "codex",
+			Variants: 3,
+		},
+	}, "")
+
+	dashboard.openForm(tuiActionEvaluate)
+	setTUIFormValue(&dashboard.form, "candidate", "candidate-0001")
+	setTUIFormValue(&dashboard.form, "jobs", "2")
+	preview := dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
+	for _, want := range []string{
+		"crucible evaluate",
+		"--project-dir '/tmp/code crucible fixture'",
+		"--run run-1",
+		"--candidate candidate-0001",
+		"--jobs 2",
+	} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("evaluate preview did not contain %q:\n%s", want, preview)
+		}
+	}
+
+	dashboard.openForm(tuiActionRun)
+	setTUIFormValue(&dashboard.form, "optimize", "make search faster")
+	setTUIFormValue(&dashboard.form, "generate", "yes")
+	preview = dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
+	for _, want := range []string{"crucible run", "--variants 3", "--generate", "'make search faster'"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("run preview did not contain %q:\n%s", want, preview)
+		}
+	}
+}
+
+func TestTUIFormEditingAcceptsSpacesAndBackspace(t *testing.T) {
+	dashboard := newTUIDashboardModel(tuiDashboardData{}, "")
+	dashboard.openForm(tuiActionRun)
+
+	updated, _ := dashboard.updateForm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	dashboard = updated.(tuiDashboardModel)
+	updated, _ = dashboard.updateForm(tea.KeyMsg{Type: tea.KeySpace})
+	dashboard = updated.(tuiDashboardModel)
+	updated, _ = dashboard.updateForm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	dashboard = updated.(tuiDashboardModel)
+	if got := dashboard.form.value("optimize"); got != "m x" {
+		t.Fatalf("form value = %q, want space-preserving input", got)
+	}
+
+	updated, _ = dashboard.updateForm(tea.KeyMsg{Type: tea.KeyBackspace})
+	dashboard = updated.(tuiDashboardModel)
+	if got := dashboard.form.value("optimize"); got != "m" {
+		t.Fatalf("form value after backspace = %q, want trimmed m", got)
+	}
+}
+
+func TestTUIRunFormCreatesRun(t *testing.T) {
+	projectDir := t.TempDir()
+	form := tuiForm{
+		Action: tuiActionRun,
+		Title:  "Create Run",
+		Fields: []tuiFormField{
+			{Name: "optimize", Label: "Optimization request", Value: "make ranking faster", Required: true},
+			{Name: "variants", Label: "Variants", Value: "2"},
+			{Name: "generate", Label: "Generate now", Value: "false"},
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runTUIFormAction(WorkflowController{
+		ProjectDir: projectDir,
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+	}, form)
+	if code != 0 {
+		t.Fatalf("run form returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Created run") {
+		t.Fatalf("stdout did not include run creation:\n%s", stdout.String())
+	}
+	if _, err := loadTUIDashboard(projectDir, "latest"); err != nil {
+		t.Fatalf("new run dashboard load failed: %v", err)
 	}
 }
 
@@ -127,4 +231,14 @@ func loadTestLeaderboard(t *testing.T, runDir string) *model.Leaderboard {
 		t.Fatal(err)
 	}
 	return board
+}
+
+func setTUIFormValue(form *tuiForm, name, value string) {
+	for i := range form.Fields {
+		if form.Fields[i].Name == name {
+			form.Fields[i].Value = value
+			return
+		}
+	}
+	form.Fields = append(form.Fields, tuiFormField{Name: name, Value: value})
 }
