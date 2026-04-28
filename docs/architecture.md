@@ -81,13 +81,13 @@ Generated candidates are described in [candidate-format.md](candidate-format.md)
 
 The first competitor is always the original project implementation.
 
-If `--target-path` is provided, Code Crucible copies that file or directory into:
+If `--source-path` is provided, Code Crucible copies that file or directory into:
 
 ```text
 round-0001/candidate-0000-baseline/src/
 ```
 
-If no target path is provided, the baseline directory contains a placeholder and the agent prompt instructs the selected agent to discover the involved code.
+If no source path is provided, the baseline directory contains a placeholder and the agent prompt instructs the selected agent to discover the involved code.
 
 ## Interface Contract
 

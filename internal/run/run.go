@@ -19,7 +19,7 @@ import (
 type Options struct {
 	ProjectDir      string
 	Optimize        string
-	TargetPath      string
+	SourcePath      string
 	Agent           string
 	Variants        int
 	Rounds          int
@@ -104,12 +104,12 @@ func Create(opts Options) (*CreatedRun, error) {
 		}
 	}
 
-	discovered, err := discovery.Analyze(absProject, opts.Optimize, opts.TargetPath)
+	discovered, err := discovery.Analyze(absProject, opts.Optimize, opts.SourcePath)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := writeBaseline(absProject, opts.TargetPath, baselineSrc); err != nil {
+	if err := writeBaseline(absProject, opts.SourcePath, baselineSrc); err != nil {
 		return nil, err
 	}
 
@@ -134,7 +134,7 @@ func Create(opts Options) (*CreatedRun, error) {
 		RunDir:          archive.ProjectRelativePath(absProject, runDir),
 		RoundDir:        archive.ProjectRelativePath(absProject, roundDir),
 		Optimize:        opts.Optimize,
-		TargetPath:      archive.ProjectRelativePath(absProject, opts.TargetPath),
+		SourcePath:      archive.ProjectRelativePath(absProject, opts.SourcePath),
 		Agent:           opts.Agent,
 		Variants:        opts.Variants,
 		Rounds:          opts.Rounds,
@@ -243,18 +243,18 @@ func Create(opts Options) (*CreatedRun, error) {
 	}, nil
 }
 
-func writeBaseline(projectDir, targetPath, dest string) error {
-	if strings.TrimSpace(targetPath) == "" {
+func writeBaseline(projectDir, sourcePath, dest string) error {
+	if strings.TrimSpace(sourcePath) == "" {
 		body := `# Baseline Source Pending
 
-No target path was provided. The selected agent should inspect the host project, identify the code involved in the optimization request, and copy the first drop-in baseline implementation into this directory before competitor generation begins.
+No source path was provided. The selected agent should inspect the host project, identify the code involved in the optimization request, and copy the first drop-in baseline implementation into this directory before competitor generation begins.
 `
 		return os.WriteFile(filepath.Join(dest, "README.md"), []byte(body), 0o644)
 	}
 
-	src := targetPath
+	src := sourcePath
 	if !filepath.IsAbs(src) {
-		src = filepath.Join(projectDir, targetPath)
+		src = filepath.Join(projectDir, sourcePath)
 	}
 
 	info, err := os.Stat(src)
@@ -271,10 +271,10 @@ func baselineDesign(opts Options) string {
 	var b strings.Builder
 	b.WriteString("# Baseline Candidate\n\n")
 	b.WriteString("This candidate represents the original project code selected for optimization.\n\n")
-	if opts.TargetPath == "" {
-		b.WriteString("The baseline source still needs to be discovered because no target path was provided.\n")
+	if opts.SourcePath == "" {
+		b.WriteString("The baseline source still needs to be discovered because no source path was provided.\n")
 	} else {
-		fmt.Fprintf(&b, "Original target path: `%s`\n", opts.TargetPath)
+		fmt.Fprintf(&b, "Original source path: `%s`\n", opts.SourcePath)
 	}
 	return b.String()
 }

@@ -45,7 +45,7 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	projectDir := fs.String("project", ".", "project directory containing or receiving .crucible")
 	optimize := fs.String("optimize", "", "feature, function, or behavior to optimize")
 	taskFile := fs.String("task-file", "", "path to a file containing the optimization task, relative to project directory")
-	targetPath := fs.String("target-path", "", "optional file or directory to use as the initial baseline source")
+	sourcePath := fs.String("source-path", "", "optional file or directory to use as the initial baseline source")
 	agentName := fs.String("agent", "", "agent provider name")
 	variants := fs.Int("variants", 3, "number of new competitors to request per round")
 	rounds := fs.Int("rounds", 1, "number of tournament rounds to prepare")
@@ -100,7 +100,7 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	created, err := run.Create(run.Options{
 		ProjectDir:      *projectDir,
 		Optimize:        task,
-		TargetPath:      *targetPath,
+		SourcePath:      *sourcePath,
 		Agent:           runAgent,
 		Variants:        *variants,
 		Rounds:          *rounds,

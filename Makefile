@@ -23,7 +23,7 @@ examples-test:
 check: test vet build examples-test
 
 smoke: build
-	./bin/crucible run --project examples/go-ranking-poc --task-file task.md --target-path ranking/rank.go --evaluator-script evaluator.sh --variants 1 --external-mode deny
+	./bin/crucible run --project examples/go-ranking-poc --task-file task.md --source-path ranking/rank.go --evaluator-script evaluator.sh --variants 1 --external-mode deny
 	./bin/crucible evaluate --project examples/go-ranking-poc --candidate candidate-0000-baseline --timeout 60s
 	./bin/crucible leaderboard --project examples/go-ranking-poc
 

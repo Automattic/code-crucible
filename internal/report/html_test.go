@@ -25,7 +25,7 @@ func TestGenerateHTMLWritesRunReport(t *testing.T) {
 	created, err := run.Create(run.Options{
 		ProjectDir:   projectDir,
 		Optimize:     "make <script>alert(1)</script> faster",
-		TargetPath:   "ranking/rank.go",
+		SourcePath:   "ranking/rank.go",
 		Variants:     1,
 		ExternalMode: "deny",
 	})

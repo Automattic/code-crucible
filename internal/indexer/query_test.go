@@ -67,7 +67,7 @@ func createIndexedRunFixture(t *testing.T, projectDir string) *run.CreatedRun {
 	created, err := run.Create(run.Options{
 		ProjectDir:   projectDir,
 		Optimize:     "make ranking faster",
-		TargetPath:   "ranking/rank.go",
+		SourcePath:   "ranking/rank.go",
 		Variants:     1,
 		ExternalMode: "deny",
 	})

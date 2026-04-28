@@ -62,7 +62,7 @@ JSON
 		"run",
 		"--project", projectDir,
 		"--optimize", "make ranking faster",
-		"--target-path", "internal/search/rank.go",
+		"--source-path", "internal/search/rank.go",
 		"--variants", "2",
 		"--generate",
 		"--codex-bin", fakeCodex,
@@ -130,7 +130,7 @@ func TestRunTaskFileCreatesRun(t *testing.T) {
 		"run",
 		"--project", projectDir,
 		"--task-file", filepath.Base(taskPath),
-		"--target-path", "internal/search/rank.go",
+		"--source-path", "internal/search/rank.go",
 	}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
@@ -192,7 +192,7 @@ func TestEvaluateCommandUpdatesLeaderboard(t *testing.T) {
 		"run",
 		"--project", projectDir,
 		"--optimize", "make ranking faster",
-		"--target-path", "internal/search/rank.go",
+		"--source-path", "internal/search/rank.go",
 		"--evaluator", "true",
 	}, &stdout, &stderr)
 	if code != 0 {
@@ -232,7 +232,7 @@ func TestIndexCommandRebuildsSQLiteIndex(t *testing.T) {
 		"run",
 		"--project", projectDir,
 		"--optimize", "make ranking faster",
-		"--target-path", "internal/search/rank.go",
+		"--source-path", "internal/search/rank.go",
 	}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
@@ -280,7 +280,7 @@ func TestReportCommandWritesHTMLReport(t *testing.T) {
 		"run",
 		"--project", projectDir,
 		"--optimize", "make ranking faster",
-		"--target-path", "internal/search/rank.go",
+		"--source-path", "internal/search/rank.go",
 	}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
@@ -333,7 +333,7 @@ func TestQueryCommandReadsSQLiteIndex(t *testing.T) {
 		"run",
 		"--project", projectDir,
 		"--optimize", "make ranking faster",
-		"--target-path", "internal/search/rank.go",
+		"--source-path", "internal/search/rank.go",
 	}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
@@ -380,7 +380,7 @@ func TestNextRoundCommandPreparesActiveRound(t *testing.T) {
 		"run",
 		"--project", projectDir,
 		"--optimize", "make ranking faster",
-		"--target-path", "internal/search/rank.go",
+		"--source-path", "internal/search/rank.go",
 		"--evaluator", "true",
 	}, &stdout, &stderr)
 	if code != 0 {
@@ -516,7 +516,7 @@ JSON
 		"run",
 		"--project", projectDir,
 		"--optimize", "make ranking faster",
-		"--target-path", "internal/search/rank.go",
+		"--source-path", "internal/search/rank.go",
 		"--evaluator-script", filepath.Base(evaluatorPath),
 		"--variants", "1",
 	}, &stdout, &stderr)

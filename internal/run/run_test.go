@@ -27,7 +27,7 @@ func TestCreateRunCopiesFileBaseline(t *testing.T) {
 	created, err := Create(Options{
 		ProjectDir:   projectDir,
 		Optimize:     "make ranking faster",
-		TargetPath:   "internal/search/rank.go",
+		SourcePath:   "internal/search/rank.go",
 		Variants:     2,
 		Rounds:       1,
 		Exploration:  0.25,
@@ -62,6 +62,9 @@ func TestCreateRunCopiesFileBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if cfg.SourcePath != "internal/search/rank.go" {
+		t.Fatalf("SourcePath = %q, want internal/search/rank.go", cfg.SourcePath)
+	}
 	for name, value := range map[string]string{
 		"project_dir":    cfg.ProjectDir,
 		"run_dir":        cfg.RunDir,
@@ -72,6 +75,13 @@ func TestCreateRunCopiesFileBaseline(t *testing.T) {
 		if filepath.IsAbs(filepath.FromSlash(value)) {
 			t.Fatalf("%s = %q, want project-relative archive path", name, value)
 		}
+	}
+	runConfigRaw, err := os.ReadFile(filepath.Join(created.RunDir, "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(runConfigRaw), `"source_path": "internal/search/rank.go"`) {
+		t.Fatalf("run.json did not store source_path: %s", string(runConfigRaw))
 	}
 
 	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
@@ -86,7 +96,7 @@ func TestCreateRunCopiesFileBaseline(t *testing.T) {
 	}
 }
 
-func TestCreateRunWithoutTargetPathCreatesDiscoveryPrompt(t *testing.T) {
+func TestCreateRunWithoutSourcePathCreatesDiscoveryPrompt(t *testing.T) {
 	projectDir := t.TempDir()
 
 	created, err := Create(Options{
@@ -104,8 +114,8 @@ func TestCreateRunWithoutTargetPathCreatesDiscoveryPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(baselineReadme), "No target path was provided") {
-		t.Fatalf("baseline README did not describe target discovery")
+	if !strings.Contains(string(baselineReadme), "No source path was provided") {
+		t.Fatalf("baseline README did not describe source discovery")
 	}
 
 	prompt, err := os.ReadFile(created.PromptPath)
@@ -138,7 +148,7 @@ func TestCreateRunCopiesEvaluatorScript(t *testing.T) {
 	created, err := Create(Options{
 		ProjectDir:      projectDir,
 		Optimize:        "make ranking faster",
-		TargetPath:      "internal/search/rank.go",
+		SourcePath:      "internal/search/rank.go",
 		Variants:        2,
 		Rounds:          1,
 		ExternalMode:    "deny",
@@ -186,7 +196,7 @@ func TestCreateRunArchivesHTTPFixtureTemplateForReplay(t *testing.T) {
 	created, err := Create(Options{
 		ProjectDir:   projectDir,
 		Optimize:     "make ranking faster",
-		TargetPath:   "internal/search/rank.go",
+		SourcePath:   "internal/search/rank.go",
 		Variants:     1,
 		ExternalMode: "replay",
 	})
@@ -246,7 +256,7 @@ func TestCreateRunCopiesHTTPFixturesIntoArchive(t *testing.T) {
 	created, err := Create(Options{
 		ProjectDir:   projectDir,
 		Optimize:     "make checkout deterministic",
-		TargetPath:   "internal/search/rank.go",
+		SourcePath:   "internal/search/rank.go",
 		Variants:     1,
 		ExternalMode: "mock",
 		Fixtures:     filepath.Base(sourceFixtures),

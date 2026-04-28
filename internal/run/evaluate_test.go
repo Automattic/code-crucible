@@ -833,7 +833,7 @@ func createEvaluationFixtureWithExternalMode(t *testing.T, externalMode string) 
 	created, err := Create(Options{
 		ProjectDir:   projectDir,
 		Optimize:     "make ranking faster",
-		TargetPath:   "internal/search/rank.go",
+		SourcePath:   "internal/search/rank.go",
 		Variants:     1,
 		ExternalMode: externalMode,
 		Agent:        "codex",

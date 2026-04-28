@@ -56,7 +56,7 @@ func printHelp(w io.Writer) {
 
 Usage:
   crucible init [--project DIR] [--name NAME]
-  crucible run (--optimize TEXT | --task-file PATH) [--project DIR] [--target-path PATH] [--variants N] [--generate]
+  crucible run (--optimize TEXT | --task-file PATH) [--project DIR] [--source-path PATH] [--variants N] [--generate]
   crucible generate [--project DIR] [--run RUN_ID] [--agent codex]
   crucible adopt [--project DIR] [--run RUN_ID]
   crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--nice N] [--cpu-limit N] [--sandbox-profile PROFILE] [--sandbox-engine docker|podman --sandbox-image IMAGE]

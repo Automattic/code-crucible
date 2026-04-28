@@ -18,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 type Options struct {
 	ProjectDir string
@@ -265,7 +265,7 @@ func applySchema(ctx context.Context, db *sql.DB) error {
 			run_dir TEXT NOT NULL,
 			round_dir TEXT NOT NULL,
 			active_round INTEGER NOT NULL,
-			target_path TEXT NOT NULL,
+			source_path TEXT NOT NULL,
 			agent TEXT NOT NULL,
 			variants INTEGER NOT NULL,
 			rounds INTEGER NOT NULL,
@@ -371,11 +371,11 @@ func indexRun(ctx context.Context, tx *sql.Tx, projectDir, runDir string) (int, 
 
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO runs (
-	id, optimize, project_dir, run_dir, round_dir, active_round, target_path, agent,
+	id, optimize, project_dir, run_dir, round_dir, active_round, source_path, agent,
 	variants, rounds, exploration, evaluator, evaluator_script, external_mode,
 	external_fixtures, created_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, runID, optimize, projectDir, filepath.ToSlash(runPath), filepath.ToSlash(roundPath), roundNumber(cfg.RoundDir), cfg.TargetPath,
+`, runID, optimize, projectDir, filepath.ToSlash(runPath), filepath.ToSlash(roundPath), roundNumber(cfg.RoundDir), cfg.SourcePath,
 		cfg.Agent, cfg.Variants, cfg.Rounds, cfg.Exploration, cfg.Evaluator, cfg.EvaluatorScript,
 		string(cfg.External.Mode), cfg.External.Fixtures, formatTime(createdAt)); err != nil {
 		return 0, fmt.Errorf("index run %s: %w", runID, err)

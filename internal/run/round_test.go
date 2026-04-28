@@ -129,7 +129,7 @@ func createRoundFixture(t *testing.T) (string, *CreatedRun) {
 	created, err := Create(Options{
 		ProjectDir:   projectDir,
 		Optimize:     "make ranking faster",
-		TargetPath:   "internal/search/rank.go",
+		SourcePath:   "internal/search/rank.go",
 		Variants:     2,
 		Rounds:       1,
 		ExternalMode: "deny",

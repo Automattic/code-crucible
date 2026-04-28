@@ -21,7 +21,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Local git-friendly Go CLI
 - `crucible init` for adding a `.crucible/` work area to an existing project
 - `crucible run --optimize ...` or `--task-file ...` for creating a tournament archive
-- Baseline competitor extraction from an optional `--target-path`
+- Baseline competitor extraction from an optional `--source-path`
 - Interface discovery document scaffold
 - External policy scaffold for `deny`, `allowlist`, `mock`, `replay`, and `record`
 - Evaluator shell scaffold
@@ -73,7 +73,7 @@ Create a tournament run for a feature, function, handler, or module you want to 
 ```bash
 crucible run \
   --optimize "reduce p95 latency of the search ranking function" \
-  --target-path internal/search/rank.go \
+  --source-path internal/search/rank.go \
   --variants 5 \
   --rounds 3 \
   --exploration 0.35 \
@@ -85,7 +85,7 @@ For longer tasks, put the request in a Markdown file:
 ```bash
 crucible run \
   --task-file crucible-task.md \
-  --target-path internal/search/rank.go
+  --source-path internal/search/rank.go
 ```
 
 For a full evaluator script instead of a short command, use `--evaluator-script`:
@@ -93,7 +93,7 @@ For a full evaluator script instead of a short command, use `--evaluator-script`
 ```bash
 crucible run \
   --optimize "reduce p95 latency of the search ranking function" \
-  --target-path internal/search/rank.go \
+  --source-path internal/search/rank.go \
   --evaluator-script ./crucible-evaluator.sh
 ```
 
@@ -209,14 +209,14 @@ When you already trust the generated scaffold for a task, create the run and inv
 ```bash
 crucible run \
   --optimize "reduce p95 latency of the search ranking function" \
-  --target-path internal/search/rank.go \
+  --source-path internal/search/rank.go \
   --variants 5 \
   --generate
 ```
 
-## Running Without a Known Target Path
+## Running Without a Known Source Path
 
-If you do not know where the relevant code lives yet, omit `--target-path`:
+If you do not know where the relevant code lives yet, omit `--source-path`:
 
 ```bash
 crucible run --optimize "reduce checkout API external calls"
@@ -271,7 +271,7 @@ The same Codex options can be passed through `crucible run --generate`:
 ```bash
 crucible run \
   --optimize "reduce allocation pressure in the parser" \
-  --target-path internal/parser \
+  --source-path internal/parser \
   --variants 4 \
   --generate \
   --model gpt-5.5
@@ -350,7 +350,7 @@ go build -o bin/crucible ./cmd/crucible
 ./bin/crucible run \
   --project examples/go-ranking-poc \
   --task-file task.md \
-  --target-path ranking/rank.go \
+  --source-path ranking/rank.go \
   --evaluator-script evaluator.sh \
   --variants 2 \
   --external-mode deny
@@ -417,7 +417,7 @@ Core packages:
 - `internal/cli`: command parsing and user-facing commands
 - `internal/project`: `.crucible/` initialization and config
 - `internal/run`: tournament run creation and candidate adoption
-- `internal/discovery`: target path inspection and interface doc generation
+- `internal/discovery`: source path inspection and interface doc generation
 - `internal/agent`: agent prompt construction and Codex CLI provider
 - `internal/evaluator`: evaluator scaffold generation
 - `internal/archive`: JSON archive helpers and baseline copying

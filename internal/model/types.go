@@ -33,7 +33,7 @@ type RunConfig struct {
 	RunDir          string         `json:"run_dir"`
 	RoundDir        string         `json:"round_dir"`
 	Optimize        string         `json:"optimize"`
-	TargetPath      string         `json:"target_path,omitempty"`
+	SourcePath      string         `json:"source_path,omitempty"`
 	Agent           string         `json:"agent"`
 	Variants        int            `json:"variants"`
 	Rounds          int            `json:"rounds"`

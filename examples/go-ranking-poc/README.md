@@ -27,7 +27,7 @@ go build -o bin/crucible ./cmd/crucible
 ./bin/crucible run \
   --project examples/go-ranking-poc \
   --task-file task.md \
-  --target-path ranking/rank.go \
+  --source-path ranking/rank.go \
   --evaluator-script evaluator.sh \
   --variants 2 \
   --external-mode deny

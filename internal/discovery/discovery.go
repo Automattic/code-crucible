@@ -11,7 +11,7 @@ import (
 type Discovery struct {
 	ProjectDir string
 	Optimize   string
-	TargetPath string
+	SourcePath string
 	Files      []FileSummary
 	Languages  []string
 	Notes      []string
@@ -22,7 +22,7 @@ type FileSummary struct {
 	Size int64  `json:"size"`
 }
 
-func Analyze(projectDir, optimize, targetPath string) (*Discovery, error) {
+func Analyze(projectDir, optimize, sourcePath string) (*Discovery, error) {
 	absProject, err := filepath.Abs(projectDir)
 	if err != nil {
 		return nil, err
@@ -31,35 +31,35 @@ func Analyze(projectDir, optimize, targetPath string) (*Discovery, error) {
 	discovered := &Discovery{
 		ProjectDir: absProject,
 		Optimize:   optimize,
-		TargetPath: targetPath,
+		SourcePath: sourcePath,
 	}
 
-	if strings.TrimSpace(targetPath) == "" {
-		discovered.Notes = append(discovered.Notes, "No target path was provided. The selected agent must locate the involved code before generating competitors.")
+	if strings.TrimSpace(sourcePath) == "" {
+		discovered.Notes = append(discovered.Notes, "No source path was provided. The selected agent must locate the involved code before generating competitors.")
 		return discovered, nil
 	}
 
-	absTarget := targetPath
-	if !filepath.IsAbs(absTarget) {
-		absTarget = filepath.Join(absProject, targetPath)
+	absSource := sourcePath
+	if !filepath.IsAbs(absSource) {
+		absSource = filepath.Join(absProject, sourcePath)
 	}
 
-	info, err := os.Stat(absTarget)
+	info, err := os.Stat(absSource)
 	if err != nil {
-		return nil, fmt.Errorf("inspect target path: %w", err)
+		return nil, fmt.Errorf("inspect source path: %w", err)
 	}
 
 	if !info.IsDir() {
-		rel, err := filepath.Rel(absProject, absTarget)
+		rel, err := filepath.Rel(absProject, absSource)
 		if err != nil {
-			rel = absTarget
+			rel = absSource
 		}
 		discovered.Files = append(discovered.Files, FileSummary{Path: filepath.ToSlash(rel), Size: info.Size()})
 		discovered.Languages = sortedLanguages(discovered.Files)
 		return discovered, nil
 	}
 
-	err = filepath.WalkDir(absTarget, func(path string, entry os.DirEntry, err error) error {
+	err = filepath.WalkDir(absSource, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -99,10 +99,10 @@ func (d Discovery) InterfaceMarkdown() string {
 	fmt.Fprintf(&b, "# Interface Discovery\n\n")
 	fmt.Fprintf(&b, "Optimization request: %s\n\n", d.Optimize)
 
-	if d.TargetPath == "" {
-		fmt.Fprintf(&b, "Target path: not yet selected by the operator.\n\n")
+	if d.SourcePath == "" {
+		fmt.Fprintf(&b, "Source path: not yet selected by the operator.\n\n")
 	} else {
-		fmt.Fprintf(&b, "Target path: `%s`\n\n", d.TargetPath)
+		fmt.Fprintf(&b, "Source path: `%s`\n\n", d.SourcePath)
 	}
 
 	if len(d.Languages) > 0 {

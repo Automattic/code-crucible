@@ -23,7 +23,7 @@ func TestAdoptCandidatesAddsValidGeneratedCandidates(t *testing.T) {
 	created, err := Create(Options{
 		ProjectDir:   projectDir,
 		Optimize:     "make ranking faster",
-		TargetPath:   "internal/search/rank.go",
+		SourcePath:   "internal/search/rank.go",
 		Variants:     2,
 		ExternalMode: "deny",
 		Agent:        "codex",
