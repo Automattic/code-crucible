@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"time"
 
+	externalfixtures "github.com/Automattic/code-crucible/internal/external"
 	"github.com/Automattic/code-crucible/internal/model"
 )
 
@@ -47,6 +49,11 @@ func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resour
 			return model.Metrics{}, err
 		}
 		if err := ensureSandboxResourceWrapper(runDir); err != nil {
+			return model.Metrics{}, err
+		}
+		var err error
+		opts.Env, err = ensureSandboxMockGatewayBinary(opts.Env)
+		if err != nil {
 			return model.Metrics{}, err
 		}
 	} else {
@@ -169,6 +176,24 @@ func ensureSandboxResourceWrapper(runDir string) error {
 	return os.WriteFile(path, []byte(sandboxResourceWrapperScript()), 0o755)
 }
 
+func ensureSandboxMockGatewayBinary(env []string) ([]string, error) {
+	if envValue(env, "CRUCIBLE_MOCK_GATEWAY_BIN") != "" {
+		return env, nil
+	}
+	source := envValue(env, "CRUCIBLE_MOCK_GATEWAY_SOURCE")
+	if source == "" {
+		return env, nil
+	}
+	source = filepath.FromSlash(source)
+	binaryPath := filepath.Join(filepath.Dir(source), externalfixtures.MockGatewayBinaryName("linux", runtime.GOARCH))
+	if !fileExists(binaryPath) {
+		if err := externalfixtures.BuildMockGatewayBinary(source, binaryPath, "linux", runtime.GOARCH); err != nil {
+			return env, fmt.Errorf("build sandbox mock gateway binary: %w", err)
+		}
+	}
+	return upsertEnv(env, "CRUCIBLE_MOCK_GATEWAY_BIN", filepath.ToSlash(binaryPath)), nil
+}
+
 func sandboxResourceWrapperPath(runDir string) string {
 	return filepath.Join(runDir, "evaluator", "resource-wrapper.sh")
 }
@@ -198,20 +223,16 @@ cleanup_gateway() {
 }
 trap cleanup_gateway EXIT
 
-if [[ -n "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" ]]; then
+if [[ -n "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" || -n "${CRUCIBLE_MOCK_GATEWAY_BIN:-}" ]]; then
   if [[ -z "${CRUCIBLE_HTTP_FIXTURES:-}" ]]; then
-    echo "CRUCIBLE_HTTP_FIXTURES is required when CRUCIBLE_MOCK_GATEWAY_SOURCE is set" >&2
-    exit 126
-  fi
-  if ! command -v go >/dev/null 2>&1; then
-    echo "mock gateway startup requires go in the sandbox image" >&2
+    echo "CRUCIBLE_HTTP_FIXTURES is required when the mock gateway is enabled" >&2
     exit 126
   fi
   gateway_addr="${CRUCIBLE_MOCK_GATEWAY_ADDR:-127.0.0.1:18080}"
   gateway_host="${gateway_addr%:*}"
   gateway_port="${gateway_addr##*:}"
   rm -f "$gateway_log"
-  gateway_args=("$CRUCIBLE_MOCK_GATEWAY_SOURCE" -fixtures "$CRUCIBLE_HTTP_FIXTURES" -addr "$gateway_addr")
+  gateway_args=(-fixtures "$CRUCIBLE_HTTP_FIXTURES" -addr "$gateway_addr")
   if [[ -n "${CRUCIBLE_EXTERNAL_MODE:-}" ]]; then
     gateway_args+=(-mode "$CRUCIBLE_EXTERNAL_MODE")
   fi
@@ -235,7 +256,19 @@ if [[ -n "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" ]]; then
   if [[ -n "${CRUCIBLE_MOCK_CA_CERT:-}" && -n "${CRUCIBLE_MOCK_CA_KEY:-}" ]]; then
     gateway_args+=(-ca-cert "$CRUCIBLE_MOCK_CA_CERT" -ca-key "$CRUCIBLE_MOCK_CA_KEY")
   fi
-  go run "${gateway_args[@]}" >"$gateway_log" 2>&1 &
+  if [[ -n "${CRUCIBLE_MOCK_GATEWAY_BIN:-}" && -x "${CRUCIBLE_MOCK_GATEWAY_BIN}" ]]; then
+    "$CRUCIBLE_MOCK_GATEWAY_BIN" "${gateway_args[@]}" >"$gateway_log" 2>&1 &
+  else
+    if [[ -z "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" ]]; then
+      echo "CRUCIBLE_MOCK_GATEWAY_SOURCE is required when CRUCIBLE_MOCK_GATEWAY_BIN is unavailable" >&2
+      exit 126
+    fi
+    if ! command -v go >/dev/null 2>&1; then
+      echo "mock gateway startup requires CRUCIBLE_MOCK_GATEWAY_BIN or go in the sandbox image" >&2
+      exit 126
+    fi
+    go run "$CRUCIBLE_MOCK_GATEWAY_SOURCE" "${gateway_args[@]}" >"$gateway_log" 2>&1 &
+  fi
   gateway_pid=$!
   gateway_ready=0
   for _ in {1..100}; do

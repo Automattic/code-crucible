@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -158,6 +159,38 @@ func WriteMockGateway(path string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(mockGatewaySource()), 0o644)
+}
+
+func MockGatewayBinaryName(goos, goarch string) string {
+	return fmt.Sprintf("mock-gateway-%s-%s", goos, goarch)
+}
+
+func BuildMockGatewayBinary(sourcePath, outputPath, goos, goarch string) error {
+	if strings.TrimSpace(sourcePath) == "" {
+		return fmt.Errorf("mock gateway source path is required")
+	}
+	if strings.TrimSpace(outputPath) == "" {
+		return fmt.Errorf("mock gateway binary output path is required")
+	}
+	if strings.TrimSpace(goos) == "" {
+		return fmt.Errorf("GOOS is required")
+	}
+	if strings.TrimSpace(goarch) == "" {
+		return fmt.Errorf("GOARCH is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return err
+	}
+	cmd := exec.Command("go", "build", "-o", outputPath, sourcePath)
+	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("go build mock gateway: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	if err := os.Chmod(outputPath, 0o755); err != nil {
+		return err
+	}
+	return nil
 }
 
 func WriteMockCA(certPath, keyPath string) error {

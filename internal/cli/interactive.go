@@ -179,14 +179,38 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 		fmt.Fprintf(s.stderr, "discover failed: %v\n", err)
 		return 1
 	}
-	sourcePath := ""
-	if len(plan.Suggestions) > 0 {
-		fmt.Fprintln(s.stdout)
-		fmt.Fprintf(s.stdout, "Discovery plan: %s\n", plan.PlanPath)
-		fmt.Fprintln(s.stdout, "Suggested source paths:")
-		for _, suggestion := range plan.Suggestions {
-			fmt.Fprintf(s.stdout, "- %s (score %.1f): %s\n", suggestion.Path, suggestion.Score, suggestion.Reason)
+
+	fmt.Fprintf(s.stdout, "Discovery plan: %s\n", plan.PlanPath)
+	s.printSourceSuggestions(plan)
+
+	agentPlan, ok := s.maybeRunCodexDiscovery(projectDir, plan)
+	if !ok {
+		return 0
+	}
+	var clarifications []clarificationAnswer
+	if agentPlan != nil {
+		request, clarifications, ok = s.applyAgentClarifications(request, agentPlan)
+		if !ok {
+			return 0
 		}
+	}
+
+	sourcePath := ""
+	if agentPlan != nil && strings.TrimSpace(agentPlan.SourcePath) != "" {
+		recommended := strings.TrimSpace(agentPlan.SourcePath)
+		if sourcePathExists(projectDir, recommended) {
+			useSource, ok := s.confirm(fmt.Sprintf("Use Codex recommended %s as the baseline source path?", recommended), true)
+			if !ok {
+				return 0
+			}
+			if useSource {
+				sourcePath = recommended
+			}
+		} else {
+			fmt.Fprintf(s.stdout, "Codex recommended source path %s, but that path was not found. Leaving source path unset unless you choose a local suggestion.\n", recommended)
+		}
+	}
+	if sourcePath == "" && len(plan.Suggestions) > 0 {
 		useSuggestion, ok := s.confirm(fmt.Sprintf("Use %s as the baseline source path?", plan.Suggestions[0].Path), false)
 		if !ok {
 			return 0
@@ -194,21 +218,28 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 		if useSuggestion {
 			sourcePath = plan.Suggestions[0].Path
 		}
-	} else {
-		fmt.Fprintf(s.stdout, "Discovery plan: %s\n", plan.PlanPath)
-		fmt.Fprintln(s.stdout, "No source path suggestion found. Generation will ask the agent to discover the involved code.")
 	}
+	if sourcePath == "" {
+		fmt.Fprintln(s.stdout, "No source path selected. Generation will ask the agent to discover the involved code.")
+	}
+
+	externalMode := s.externalModeFromAgentPlan(agentPlan)
 
 	created, err := run.Create(run.Options{
 		ProjectDir:   projectDir,
 		Optimize:     request,
 		SourcePath:   sourcePath,
 		Variants:     variants,
-		ExternalMode: "deny",
+		ExternalMode: externalMode,
 	})
 	if err != nil {
 		fmt.Fprintf(s.stderr, "run setup failed: %v\n", err)
 		return 1
+	}
+	if agentPlan != nil {
+		if err := writeInteractiveDiscoveryHandoff(created, agentPlan, clarifications); err != nil {
+			fmt.Fprintf(s.stderr, "discovery handoff warning: %v\n", err)
+		}
 	}
 
 	fmt.Fprintf(s.stdout, "\nCreated run %s\n", created.ID)
@@ -216,6 +247,7 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 	fmt.Fprintf(s.stdout, "Interface docs: %s\n", created.InterfaceDocPath)
 	fmt.Fprintf(s.stdout, "Generation prompt: %s\n", created.PromptPath)
 	fmt.Fprintf(s.stdout, "Baseline source: %s\n", created.BaselineSourceDir)
+	fmt.Fprintf(s.stdout, "External mode: %s\n", externalMode)
 	if sourcePath == "" {
 		fmt.Fprintln(s.stdout, "Source path: agent discovery pending")
 	} else {
@@ -223,6 +255,96 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 	}
 	fmt.Fprintln(s.stdout)
 	return runLeaderboard([]string{"--project-dir", projectDir}, s.stdout, s.stderr)
+}
+
+func (s interactiveSession) printSourceSuggestions(plan *discovery.Plan) {
+	if len(plan.Suggestions) == 0 {
+		fmt.Fprintln(s.stdout, "Local source path suggestions: none")
+		return
+	}
+	fmt.Fprintln(s.stdout, "Local source path suggestions:")
+	for _, suggestion := range plan.Suggestions {
+		fmt.Fprintf(s.stdout, "- %s (score %.1f): %s\n", suggestion.Path, suggestion.Score, suggestion.Reason)
+	}
+}
+
+func (s interactiveSession) maybeRunCodexDiscovery(projectDir string, plan *discovery.Plan) (*discovery.AgentPlan, bool) {
+	runAgent, ok := s.confirm("Run Codex discovery before creating the run?", false)
+	if !ok {
+		return nil, false
+	}
+	if !runAgent {
+		return nil, true
+	}
+	code := runCodexDiscovery(projectDir, plan, codexDiscoveryOptions{}, s.stdout, s.stderr)
+	if code != 0 {
+		return nil, false
+	}
+	agentPlanPath := discovery.AgentPlanPath(archive.ProjectPath(projectDir, plan.PlanDir))
+	agentPlan, err := discovery.LoadAgentPlan(agentPlanPath)
+	if err != nil {
+		fmt.Fprintf(s.stderr, "discovery warning: could not load structured Codex plan: %v\n", err)
+		return nil, true
+	}
+	return agentPlan, true
+}
+
+type clarificationAnswer struct {
+	Question string
+	Answer   string
+}
+
+func (s interactiveSession) applyAgentClarifications(request string, plan *discovery.AgentPlan) (string, []clarificationAnswer, bool) {
+	if plan == nil || len(plan.ClarifyingQuestions) == 0 {
+		return request, nil, true
+	}
+	fmt.Fprintln(s.stdout)
+	fmt.Fprintln(s.stdout, "Codex requested clarification before generation.")
+	answers := make([]clarificationAnswer, 0, len(plan.ClarifyingQuestions))
+	for _, question := range plan.ClarifyingQuestions {
+		question = strings.TrimSpace(question)
+		if question == "" {
+			continue
+		}
+		answer, ok := s.askRequired(question + " ")
+		if !ok {
+			return "", nil, false
+		}
+		answers = append(answers, clarificationAnswer{Question: question, Answer: answer})
+	}
+	if len(answers) == 0 {
+		return request, nil, true
+	}
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(request))
+	b.WriteString("\n\nClarifications:\n")
+	for _, answer := range answers {
+		fmt.Fprintf(&b, "- %s %s\n", answer.Question, answer.Answer)
+	}
+	return b.String(), answers, true
+}
+
+func (s interactiveSession) externalModeFromAgentPlan(plan *discovery.AgentPlan) string {
+	mode := "deny"
+	if plan == nil || strings.TrimSpace(plan.ExternalMode) == "" {
+		return mode
+	}
+	recommended := model.ExternalMode(strings.ToLower(strings.TrimSpace(plan.ExternalMode)))
+	if !recommended.Valid() {
+		fmt.Fprintf(s.stdout, "Ignoring unsupported Codex external mode recommendation %q.\n", plan.ExternalMode)
+		return mode
+	}
+	if recommended == model.ExternalModeDeny {
+		return string(recommended)
+	}
+	useMode, ok := s.confirm(fmt.Sprintf("Use Codex recommended external mode %s?", recommended), true)
+	if !ok {
+		return mode
+	}
+	if useMode {
+		mode = string(recommended)
+	}
+	return mode
 }
 
 func (s interactiveSession) printProjectStatus(projectDir string) {
@@ -250,6 +372,122 @@ func (s interactiveSession) printProjectStatus(projectDir string) {
 	if best != "" {
 		fmt.Fprintf(s.stdout, "Best candidate: %s\n", best)
 	}
+}
+
+func sourcePathExists(projectDir, sourcePath string) bool {
+	if strings.TrimSpace(sourcePath) == "" {
+		return false
+	}
+	_, err := os.Stat(archive.ProjectPath(projectDir, sourcePath))
+	return err == nil
+}
+
+func writeInteractiveDiscoveryHandoff(created *run.CreatedRun, plan *discovery.AgentPlan, clarifications []clarificationAnswer) error {
+	if created == nil || plan == nil {
+		return nil
+	}
+	docsDir := filepath.Join(created.RunDir, "docs")
+	structuredPath := filepath.Join(docsDir, "agent-discovery.json")
+	if err := discovery.SaveAgentPlan(structuredPath, plan); err != nil {
+		return err
+	}
+	markdownPath := filepath.Join(docsDir, "agent-discovery.md")
+	if err := os.WriteFile(markdownPath, []byte(agentDiscoveryMarkdown(plan, clarifications)), 0o644); err != nil {
+		return err
+	}
+	return appendAgentDiscoveryToInterfaceDoc(created.InterfaceDocPath, plan, clarifications)
+}
+
+func appendAgentDiscoveryToInterfaceDoc(path string, plan *discovery.AgentPlan, clarifications []clarificationAnswer) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString("\n" + agentDiscoveryMarkdown(plan, clarifications))
+	return err
+}
+
+func agentDiscoveryMarkdown(plan *discovery.AgentPlan, clarifications []clarificationAnswer) string {
+	var b strings.Builder
+	b.WriteString("## Agent Discovery Handoff\n\n")
+	if strings.TrimSpace(plan.SourcePath) != "" {
+		fmt.Fprintf(&b, "- Recommended source path: `%s`", plan.SourcePath)
+		if strings.TrimSpace(plan.SourcePathConfidence) != "" {
+			fmt.Fprintf(&b, " (%s confidence)", plan.SourcePathConfidence)
+		}
+		b.WriteString("\n")
+	}
+	if strings.TrimSpace(plan.DropInInterface) != "" {
+		fmt.Fprintf(&b, "- Drop-in interface: %s\n", plan.DropInInterface)
+	}
+	if strings.TrimSpace(plan.ExternalMode) != "" {
+		fmt.Fprintf(&b, "- Recommended external mode: `%s`\n", plan.ExternalMode)
+	}
+	writeMarkdownList(&b, "Inputs", plan.Inputs)
+	writeMarkdownList(&b, "Outputs", plan.Outputs)
+	writeMarkdownList(&b, "Evaluator Strategy", plan.EvaluatorStrategy)
+	writeMarkdownList(&b, "Metrics", plan.Metrics)
+	if len(plan.ExternalCommunications) > 0 {
+		b.WriteString("\n### External Communications\n\n")
+		for _, external := range plan.ExternalCommunications {
+			label := strings.TrimSpace(external.Service)
+			if label == "" {
+				label = strings.TrimSpace(external.Protocol)
+			}
+			if label == "" {
+				label = "external dependency"
+			}
+			fmt.Fprintf(&b, "- %s", label)
+			details := externalCommunicationDetails(external)
+			if details != "" {
+				fmt.Fprintf(&b, ": %s", details)
+			}
+			b.WriteString("\n")
+		}
+	}
+	if len(clarifications) > 0 {
+		b.WriteString("\n### Clarifications\n\n")
+		for _, clarification := range clarifications {
+			fmt.Fprintf(&b, "- %s %s\n", clarification.Question, clarification.Answer)
+		}
+	}
+	writeMarkdownList(&b, "Notes", plan.Notes)
+	return b.String()
+}
+
+func writeMarkdownList(b *strings.Builder, heading string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n### %s\n\n", heading)
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		fmt.Fprintf(b, "- %s\n", value)
+	}
+}
+
+func externalCommunicationDetails(external discovery.ExternalCommunication) string {
+	details := make([]string, 0, 5)
+	if strings.TrimSpace(external.Protocol) != "" {
+		details = append(details, "protocol "+external.Protocol)
+	}
+	if strings.TrimSpace(external.Request) != "" {
+		details = append(details, "request "+external.Request)
+	}
+	if strings.TrimSpace(external.Response) != "" {
+		details = append(details, "response "+external.Response)
+	}
+	if strings.TrimSpace(external.Auth) != "" {
+		details = append(details, "auth "+external.Auth)
+	}
+	if strings.TrimSpace(external.Mode) != "" {
+		details = append(details, "mode "+external.Mode)
+	}
+	return strings.Join(details, "; ")
 }
 
 func candidateStatusCounts(results []model.CandidateResult) (int, int, int) {

@@ -329,19 +329,25 @@ func envValue(env []string, key string) string {
 
 func startLocalMockGateway(ctx context.Context, env []string, logPath string) (func(), error) {
 	source := envValue(env, "CRUCIBLE_MOCK_GATEWAY_SOURCE")
-	if source == "" {
+	binary := envValue(env, "CRUCIBLE_MOCK_GATEWAY_BIN")
+	if source == "" && binary == "" {
 		return func() {}, nil
 	}
 	fixtures := envValue(env, "CRUCIBLE_HTTP_FIXTURES")
 	if fixtures == "" {
-		return func() {}, fmt.Errorf("CRUCIBLE_HTTP_FIXTURES is required when CRUCIBLE_MOCK_GATEWAY_SOURCE is set")
+		return func() {}, fmt.Errorf("CRUCIBLE_HTTP_FIXTURES is required when the mock gateway is enabled")
 	}
 	addr := envValue(env, "CRUCIBLE_MOCK_GATEWAY_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:18080"
 	}
 
-	args := []string{"run", source, "-fixtures", fixtures, "-addr", addr}
+	name := binary
+	args := []string{"-fixtures", fixtures, "-addr", addr}
+	if name == "" {
+		name = "go"
+		args = append([]string{"run", source}, args...)
+	}
 	mode := envValue(env, "CRUCIBLE_EXTERNAL_MODE")
 	if mode != "" {
 		args = append(args, "-mode", mode)
@@ -383,7 +389,7 @@ func startLocalMockGateway(ctx context.Context, env []string, logPath string) (f
 		return func() {}, err
 	}
 
-	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {

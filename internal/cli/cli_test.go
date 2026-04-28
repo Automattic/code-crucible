@@ -18,7 +18,7 @@ func TestInteractiveCreatesRun(t *testing.T) {
 	chdir(t, projectDir)
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n\nmake checkout pricing faster\n\nq\n"), &stdout, &stderr)
+	code := RunWithIO(nil, strings.NewReader("\n\nmake checkout pricing faster\n\nn\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -42,6 +42,112 @@ func TestInteractiveCreatesRun(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Source path: agent discovery pending") {
 		t.Fatalf("stdout did not describe source discovery:\n%s", stdout.String())
+	}
+}
+
+func TestInteractiveCodexDiscoveryCreatesRunFromAgentPlan(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	sourceDir := filepath.Join(projectDir, "internal", "checkout")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "pricing.go"), []byte("package checkout\n\nfunc PriceCheckout() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeBinDir := t.TempDir()
+	fakeCodex := filepath.Join(fakeBinDir, "codex")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    out="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+cat >/dev/null
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'MD'
+# Discovery
+
+Use checkout pricing.
+
+` + "```json" + `
+{
+  "source_path": "internal/checkout/pricing.go",
+  "source_path_confidence": "high",
+  "drop_in_interface": "PriceCheckout",
+  "inputs": ["checkout cart fixture"],
+  "outputs": ["priced checkout"],
+  "external_communications": [],
+  "external_mode": "deny",
+  "evaluator_strategy": ["golden fixture test", "benchmark pricing"],
+  "metrics": ["p95 latency", "cpu user seconds"],
+  "clarifying_questions": ["Which percentile should be optimized?"],
+  "suggested_next_command": "crucible run \"reduce checkout pricing latency\" --source-path internal/checkout/pricing.go",
+  "notes": ["fake interactive plan"]
+}
+` + "```" + `
+MD
+`
+	if err := os.WriteFile(fakeCodex, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var stdout, stderr bytes.Buffer
+	input := "\n\nreduce checkout pricing latency\n\ny\np95 of PriceCheckout\n\nq\n"
+	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Codex discovery complete",
+		"Codex requested clarification before generation.",
+		"Source path: internal/checkout/pricing.go",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not contain %q:\n%s", want, stdout.String())
+		}
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one run config, found %d", len(matches))
+	}
+	cfg, err := archive.LoadRunConfig(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SourcePath != "internal/checkout/pricing.go" {
+		t.Fatalf("SourcePath = %q", cfg.SourcePath)
+	}
+	if !strings.Contains(cfg.Optimize, "Clarifications:") || !strings.Contains(cfg.Optimize, "p95 of PriceCheckout") {
+		t.Fatalf("Optimize did not include clarifications:\n%s", cfg.Optimize)
+	}
+
+	runDir := filepath.Dir(matches[0])
+	for _, path := range []string{
+		filepath.Join(runDir, "docs", "agent-discovery.json"),
+		filepath.Join(runDir, "docs", "agent-discovery.md"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected discovery handoff %s: %v", path, err)
+		}
+	}
+	interfaceDoc, err := os.ReadFile(filepath.Join(runDir, "docs", "interfaces.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(interfaceDoc), "Agent Discovery Handoff") {
+		t.Fatalf("interface doc did not include agent handoff:\n%s", string(interfaceDoc))
 	}
 }
 

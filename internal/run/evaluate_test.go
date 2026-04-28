@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -518,23 +519,47 @@ func TestSandboxResourceWrapperStartsMockGateway(t *testing.T) {
 	script := sandboxResourceWrapperScript()
 	for _, want := range []string{
 		"CRUCIBLE_MOCK_GATEWAY_SOURCE",
+		"CRUCIBLE_MOCK_GATEWAY_BIN",
 		"CRUCIBLE_HTTP_FIXTURES",
 		"CRUCIBLE_ALLOWED_HOSTS",
 		"CRUCIBLE_EXTERNAL_TRACE",
 		"CRUCIBLE_RECORD_FIXTURES",
-		"gateway_args=(\"$CRUCIBLE_MOCK_GATEWAY_SOURCE\"",
+		"gateway_args=(-fixtures",
+		"\"$CRUCIBLE_MOCK_GATEWAY_BIN\" \"${gateway_args[@]}\"",
 		"-allow-hosts",
 		"-passthrough",
 		"-trace",
 		"-record-fixtures",
 		"-ca-cert",
 		"-ca-key",
-		"go run \"${gateway_args[@]}\"",
+		"go run \"$CRUCIBLE_MOCK_GATEWAY_SOURCE\" \"${gateway_args[@]}\"",
 		"/dev/tcp/${gateway_host}/${gateway_port}",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("resource wrapper missing %q", want)
 		}
+	}
+}
+
+func TestEnsureSandboxMockGatewayBinaryUsesPackagedBinary(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, externalfixtures.MockGatewayName)
+	if err := os.WriteFile(sourcePath, []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	binaryPath := filepath.Join(dir, externalfixtures.MockGatewayBinaryName("linux", runtime.GOARCH))
+	if err := os.WriteFile(binaryPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	env, err := ensureSandboxMockGatewayBinary([]string{
+		"CRUCIBLE_MOCK_GATEWAY_SOURCE=" + filepath.ToSlash(sourcePath),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := envValue(env, "CRUCIBLE_MOCK_GATEWAY_BIN"); got != filepath.ToSlash(binaryPath) {
+		t.Fatalf("CRUCIBLE_MOCK_GATEWAY_BIN = %q, want %q", got, filepath.ToSlash(binaryPath))
 	}
 }
 

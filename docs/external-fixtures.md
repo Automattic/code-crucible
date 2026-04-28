@@ -83,13 +83,13 @@ This is the first generated gateway artifact. During sandboxed `allowlist`, `moc
 - `NODE_EXTRA_CA_CERTS`
 - `GIT_SSL_CAINFO`
 
-Code Crucible starts the gateway on `CRUCIBLE_MOCK_GATEWAY_ADDR` before invoking `evaluator.sh`, and stops it after the evaluator exits. Container runs start it inside the archived resource wrapper; local runs start the same archived gateway from the host. The default URL is:
+Code Crucible starts the gateway on `CRUCIBLE_MOCK_GATEWAY_ADDR` before invoking `evaluator.sh`, and stops it after the evaluator exits. Container runs start it inside the archived resource wrapper; local runs start the same archived gateway from the host. When container evaluation needs the gateway, Code Crucible builds a Linux `external/mock-gateway-<goos>-<goarch>` binary from the archived source on the host and passes it as `CRUCIBLE_MOCK_GATEWAY_BIN`, so the sandbox image does not need Go just to run the gateway. If that binary is missing, the wrapper falls back to `go run external/mock-gateway.go`. The default URL is:
 
 ```text
 http://127.0.0.1:18080
 ```
 
-In `allowlist` mode, HTTP clients that honor proxy environment variables are forwarded only when the request host appears in `CRUCIBLE_ALLOWED_HOSTS`; other hosts receive a gateway denial. HTTPS clients that honor `HTTPS_PROXY` use a normal `CONNECT` tunnel to allowlisted hosts. In `mock` and `replay` modes, HTTP clients that honor standard proxy environment variables can call the original `http://...` URL from the fixture, and the request will route through the mock gateway. HTTPS clients that honor `HTTPS_PROXY` and the exported trust variables can call the original `https://...` URL; the gateway handles `CONNECT`, terminates TLS with a run-local test CA, and serves the matching fixture. In `record` mode, proxied HTTP traffic is forwarded to live upstream hosts, summarized in `external-trace.json`, and captured in `recorded-http-fixtures.json` beside the candidate. The current gateway is generated Go source, so sandbox images must include `go` until Code Crucible ships a packaged gateway binary.
+In `allowlist` mode, HTTP clients that honor proxy environment variables are forwarded only when the request host appears in `CRUCIBLE_ALLOWED_HOSTS`; other hosts receive a gateway denial. HTTPS clients that honor `HTTPS_PROXY` use a normal `CONNECT` tunnel to allowlisted hosts. In `mock` and `replay` modes, HTTP clients that honor standard proxy environment variables can call the original `http://...` URL from the fixture, and the request will route through the mock gateway. HTTPS clients that honor `HTTPS_PROXY` and the exported trust variables can call the original `https://...` URL; the gateway handles `CONNECT`, terminates TLS with a run-local test CA, and serves the matching fixture. In `record` mode, proxied HTTP traffic is forwarded to live upstream hosts, summarized in `external-trace.json`, and captured in `recorded-http-fixtures.json` beside the candidate.
 
 For HTTP clients that do not honor proxy environment variables but can be pointed at a base URL, the gateway also supports direct-routed requests:
 

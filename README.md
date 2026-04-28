@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, route standard HTTP and HTTPS proxy traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, rebuild a SQLite index from filesystem artifacts, and write static HTML run reports. Reporting is still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, package gateway binaries for container sandboxes, route standard HTTP and HTTPS proxy traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, rebuild a SQLite index from filesystem artifacts, and write static HTML run reports. Reporting is still under active development.
 
 ## Why
 
@@ -70,7 +70,7 @@ cd /path/to/your/project
 crucible
 ```
 
-The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, creates the run, shows the current leaderboard, and then offers actions such as new run, leaderboard, generate, evaluate, evolve, report, inspect, and index rebuild. When the source path is not already known or accepted from the local suggestions, the run is created without `--source-path` so the generation prompt asks the agent to discover the involved code.
+The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run Codex discovery before creating the run. When Codex returns clarifying questions, the wizard records the answers in the run request. When Codex recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the agent to discover the involved code. The wizard then shows the current leaderboard and offers actions such as new run, leaderboard, generate, evaluate, evolve, report, inspect, and index rebuild.
 
 Create a tournament run from inside an existing project:
 
@@ -411,7 +411,7 @@ For `deny` mode, container evaluation enforces network isolation with `--sandbox
 
 For `allowlist` mode, Code Crucible starts the archived gateway as an HTTP/HTTPS proxy and denies proxied requests to hosts outside `--allow-hosts`. This is partial enforcement: clients that ignore proxy environment variables can use direct-routed gateway URLs when their base URL is configurable, but raw sockets and fully transparent routing still require evaluator-specific isolation. Live allowlisted hosts may be unreachable when the container sandbox network is `none`.
 
-Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock`, `replay`, and `record` evaluation, Code Crucible exports gateway and proxy environment variables, then starts the archived gateway before running the evaluator. Record mode captures proxied HTTP responses into each candidate's `recorded-http-fixtures.json` and writes `external-trace.json`; transparent HTTPS tunnels are traced but not replay-captured yet. Container mode can combine this with `--sandbox-network none`; local mode still cannot block unrelated host-network access. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
+Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock`, `replay`, and `record` evaluation, Code Crucible exports gateway and proxy environment variables, then starts the archived gateway before running the evaluator. For container evaluation, Code Crucible builds an archived Linux gateway binary on the host when needed so sandbox images do not need Go just to start the gateway. Record mode captures proxied HTTP responses into each candidate's `recorded-http-fixtures.json` and writes `external-trace.json`; transparent HTTPS tunnels are traced but not replay-captured yet. Container mode can combine this with `--sandbox-network none`; local mode still cannot block unrelated host-network access. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
 
 ## Project Work Area
 
@@ -509,7 +509,7 @@ Evaluator roadmap:
 - [x] Add external trace collection and `record` mode capture
 - [x] Add direct-routed gateway URLs for clients that ignore proxy environment variables
 - [ ] Add transparent routing for raw socket clients
-- [ ] Package the fixture gateway for sandbox images without Go
+- [x] Package the fixture gateway for sandbox images without Go
 
 ## License
 
