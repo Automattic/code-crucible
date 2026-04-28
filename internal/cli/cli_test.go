@@ -195,7 +195,7 @@ func TestInteractiveExistingProjectShowsLeaderboard(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n2\nq\n"), &stdout, &stderr)
+	code := RunWithIO(nil, strings.NewReader("\n2\n\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}

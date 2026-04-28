@@ -112,15 +112,23 @@ func (s interactiveSession) menu(projectDir string) int {
 				return code
 			}
 		case "2", "leaderboard", "scoreboard", "scores":
-			if code := runLeaderboard([]string{"--project-dir", projectDir}, s.stdout, s.stderr); code != 0 {
+			runSelector, ok := s.askRunSelector(projectDir)
+			if !ok {
+				return 0
+			}
+			if code := runLeaderboard([]string{"--project-dir", projectDir, "--run", runSelector}, s.stdout, s.stderr); code != 0 {
 				return code
 			}
 		case "3", "generate":
+			runSelector, ok := s.askRunSelector(projectDir)
+			if !ok {
+				return 0
+			}
 			generationAgent, ok := s.askGenerationAgent(projectDir)
 			if !ok {
 				return 0
 			}
-			args := []string{"--project-dir", projectDir}
+			args := []string{"--project-dir", projectDir, "--run", runSelector}
 			if generationAgent != "" {
 				args = append(args, "--agent", generationAgent)
 			}
@@ -128,10 +136,18 @@ func (s interactiveSession) menu(projectDir string) int {
 				return code
 			}
 		case "4", "evaluate":
-			if code := runEvaluate([]string{"--project-dir", projectDir}, s.stdout, s.stderr); code != 0 {
+			runSelector, ok := s.askRunSelector(projectDir)
+			if !ok {
+				return 0
+			}
+			if code := runEvaluate([]string{"--project-dir", projectDir, "--run", runSelector}, s.stdout, s.stderr); code != 0 {
 				return code
 			}
 		case "5", "evolve":
+			runSelector, ok := s.askRunSelector(projectDir)
+			if !ok {
+				return 0
+			}
 			rounds, ok := s.askInt("Rounds", 1)
 			if !ok {
 				return 0
@@ -144,7 +160,7 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			args := []string{"--project-dir", projectDir, "--rounds", strconv.Itoa(rounds), "--parents", strconv.Itoa(parents)}
+			args := []string{"--project-dir", projectDir, "--run", runSelector, "--rounds", strconv.Itoa(rounds), "--parents", strconv.Itoa(parents)}
 			if generationAgent != "" {
 				args = append(args, "--agent", generationAgent)
 			}
@@ -152,10 +168,18 @@ func (s interactiveSession) menu(projectDir string) int {
 				return code
 			}
 		case "6", "report":
-			if code := runReport([]string{"--project-dir", projectDir}, s.stdout, s.stderr); code != 0 {
+			runSelector, ok := s.askRunSelector(projectDir)
+			if !ok {
+				return 0
+			}
+			if code := runReport([]string{"--project-dir", projectDir, "--run", runSelector}, s.stdout, s.stderr); code != 0 {
 				return code
 			}
 		case "7", "inspect":
+			runSelector, ok := s.askRunSelector(projectDir)
+			if !ok {
+				return 0
+			}
 			candidateID, ok := s.ask("Candidate ID [candidate-0000-baseline]: ")
 			if !ok {
 				return 0
@@ -164,7 +188,7 @@ func (s interactiveSession) menu(projectDir string) int {
 			if candidateID == "" {
 				candidateID = "candidate-0000-baseline"
 			}
-			if code := runInspect([]string{"--project-dir", projectDir, candidateID}, s.stdout, s.stderr); code != 0 {
+			if code := runInspect([]string{"--project-dir", projectDir, "--run", runSelector, candidateID}, s.stdout, s.stderr); code != 0 {
 				return code
 			}
 		case "8", "index":
@@ -179,6 +203,24 @@ func (s interactiveSession) menu(projectDir string) int {
 			fmt.Fprintf(s.stdout, "Unknown action %q\n", choice)
 		}
 	}
+}
+
+func (s interactiveSession) askRunSelector(projectDir string) (string, bool) {
+	runDir, err := archive.LatestRunDir(projectDir)
+	if err != nil {
+		fmt.Fprintln(s.stdout, "No runs available.")
+		return "", false
+	}
+	fmt.Fprintf(s.stdout, "Latest run: %s\n", filepath.Base(runDir))
+	answer, ok := s.ask("Run [latest]: ")
+	if !ok {
+		return "", false
+	}
+	answer = strings.TrimSpace(answer)
+	if answer == "" {
+		return "latest", true
+	}
+	return answer, true
 }
 
 func (s interactiveSession) newRunWizard(projectDir string) int {
