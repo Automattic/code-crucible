@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,6 +94,13 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 	leaderboardPath := filepath.Join(runDir, "leaderboard.json")
 	evaluatorPath := filepath.Join(runDir, "evaluator", "evaluator.sh")
 	evaluatorEnv := externalEvaluationEnv(cfg.External, runDir, opts.Env)
+	if !sandboxEnabled(opts.Sandbox) {
+		cleanup, err := startLocalMockGateway(context.Background(), evaluatorEnv, filepath.Join(runDir, "external", "mock-gateway.local.log"))
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+	}
 
 	report := &EvaluationReport{
 		RunID:           cfg.ID,
@@ -511,6 +519,83 @@ func envValue(env []string, key string) string {
 		}
 	}
 	return ""
+}
+
+func startLocalMockGateway(ctx context.Context, env []string, logPath string) (func(), error) {
+	source := envValue(env, "CRUCIBLE_MOCK_GATEWAY_SOURCE")
+	if source == "" {
+		return func() {}, nil
+	}
+	fixtures := envValue(env, "CRUCIBLE_HTTP_FIXTURES")
+	if fixtures == "" {
+		return func() {}, fmt.Errorf("CRUCIBLE_HTTP_FIXTURES is required when CRUCIBLE_MOCK_GATEWAY_SOURCE is set")
+	}
+	addr := envValue(env, "CRUCIBLE_MOCK_GATEWAY_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:18080"
+	}
+
+	args := []string{"run", source, "-fixtures", fixtures, "-addr", addr}
+	caCert := envValue(env, "CRUCIBLE_MOCK_CA_CERT")
+	caKey := envValue(env, "CRUCIBLE_MOCK_CA_KEY")
+	if caCert != "" || caKey != "" {
+		if caCert == "" || caKey == "" {
+			return func() {}, fmt.Errorf("CRUCIBLE_MOCK_CA_CERT and CRUCIBLE_MOCK_CA_KEY must be provided together")
+		}
+		args = append(args, "-ca-cert", caCert, "-ca-key", caKey)
+	}
+	if tcpAddressOpen(addr) {
+		return func() {}, fmt.Errorf("local mock gateway address is already in use: %s", addr)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		return func() {}, err
+	}
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		return func() {}, err
+	}
+
+	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	if err := cmd.Start(); err != nil {
+		_ = logFile.Close()
+		return func() {}, fmt.Errorf("start local mock gateway: %w", err)
+	}
+
+	cleanup := func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+		}
+		_ = logFile.Close()
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if err := ctx.Err(); err != nil {
+			cleanup()
+			return func() {}, err
+		}
+		if tcpAddressOpen(addr) {
+			return cleanup, nil
+		}
+		if time.Now().After(deadline) {
+			cleanup()
+			return func() {}, fmt.Errorf("local mock gateway did not become ready on %s; see %s", addr, logPath)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func tcpAddressOpen(addr string) bool {
+	conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }
 
 func fileExists(path string) bool {

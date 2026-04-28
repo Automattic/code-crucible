@@ -1,6 +1,8 @@
 package run
 
 import (
+	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -169,6 +171,11 @@ JSON
 
 func TestEvaluateCandidatesAppliesExternalFixtureEnvironment(t *testing.T) {
 	projectDir, created := createEvaluationFixtureWithExternalMode(t, "replay")
+	gatewayAddr := freeTCPAddr(t)
+	gatewayHost, gatewayPort, err := net.SplitHostPort(gatewayAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	evaluator := `#!/usr/bin/env bash
 set -euo pipefail
@@ -186,12 +193,16 @@ if [[ ! -f "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" ]]; then
   echo "missing CRUCIBLE_MOCK_GATEWAY_SOURCE" >&2
   exit 3
 fi
-if [[ "${CRUCIBLE_MOCK_GATEWAY_ADDR:-}" != "127.0.0.1:18080" ]]; then
+if [[ "${CRUCIBLE_MOCK_GATEWAY_ADDR:-}" != "__GATEWAY_ADDR__" ]]; then
   echo "missing CRUCIBLE_MOCK_GATEWAY_ADDR" >&2
   exit 3
 fi
-if [[ "${CRUCIBLE_MOCK_GATEWAY_URL:-}" != "http://127.0.0.1:18080" ]]; then
+if [[ "${CRUCIBLE_MOCK_GATEWAY_URL:-}" != "http://__GATEWAY_ADDR__" ]]; then
   echo "missing CRUCIBLE_MOCK_GATEWAY_URL" >&2
+  exit 3
+fi
+if ! (: >"/dev/tcp/__GATEWAY_HOST__/__GATEWAY_PORT__") >/dev/null 2>&1; then
+  echo "local mock gateway is not reachable" >&2
   exit 3
 fi
 cat > "$metrics_out" <<'JSON'
@@ -207,6 +218,9 @@ cat > "$verdict_out" <<'JSON'
 }
 JSON
 `
+	evaluator = strings.ReplaceAll(evaluator, "__GATEWAY_ADDR__", gatewayAddr)
+	evaluator = strings.ReplaceAll(evaluator, "__GATEWAY_HOST__", gatewayHost)
+	evaluator = strings.ReplaceAll(evaluator, "__GATEWAY_PORT__", gatewayPort)
 	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluator), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -216,6 +230,7 @@ JSON
 		RunID:       created.ID,
 		CandidateID: "candidate-0000-baseline",
 		Adopt:       false,
+		Env:         []string{"CRUCIBLE_MOCK_GATEWAY_ADDR=" + gatewayAddr},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -387,6 +402,27 @@ func TestSandboxResourceWrapperStartsMockGateway(t *testing.T) {
 		if !strings.Contains(script, want) {
 			t.Fatalf("resource wrapper missing %q", want)
 		}
+	}
+}
+
+func TestStartLocalMockGatewayRejectsUsedAddress(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	cleanup, err := startLocalMockGateway(context.Background(), []string{
+		"CRUCIBLE_MOCK_GATEWAY_SOURCE=/tmp/mock-gateway.go",
+		"CRUCIBLE_HTTP_FIXTURES=/tmp/http-fixtures.json",
+		"CRUCIBLE_MOCK_GATEWAY_ADDR=" + listener.Addr().String(),
+	}, filepath.Join(t.TempDir(), "gateway.log"))
+	cleanup()
+	if err == nil {
+		t.Fatal("expected used address error")
+	}
+	if !strings.Contains(err.Error(), "already in use") {
+		t.Fatalf("error = %v, want address in use", err)
 	}
 }
 
@@ -640,6 +676,16 @@ func createEvaluationFixtureWithExternalMode(t *testing.T, externalMode string) 
 		t.Fatal(err)
 	}
 	return projectDir, created
+}
+
+func freeTCPAddr(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	return listener.Addr().String()
 }
 
 func containsArg(args []string, want string) bool {

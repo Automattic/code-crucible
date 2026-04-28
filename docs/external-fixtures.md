@@ -80,7 +80,7 @@ This is the first generated gateway artifact. During sandboxed `mock` and `repla
 - `NODE_EXTRA_CA_CERTS`
 - `GIT_SSL_CAINFO`
 
-The container resource wrapper starts the gateway on `CRUCIBLE_MOCK_GATEWAY_ADDR` before invoking `evaluator.sh`, and stops it after the evaluator exits. The default URL is:
+Code Crucible starts the gateway on `CRUCIBLE_MOCK_GATEWAY_ADDR` before invoking `evaluator.sh`, and stops it after the evaluator exits. Container runs start it inside the archived resource wrapper; local runs start the same archived gateway from the host. The default URL is:
 
 ```text
 http://127.0.0.1:18080
@@ -94,4 +94,4 @@ Current limits:
 
 - Only clients that honor proxy environment variables are routed automatically; raw sockets and custom transports must be configured by the evaluator.
 - HTTPS replay depends on the client trusting the exported mock CA variables; some runtimes may require evaluator-specific trust configuration.
-- Local evaluation receives the same environment variables, but Code Crucible does not auto-start the gateway outside the container wrapper yet.
+- Local fixture-backed evaluation still cannot block unrelated host-network access; use a container sandbox with `--sandbox-network none` when network isolation matters.

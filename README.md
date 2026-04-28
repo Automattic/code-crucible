@@ -356,7 +356,7 @@ crucible run \
 
 For `deny` mode, container evaluation enforces network isolation with `--sandbox-network none`. A deny-mode container evaluation fails closed if a different sandbox network is requested. Local deny-mode runs are marked advisory because the framework cannot prevent host-network access around an arbitrary local evaluator. Allowlist and record modes are currently documented and surfaced to agents and evaluators, but framework-level enforcement is still on the roadmap.
 
-Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During sandboxed `mock` and `replay` evaluation, Code Crucible exports gateway, proxy, and test CA environment variables, then starts the archived mock gateway on loopback before running the evaluator. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
+Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock` and `replay` evaluation, Code Crucible exports gateway, proxy, and test CA environment variables, then starts the archived mock gateway on loopback before running the evaluator. Container mode can combine this with `--sandbox-network none`; local mode still cannot block unrelated host-network access. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
 
 ## Project Work Area
 
@@ -413,9 +413,26 @@ make smoke
 
 The smoke test creates ignored artifacts under `examples/go-ranking-poc/.crucible/`.
 
+Remove local build, cache, and smoke-test artifacts with:
+
+```bash
+make clean
+```
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](SECURITY.md) for security notes, and [docs/release-checklist.md](docs/release-checklist.md) before publishing or tagging.
 
 ## Roadmap
+
+Cleanup before more feature work:
+
+- [x] Start fixture gateways for local `mock` and `replay` evaluation, or stop exporting local proxy variables that point to no running gateway
+- [ ] Decide archive path portability: keep absolute runtime paths in `run.json`, or store relative archive paths and resolve absolutes at execution time
+- [x] Refresh stale security and external-policy docs so they match current Docker/Podman and proxy behavior
+- [ ] Split large implementation files before adding reporting: CLI commands, evaluator sandbox/resource handling, and generated gateway source
+- [ ] Add SQLite schema-version handling for derivative index rebuilds
+- [x] Add a cleanup command or Make target for ignored build, cache, and smoke-test artifacts
+
+Feature roadmap:
 
 - Add HTML reports
 - Add richer SQLite queries for reports and automation

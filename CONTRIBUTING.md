@@ -25,6 +25,12 @@ make smoke
 
 The smoke test creates ignored artifacts under `examples/go-ranking-poc/.crucible/`.
 
+Clean ignored local artifacts:
+
+```bash
+make clean
+```
+
 ## Pull Request Expectations
 
 - Keep changes scoped to one behavior or concern.

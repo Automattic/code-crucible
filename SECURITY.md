@@ -24,4 +24,6 @@ The repository `.gitignore` excludes `.crucible/`, `.codex`, build outputs, logs
 
 ## External Execution
 
-Container and proxy enforcement are not implemented yet. Evaluators and generated competitors should be treated as local code execution. Review evaluator scripts before running them against sensitive projects, and prefer `--jobs 1`, `--nice 10`, and explicit `--timeout` values while the execution layer is still maturing.
+Evaluators and generated competitors should still be treated as local code execution unless they are run in an explicit Docker or Podman sandbox. Container evaluation can enforce `deny` mode with `--sandbox-network none`; local evaluation only warns for `deny` because Code Crucible cannot isolate host-network access around arbitrary local evaluator scripts.
+
+Fixture-backed `mock` and `replay` modes provide proxy and trust environment variables and start the archived fixture gateway for evaluator runs. This is deterministic for HTTP clients that honor standard proxy and trust settings, but raw sockets, custom transports, and unsupported protocols still need evaluator-specific handling. Review evaluator scripts before running them against sensitive projects, and prefer `--jobs 1`, `--nice 10`, and explicit `--timeout` values while the execution layer is still maturing.
