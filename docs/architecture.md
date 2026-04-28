@@ -174,7 +174,7 @@ If `--evaluator` is provided, the scaffold wraps that command and records minima
 
 `crucible evaluate` executes the run evaluator for each candidate currently listed in `leaderboard.json`. The default CLI behavior is sequential (`--jobs 1`) and lower-priority (`--nice 10`) so tournaments do not monopolize an interactive workstation. CPU affinity can be constrained with `--cpu-limit N` on systems with `taskset`. Additional evaluator environment variables can be passed with repeated `--env KEY=VALUE` flags.
 
-Evaluator execution is local by default. Passing `--sandbox-engine docker` or `--sandbox-engine podman` with `--sandbox-image IMAGE` wraps each evaluator invocation in `docker run` or `podman run`. Container mode bind-mounts the run archive read/write, bind-mounts the host project read-only, defaults to `--network none`, maps `--cpu-limit` to a container CPU quota, and records the sandbox settings in JSON evaluation reports.
+Evaluator execution is local by default. Passing `--sandbox-engine docker` or `--sandbox-engine podman` with `--sandbox-image IMAGE` wraps each evaluator invocation in `docker run` or `podman run`. Container mode bind-mounts the run archive read/write, bind-mounts the host project read-only, defaults to `--network none`, maps `--cpu-limit` to a container CPU quota, and records the sandbox settings in JSON evaluation reports. The `strict` profile adds default `--memory-limit 1g` and `--pids-limit 256` caps while keeping network disabled; the `networked` profile applies the same default caps with `--network bridge`. Explicit `--memory-limit`, `--pids-limit`, and `--sandbox-network` flags can tune those defaults, except `strict` always requires `none` networking.
 
 For fixture-backed `mock` and `replay` runs, evaluator environments include `CRUCIBLE_HTTP_FIXTURES`, `CRUCIBLE_MOCK_GATEWAY_SOURCE`, `CRUCIBLE_MOCK_GATEWAY_ADDR`, `CRUCIBLE_MOCK_GATEWAY_URL`, `CRUCIBLE_MOCK_CA_CERT`, `CRUCIBLE_MOCK_CA_KEY`, standard proxy variables such as `HTTP_PROXY` and `HTTPS_PROXY`, and common trust variables such as `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, and `NODE_EXTRA_CA_CERTS`. In container mode, `evaluator/resource-wrapper.sh` starts that gateway before invoking `evaluator.sh`. The current gateway is generated Go source, so the sandbox image must include `go` until Code Crucible ships a packaged gateway binary.
 
@@ -197,7 +197,6 @@ The planned evaluator layer will add:
 - Lower-level routing for clients that ignore proxy environment variables
 - Allowlist enforcement
 - External trace collection
-- Richer sandbox profiles
 
 ## Data Model
 

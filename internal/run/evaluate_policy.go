@@ -9,18 +9,45 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	externalfixtures "github.com/Automattic/code-crucible/internal/external"
 	"github.com/Automattic/code-crucible/internal/model"
 )
 
+const (
+	sandboxProfileDefault   = "default"
+	sandboxProfileStrict    = "strict"
+	sandboxProfileNetworked = "networked"
+
+	defaultSandboxMemoryLimit = "1g"
+	defaultSandboxPIDsLimit   = 256
+)
+
 func NormalizeSandboxOptions(opts SandboxOptions) (SandboxOptions, error) {
+	opts.Profile = strings.TrimSpace(opts.Profile)
 	opts.Engine = strings.TrimSpace(opts.Engine)
 	opts.Image = strings.TrimSpace(opts.Image)
 	opts.Network = strings.TrimSpace(opts.Network)
+	opts.MemoryLimit = strings.TrimSpace(opts.MemoryLimit)
+
+	if opts.Profile == "" {
+		opts.Profile = sandboxProfileDefault
+	}
+	switch opts.Profile {
+	case sandboxProfileDefault, sandboxProfileStrict, sandboxProfileNetworked:
+	default:
+		return SandboxOptions{}, fmt.Errorf("--sandbox-profile must be default, strict, or networked")
+	}
 
 	if opts.Engine == "" {
 		opts.Engine = "local"
+	}
+	if opts.PIDsLimit < 0 {
+		return SandboxOptions{}, fmt.Errorf("--pids-limit must be at least 0")
+	}
+	if strings.IndexFunc(opts.MemoryLimit, unicode.IsSpace) >= 0 {
+		return SandboxOptions{}, fmt.Errorf("--memory-limit cannot contain whitespace")
 	}
 
 	switch opts.Engine {
@@ -28,10 +55,26 @@ func NormalizeSandboxOptions(opts SandboxOptions) (SandboxOptions, error) {
 		if opts.Image != "" {
 			return SandboxOptions{}, fmt.Errorf("--sandbox-image requires --sandbox-engine docker or podman")
 		}
-		return SandboxOptions{Engine: "local"}, nil
+		if opts.Network != "" {
+			return SandboxOptions{}, fmt.Errorf("--sandbox-network requires --sandbox-engine docker or podman")
+		}
+		if opts.MemoryLimit != "" {
+			return SandboxOptions{}, fmt.Errorf("--memory-limit requires --sandbox-engine docker or podman")
+		}
+		if opts.PIDsLimit > 0 {
+			return SandboxOptions{}, fmt.Errorf("--pids-limit requires --sandbox-engine docker or podman")
+		}
+		if opts.Profile != sandboxProfileDefault {
+			return SandboxOptions{}, fmt.Errorf("--sandbox-profile %s requires --sandbox-engine docker or podman", opts.Profile)
+		}
+		return SandboxOptions{Profile: sandboxProfileDefault, Engine: "local"}, nil
 	case "docker", "podman":
 		if opts.Image == "" {
 			return SandboxOptions{}, fmt.Errorf("--sandbox-image is required when --sandbox-engine is %s", opts.Engine)
+		}
+		applySandboxProfileDefaults(&opts)
+		if opts.Profile == sandboxProfileStrict && opts.Network != "none" {
+			return SandboxOptions{}, fmt.Errorf("--sandbox-profile strict requires --sandbox-network none")
 		}
 		if opts.Network == "" {
 			opts.Network = "none"
@@ -39,6 +82,31 @@ func NormalizeSandboxOptions(opts SandboxOptions) (SandboxOptions, error) {
 		return opts, nil
 	default:
 		return SandboxOptions{}, fmt.Errorf("--sandbox-engine must be local, docker, or podman")
+	}
+}
+
+func applySandboxProfileDefaults(opts *SandboxOptions) {
+	switch opts.Profile {
+	case sandboxProfileStrict:
+		if opts.Network == "" {
+			opts.Network = "none"
+		}
+		if opts.MemoryLimit == "" {
+			opts.MemoryLimit = defaultSandboxMemoryLimit
+		}
+		if opts.PIDsLimit == 0 {
+			opts.PIDsLimit = defaultSandboxPIDsLimit
+		}
+	case sandboxProfileNetworked:
+		if opts.Network == "" {
+			opts.Network = "bridge"
+		}
+		if opts.MemoryLimit == "" {
+			opts.MemoryLimit = defaultSandboxMemoryLimit
+		}
+		if opts.PIDsLimit == 0 {
+			opts.PIDsLimit = defaultSandboxPIDsLimit
+		}
 	}
 }
 

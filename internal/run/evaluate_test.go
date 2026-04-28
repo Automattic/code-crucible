@@ -318,12 +318,66 @@ func TestNormalizeSandboxOptions(t *testing.T) {
 	if sandbox.Network != "none" {
 		t.Fatalf("network = %q, want none", sandbox.Network)
 	}
+	if sandbox.Profile != "default" {
+		t.Fatalf("profile = %q, want default", sandbox.Profile)
+	}
+
+	strictSandbox, err := NormalizeSandboxOptions(SandboxOptions{
+		Profile: "strict",
+		Engine:  "docker",
+		Image:   "golang:1.25",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strictSandbox.Network != "none" || strictSandbox.MemoryLimit != "1g" || strictSandbox.PIDsLimit != 256 {
+		t.Fatalf("strict sandbox = %#v, want network none, memory 1g, pids 256", strictSandbox)
+	}
+
+	networkedSandbox, err := NormalizeSandboxOptions(SandboxOptions{
+		Profile: "networked",
+		Engine:  "podman",
+		Image:   "golang:1.25",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if networkedSandbox.Network != "bridge" || networkedSandbox.MemoryLimit != "1g" || networkedSandbox.PIDsLimit != 256 {
+		t.Fatalf("networked sandbox = %#v, want network bridge, memory 1g, pids 256", networkedSandbox)
+	}
+
+	overrideSandbox, err := NormalizeSandboxOptions(SandboxOptions{
+		Profile:     "networked",
+		Engine:      "docker",
+		Image:       "golang:1.25",
+		Network:     "host",
+		MemoryLimit: "512m",
+		PIDsLimit:   32,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overrideSandbox.Network != "host" || overrideSandbox.MemoryLimit != "512m" || overrideSandbox.PIDsLimit != 32 {
+		t.Fatalf("override sandbox = %#v, want explicit values preserved", overrideSandbox)
+	}
 
 	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "docker"}); err == nil {
 		t.Fatal("expected missing image error")
 	}
 	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "local", Image: "golang:1.25"}); err == nil {
 		t.Fatal("expected local image error")
+	}
+	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "local", MemoryLimit: "1g"}); err == nil {
+		t.Fatal("expected local memory limit error")
+	}
+	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "local", PIDsLimit: 64}); err == nil {
+		t.Fatal("expected local pids limit error")
+	}
+	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "local", Profile: "strict"}); err == nil {
+		t.Fatal("expected local strict profile error")
+	}
+	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "docker", Image: "golang:1.25", Profile: "strict", Network: "bridge"}); err == nil {
+		t.Fatal("expected strict bridge network error")
 	}
 }
 
@@ -341,9 +395,11 @@ func TestBuildContainerEvaluatorCommand(t *testing.T) {
 		CPULimit:   2,
 		Env:        []string{"GOMAXPROCS=1"},
 		Sandbox: SandboxOptions{
-			Engine:  "podman",
-			Image:   "golang:1.25",
-			Network: "none",
+			Engine:      "podman",
+			Image:       "golang:1.25",
+			Network:     "none",
+			MemoryLimit: "1g",
+			PIDsLimit:   256,
 		},
 	})
 	if err != nil {
@@ -364,6 +420,10 @@ func TestBuildContainerEvaluatorCommand(t *testing.T) {
 		sandboxMount(projectDir, "ro"),
 		"--cpus",
 		"2",
+		"--memory",
+		"1g",
+		"--pids-limit",
+		"256",
 		"--userns",
 		"keep-id",
 		"--workdir",

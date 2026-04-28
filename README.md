@@ -175,7 +175,7 @@ Run the evaluator against adopted candidates and update leaderboard metrics, ver
 crucible evaluate
 ```
 
-Evaluation runs one candidate at a time by default and starts evaluator processes with `nice -n 10` so tournaments are less likely to overburden the host machine. Use `--jobs` only when you explicitly want parallel candidate evaluation, use `--cpu-limit` when you want CPU affinity control, and use `--nice 0` to disable priority adjustment.
+Evaluation runs one candidate at a time by default and starts evaluator processes with `nice -n 10` so tournaments are less likely to overburden the host machine. Use `--jobs` only when you explicitly want parallel candidate evaluation, use `--cpu-limit` when you want CPU affinity control, and use `--nice 0` to disable priority adjustment. Containerized evaluators can also use `--sandbox-profile`, `--memory-limit`, and `--pids-limit` to keep tournament runs bounded.
 
 ```bash
 crucible evaluate --jobs 1 --nice 10 --cpu-limit 2 --env GOMAXPROCS=1
@@ -315,11 +315,19 @@ Evaluator execution is local by default. For containerized evaluation, pass `--s
 crucible evaluate \
   --sandbox-engine podman \
   --sandbox-image golang:1.25 \
-  --sandbox-network none \
+  --sandbox-profile strict \
   --cpu-limit 2
 ```
 
 Container sandboxes bind-mount the run archive read/write and the host project read-only at their original absolute paths, run with network isolation by default, and pass `--cpu-limit` through as a container CPU quota. Container runs execute an archived resource wrapper inside the sandbox, so CPU and wall-time resource metrics describe the evaluator process inside the container instead of the host Docker or Podman client.
+
+Evaluator sandbox profiles are:
+
+- `default`: local execution unless `--sandbox-engine docker|podman` is set; container runs default to `--sandbox-network none`.
+- `strict`: Docker/Podman only; defaults to `--sandbox-network none`, `--memory-limit 1g`, and `--pids-limit 256`.
+- `networked`: Docker/Podman only; defaults to `--sandbox-network bridge`, `--memory-limit 1g`, and `--pids-limit 256`.
+
+Use explicit `--sandbox-network`, `--memory-limit`, and `--pids-limit` flags when a profile default needs to be tuned. The `strict` profile always requires `--sandbox-network none`.
 
 Keep all candidates in a tournament on the same sandbox engine. Docker and Podman timings should not be compared as equivalent results because storage drivers, rootless behavior, cache state, and runtime overhead can differ even when both use the same image and wrapper.
 
@@ -456,7 +464,7 @@ Feature roadmap:
 
 - [x] Add HTML reports
 - [x] Add richer SQLite queries for reports and automation
-- [ ] Expand sandbox profiles and limits
+- [x] Expand sandbox profiles and limits
 - [ ] Add CI regression tournament jobs
 
 ## License

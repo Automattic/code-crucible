@@ -27,9 +27,12 @@ type EvaluationOptions struct {
 }
 
 type SandboxOptions struct {
-	Engine  string `json:"engine,omitempty"`
-	Image   string `json:"image,omitempty"`
-	Network string `json:"network,omitempty"`
+	Profile     string `json:"profile,omitempty"`
+	Engine      string `json:"engine,omitempty"`
+	Image       string `json:"image,omitempty"`
+	Network     string `json:"network,omitempty"`
+	MemoryLimit string `json:"memory_limit,omitempty"`
+	PIDsLimit   int    `json:"pids_limit,omitempty"`
 }
 
 type CandidateEvaluation struct {

@@ -118,6 +118,8 @@ Code Crucible augments those script-provided values with process-level resource 
 
 Local evaluator runs use `resource_metric_source: "host-process"`. Docker and Podman evaluator runs use `resource_metric_source: "container-wrapper"` and measure from inside the sandbox.
 
+Container runs can be bounded with `--sandbox-profile strict`, `--memory-limit`, and `--pids-limit`. The selected container sandbox settings are archived in JSON evaluation reports.
+
 Compare resource metrics only within the same sandbox engine. Docker and Podman runs can produce different timings because they may use different runtimes, storage drivers, rootless settings, and cache states.
 
 `verdict.json` must include:

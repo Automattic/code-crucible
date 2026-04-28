@@ -287,9 +287,12 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 	jobs := fs.Int("jobs", 1, "maximum number of candidates to evaluate concurrently")
 	nice := fs.Int("nice", 10, "nice priority for evaluator processes; 0 disables priority adjustment")
 	cpuLimit := fs.Int("cpu-limit", 0, "optional CPU limit for evaluator processes; local mode uses taskset affinity")
+	sandboxProfile := fs.String("sandbox-profile", "default", "evaluator sandbox profile: default, strict, or networked")
 	sandboxEngine := fs.String("sandbox-engine", "local", "evaluator sandbox engine: local, docker, or podman")
 	sandboxImage := fs.String("sandbox-image", "", "container image for docker or podman evaluator sandboxes")
-	sandboxNetwork := fs.String("sandbox-network", "none", "container network mode for docker or podman evaluator sandboxes")
+	sandboxNetwork := fs.String("sandbox-network", "", "container network mode for docker or podman evaluator sandboxes")
+	memoryLimit := fs.String("memory-limit", "", "container memory limit for evaluator sandboxes, such as 1g or 512m")
+	pidsLimit := fs.Int("pids-limit", 0, "container process limit for evaluator sandboxes; 0 uses the profile default")
 	var env repeatedStrings
 	fs.Var(&env, "env", "environment variable for evaluators in KEY=VALUE form; may be repeated")
 	if err := fs.Parse(args); err != nil {
@@ -316,10 +319,17 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "evolve failed: --cpu-limit must be at least 0\n")
 		return 2
 	}
+	if *pidsLimit < 0 {
+		fmt.Fprintf(stderr, "evolve failed: --pids-limit must be at least 0\n")
+		return 2
+	}
 	evaluatorSandbox, err := run.NormalizeSandboxOptions(run.SandboxOptions{
-		Engine:  *sandboxEngine,
-		Image:   *sandboxImage,
-		Network: *sandboxNetwork,
+		Profile:     *sandboxProfile,
+		Engine:      *sandboxEngine,
+		Image:       *sandboxImage,
+		Network:     *sandboxNetwork,
+		MemoryLimit: *memoryLimit,
+		PIDsLimit:   *pidsLimit,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "evolve failed: %v\n", err)
@@ -435,9 +445,12 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	jobs := fs.Int("jobs", 1, "maximum number of candidates to evaluate concurrently")
 	nice := fs.Int("nice", 10, "nice priority for evaluator processes; 0 disables priority adjustment")
 	cpuLimit := fs.Int("cpu-limit", 0, "optional CPU limit for evaluator processes; local mode uses taskset affinity")
+	sandboxProfile := fs.String("sandbox-profile", "default", "evaluator sandbox profile: default, strict, or networked")
 	sandboxEngine := fs.String("sandbox-engine", "local", "evaluator sandbox engine: local, docker, or podman")
 	sandboxImage := fs.String("sandbox-image", "", "container image for docker or podman evaluator sandboxes")
-	sandboxNetwork := fs.String("sandbox-network", "none", "container network mode for docker or podman evaluator sandboxes")
+	sandboxNetwork := fs.String("sandbox-network", "", "container network mode for docker or podman evaluator sandboxes")
+	memoryLimit := fs.String("memory-limit", "", "container memory limit for evaluator sandboxes, such as 1g or 512m")
+	pidsLimit := fs.Int("pids-limit", 0, "container process limit for evaluator sandboxes; 0 uses the profile default")
 	var env repeatedStrings
 	fs.Var(&env, "env", "environment variable for evaluators in KEY=VALUE form; may be repeated")
 	adoptBefore := fs.Bool("adopt", true, "adopt generated candidates before evaluation")
@@ -458,10 +471,17 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "evaluate failed: --cpu-limit must be at least 0\n")
 		return 2
 	}
+	if *pidsLimit < 0 {
+		fmt.Fprintf(stderr, "evaluate failed: --pids-limit must be at least 0\n")
+		return 2
+	}
 	sandbox, err := run.NormalizeSandboxOptions(run.SandboxOptions{
-		Engine:  *sandboxEngine,
-		Image:   *sandboxImage,
-		Network: *sandboxNetwork,
+		Profile:     *sandboxProfile,
+		Engine:      *sandboxEngine,
+		Image:       *sandboxImage,
+		Network:     *sandboxNetwork,
+		MemoryLimit: *memoryLimit,
+		PIDsLimit:   *pidsLimit,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "evaluate failed: %v\n", err)

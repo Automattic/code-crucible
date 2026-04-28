@@ -59,7 +59,7 @@ Usage:
   crucible run (--optimize TEXT | --task-file PATH) [--project DIR] [--target-path PATH] [--variants N] [--generate]
   crucible generate [--project DIR] [--run RUN_ID] [--agent codex]
   crucible adopt [--project DIR] [--run RUN_ID]
-  crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--nice N] [--cpu-limit N] [--sandbox-engine docker|podman --sandbox-image IMAGE]
+  crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--nice N] [--cpu-limit N] [--sandbox-profile PROFILE] [--sandbox-engine docker|podman --sandbox-image IMAGE]
   crucible next-round [--project DIR] [--run RUN_ID] [--parents N]
   crucible evolve [--project DIR] [--run RUN_ID] [--rounds N] [--parents N]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]

@@ -592,6 +592,11 @@ func TestEvaluateRejectsInvalidResourceOptions(t *testing.T) {
 			want: "--cpu-limit must be at least 0",
 		},
 		{
+			name: "pids limit",
+			args: []string{"evaluate", "--pids-limit", "-1"},
+			want: "--pids-limit must be at least 0",
+		},
+		{
 			name: "sandbox engine",
 			args: []string{"evaluate", "--sandbox-engine", "jail"},
 			want: "--sandbox-engine must be local, docker, or podman",
@@ -605,6 +610,21 @@ func TestEvaluateRejectsInvalidResourceOptions(t *testing.T) {
 			name: "local sandbox image",
 			args: []string{"evaluate", "--sandbox-image", "golang:1.25"},
 			want: "--sandbox-image requires --sandbox-engine docker or podman",
+		},
+		{
+			name: "local memory limit",
+			args: []string{"evaluate", "--memory-limit", "1g"},
+			want: "--memory-limit requires --sandbox-engine docker or podman",
+		},
+		{
+			name: "local sandbox profile",
+			args: []string{"evaluate", "--sandbox-profile", "strict"},
+			want: "--sandbox-profile strict requires --sandbox-engine docker or podman",
+		},
+		{
+			name: "invalid sandbox profile",
+			args: []string{"evaluate", "--sandbox-profile", "locked"},
+			want: "--sandbox-profile must be default, strict, or networked",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

@@ -120,6 +120,12 @@ func buildContainerEvaluatorCommand(evaluatorPath, candidateDir, runDir, metrics
 	if opts.CPULimit > 0 {
 		args = append(args, "--cpus", strconv.Itoa(opts.CPULimit))
 	}
+	if opts.Sandbox.MemoryLimit != "" {
+		args = append(args, "--memory", opts.Sandbox.MemoryLimit)
+	}
+	if opts.Sandbox.PIDsLimit > 0 {
+		args = append(args, "--pids-limit", strconv.Itoa(opts.Sandbox.PIDsLimit))
+	}
 
 	if opts.Sandbox.Engine == "podman" {
 		args = append(args, "--userns", "keep-id")
