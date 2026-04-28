@@ -532,7 +532,7 @@ Core packages:
 - `internal/model`: shared data model
 - `internal/scoring`: starter scoring logic
 
-See [docs/architecture.md](docs/architecture.md) for the current design and [docs/tui.md](docs/tui.md) for the planned TUI framework selection.
+See [docs/architecture.md](docs/architecture.md) for the current design, [docs/container-raw-socket-routing.md](docs/container-raw-socket-routing.md) for the planned container-only raw socket routing design, and [docs/tui.md](docs/tui.md) for the planned TUI framework selection.
 
 ## Development
 
@@ -632,7 +632,7 @@ Evaluator and external policy roadmap:
 - [x] Add direct-routed gateway URLs for clients that ignore proxy environment variables
 - [x] Package the fixture gateway for sandbox images without Go
 - [x] Decide raw socket routing scope: no local transparent interception; implement only inside Docker/Podman sandboxes
-- [ ] Design container-only raw socket routing with explicit sandbox/network setup
+- [x] Design container-only raw socket routing with explicit sandbox/network setup
 - [ ] Implement container-only raw socket routing through an isolated evaluator network and gateway sidecar
 - [x] Add local-mode warnings when raw socket/transparent routing would be required
 - [ ] Extend external trace capture for container-routed raw socket traffic once interception exists
