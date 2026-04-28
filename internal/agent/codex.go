@@ -20,6 +20,7 @@ const (
 )
 
 type CodexOptions struct {
+	ProviderName      string
 	Binary            string
 	ProjectDir        string
 	RunDir            string
@@ -33,18 +34,29 @@ type CodexOptions struct {
 	SkipGitRepoCheck  bool
 }
 
+type AgentEnvironmentPolicy struct {
+	Sandbox          string `json:"sandbox,omitempty"`
+	ApprovalPolicy   string `json:"approval_policy,omitempty"`
+	JSONEvents       bool   `json:"json_events,omitempty"`
+	SkipGitRepoCheck bool   `json:"skip_git_repo_check,omitempty"`
+}
+
 type CodexInvocation struct {
-	Command           []string  `json:"command"`
-	ProjectDir        string    `json:"project_dir"`
-	RunDir            string    `json:"run_dir"`
-	PromptPath        string    `json:"prompt_path"`
-	ScratchDir        string    `json:"scratch_dir,omitempty"`
-	StdoutPath        string    `json:"stdout_path"`
-	StderrPath        string    `json:"stderr_path"`
-	OutputLastMessage string    `json:"output_last_message"`
-	StartedAt         time.Time `json:"started_at"`
-	FinishedAt        time.Time `json:"finished_at,omitempty"`
-	ExitCode          int       `json:"exit_code"`
+	ProviderName      string                 `json:"provider_name"`
+	Model             string                 `json:"model,omitempty"`
+	Profile           string                 `json:"profile,omitempty"`
+	EnvironmentPolicy AgentEnvironmentPolicy `json:"environment_policy"`
+	Command           []string               `json:"command"`
+	ProjectDir        string                 `json:"project_dir"`
+	RunDir            string                 `json:"run_dir"`
+	PromptPath        string                 `json:"prompt_path"`
+	ScratchDir        string                 `json:"scratch_dir,omitempty"`
+	StdoutPath        string                 `json:"stdout_path"`
+	StderrPath        string                 `json:"stderr_path"`
+	OutputLastMessage string                 `json:"output_last_message"`
+	StartedAt         time.Time              `json:"started_at"`
+	FinishedAt        time.Time              `json:"finished_at,omitempty"`
+	ExitCode          int                    `json:"exit_code"`
 }
 
 type CodexResult struct {
@@ -151,9 +163,28 @@ func RunCodex(ctx context.Context, opts CodexOptions, stdout, stderr io.Writer) 
 		finalPath = filepath.Join(agentsDir, "codex-"+stamp+"-final.md")
 	}
 	opts.OutputLastMessage = finalPath
+	if strings.TrimSpace(opts.Sandbox) == "" {
+		opts.Sandbox = DefaultCodexSandbox
+	}
+	if strings.TrimSpace(opts.ApprovalPolicy) == "" {
+		opts.ApprovalPolicy = DefaultApprovalPolicy
+	}
 
 	command := BuildCodexExecCommand(opts)
+	providerName := NormalizeProviderName(opts.ProviderName)
+	if providerName == "" {
+		providerName = ProviderCodex
+	}
 	invocation := CodexInvocation{
+		ProviderName: providerName,
+		Model:        opts.Model,
+		Profile:      opts.Profile,
+		EnvironmentPolicy: AgentEnvironmentPolicy{
+			Sandbox:          opts.Sandbox,
+			ApprovalPolicy:   opts.ApprovalPolicy,
+			JSONEvents:       opts.JSONEvents,
+			SkipGitRepoCheck: opts.SkipGitRepoCheck,
+		},
 		Command:           command,
 		ProjectDir:        opts.ProjectDir,
 		RunDir:            opts.RunDir,

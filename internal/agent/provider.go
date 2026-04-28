@@ -75,6 +75,34 @@ func ValidateProvider(name string) error {
 	return fmt.Errorf("unsupported agent provider %q", name)
 }
 
+func ValidateProviderCapability(name, capability string) error {
+	provider, ok := Provider(name)
+	if !ok {
+		return fmt.Errorf("unsupported agent provider %q", NormalizeProviderName(name))
+	}
+	if provider.Supports(capability) {
+		return nil
+	}
+	return fmt.Errorf("agent provider %q does not support %s", provider.Name, capability)
+}
+
+func (p ProviderDefinition) Supports(capability string) bool {
+	switch strings.ToLower(strings.TrimSpace(capability)) {
+	case "discovery":
+		return p.Capabilities.SupportsDiscovery
+	case "generation":
+		return p.Capabilities.SupportsGeneration
+	case "evolution":
+		return p.Capabilities.SupportsEvolution
+	case "json-output":
+		return p.Capabilities.SupportsJSONOutput
+	case "git-repo":
+		return p.Capabilities.RequiresGitRepo
+	default:
+		return false
+	}
+}
+
 func ProviderNames() []string {
 	providers := BuiltinProviders()
 	names := make([]string, 0, len(providers))

@@ -67,6 +67,10 @@ func Create(opts Options) (*CreatedRun, error) {
 	if opts.Agent == "" {
 		opts.Agent = cfg.DefaultAgent
 	}
+	opts.Agent = agent.NormalizeProviderName(opts.Agent)
+	if err := agent.ValidateProviderCapability(opts.Agent, "generation"); err != nil {
+		return nil, err
+	}
 	if opts.Exploration < 0 {
 		opts.Exploration = 0
 	}

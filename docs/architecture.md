@@ -138,7 +138,7 @@ For `allowlist`, `mock`, `replay`, and `record` modes, each run archives an HTTP
 
 Agent integration is routed through a small provider contract. A provider declares whether it supports discovery, generation, evolution, JSON output, and whether it requires a Git repository. Built-in providers currently include `codex`, which supports discovery, generation, and evolution through Codex CLI, and `local`, which supports heuristic discovery without invoking a model.
 
-Each project can store a default provider in `.crucible/config.json` as `default_agent`. New work areas default to `codex`, and `crucible init --default-agent codex` can set it explicitly.
+Each project can store a default provider in `.crucible/config.json` as `default_agent`. New work areas default to `codex`, and `crucible init --default-agent codex` can set it explicitly. Agent-invoking commands accept `--agent`; generation and evolution resolve from the command flag, then the run archive, then the project default. Discovery defaults to `local` unless Codex is requested explicitly.
 
 The first live model-backed integration is Codex CLI. Code Crucible still writes a prompt package:
 
@@ -171,6 +171,8 @@ agents/
   codex-<timestamp>-invocation.json
   codex-final.md
 ```
+
+`codex-<timestamp>-invocation.json` records the selected provider, model/profile overrides, command, prompt path, stdout/stderr paths, final response path, exit status, and environment policy fields for reproducibility.
 
 Codex uses the host project as its working root. The prompt instructs it to write generated competitor artifacts only under the current round directory, use the run `tmp/` scratch area for optional verification work, avoid destructive cleanup commands, and not modify host project source outside `.crucible`.
 

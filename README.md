@@ -89,6 +89,8 @@ crucible init --default-agent codex
 
 The default is stored in `.crucible/config.json` as `default_agent`. Built-in providers currently include `codex` for discovery, generation, and evolution, plus `local` for heuristic discovery that does not invoke a model.
 
+Commands that invoke an agent accept `--agent`. `run`, `generate`, and `evolve` resolve the provider from the command flag, then the run archive's `agent`, then the project `default_agent`. `discover` defaults to `local` unless `--agent codex` is supplied, so source-path discovery can stay offline by default.
+
 If the source path or evaluator boundary is unclear, create a discovery plan first:
 
 ```bash
@@ -297,6 +299,8 @@ Generation artifacts are stored under:
   codex-<timestamp>-invocation.json
   codex-final.md
 ```
+
+The invocation JSON archives the selected provider name, model/profile overrides, command, prompt path, stdout/stderr paths, final response path, exit status, and Codex environment policy such as sandbox, approval mode, JSON event mode, and Git-repository check behavior.
 
 After Codex exits successfully, Code Crucible scans the current round directory for valid `candidate-NNNN` artifacts and adds them to `leaderboard.json` with status `generated`.
 
@@ -576,11 +580,11 @@ Model-agnostic agent roadmap:
 
 - [x] Define a stable provider contract for discovery, generation, and evolution agents
 - [x] Add a project-level default agent setting in `.crucible/config.json`
-- [ ] Add per-run and per-command agent selection flags consistently across `discover`, `run`, `generate`, and `evolve`
-- [ ] Archive selected agent name, model, provider command, environment policy, prompt path, stdout/stderr, final response, and exit status for reproducibility
+- [x] Add per-run and per-command agent selection flags consistently across `discover`, `run`, `generate`, and `evolve`
+- [x] Archive selected agent name, model, provider command, environment policy, prompt path, stdout/stderr, final response, and exit status for reproducibility
 - [ ] Support configurable local command providers in addition to the built-in Codex provider
 - [x] Add provider capability metadata, such as supports-discovery, supports-generation, supports-json-output, and requires-git-repo
-- [ ] Add validation and dry-run output for provider command construction
+- [x] Add validation and dry-run output for provider command construction
 - [ ] Add interactive agent selection and project default-agent management
 - [ ] Keep Codex as the first concrete provider while avoiding Codex-specific assumptions in shared prompt, archive, and tournament code
 

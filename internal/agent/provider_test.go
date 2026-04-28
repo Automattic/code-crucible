@@ -42,3 +42,12 @@ func TestValidateProvider(t *testing.T) {
 		t.Fatal("ValidateProvider(unknown) succeeded")
 	}
 }
+
+func TestValidateProviderCapability(t *testing.T) {
+	if err := ValidateProviderCapability("codex", "generation"); err != nil {
+		t.Fatalf("ValidateProviderCapability(codex, generation) returned error: %v", err)
+	}
+	if err := ValidateProviderCapability("local", "generation"); err == nil {
+		t.Fatal("ValidateProviderCapability(local, generation) succeeded")
+	}
+}

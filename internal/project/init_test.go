@@ -40,6 +40,13 @@ func TestInitWithOptionsRejectsUnsupportedDefaultAgent(t *testing.T) {
 	}
 }
 
+func TestInitWithOptionsRejectsDiscoveryOnlyDefaultAgent(t *testing.T) {
+	_, err := InitWithOptions(t.TempDir(), InitOptions{DefaultAgent: "local"})
+	if err == nil {
+		t.Fatal("InitWithOptions succeeded with discovery-only default agent")
+	}
+}
+
 func TestLoadNormalizesLegacyConfigDefaults(t *testing.T) {
 	projectDir := t.TempDir()
 	if err := os.MkdirAll(WorkDir(projectDir), 0o755); err != nil {

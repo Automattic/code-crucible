@@ -95,13 +95,22 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	runAgent := *agentName
-	if *generateNow {
-		if runAgent == "" {
-			runAgent = "codex"
+	runAgent := agent.NormalizeProviderName(*agentName)
+	if runAgent != "" {
+		if err := agent.ValidateProviderCapability(runAgent, "generation"); err != nil {
+			fmt.Fprintf(stderr, "run failed: %v\n", err)
+			return 2
 		}
-		if runAgent != "codex" {
-			fmt.Fprintf(stderr, "run --generate currently supports only --agent codex\n")
+	}
+	if *generateNow && runAgent == "" {
+		cfg, err := project.Ensure(*projectDir)
+		if err != nil {
+			fmt.Fprintf(stderr, "run setup failed: %v\n", err)
+			return 1
+		}
+		runAgent = cfg.DefaultAgent
+		if err := agent.ValidateProviderCapability(runAgent, "generation"); err != nil {
+			fmt.Fprintf(stderr, "run --generate failed: %v\n", err)
 			return 2
 		}
 	}
@@ -137,7 +146,7 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 		return generateWithOptions(generationOptions{
 			ProjectDir:        *projectDir,
 			RunID:             created.ID,
-			AgentName:         runAgent,
+			AgentName:         "",
 			CodexBin:          *codexBin,
 			Model:             *model,
 			Profile:           *profile,
@@ -389,7 +398,7 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 	runID := fs.String("run", "", "run ID; defaults to latest run")
 	rounds := fs.Int("rounds", 1, "number of generate/evaluate cycles to run")
 	parents := fs.Int("parents", defaultVariantCount, "number of passed candidates to seed each follow-up round")
-	agentName := fs.String("agent", "codex", "agent provider to run")
+	agentName := fs.String("agent", "", "agent provider to run; defaults to the run or project default")
 	codexBin := fs.String("codex-bin", agent.DefaultCodexBinary, "Codex CLI binary")
 	model := fs.String("model", "", "Codex model override")
 	profile := fs.String("profile", "", "Codex config profile")

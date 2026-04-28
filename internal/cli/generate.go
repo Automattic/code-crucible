@@ -9,6 +9,8 @@ import (
 
 	"github.com/Automattic/code-crucible/internal/agent"
 	"github.com/Automattic/code-crucible/internal/archive"
+	"github.com/Automattic/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/project"
 	"github.com/Automattic/code-crucible/internal/run"
 )
 
@@ -32,7 +34,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	runID := fs.String("run", "", "run ID; defaults to latest run")
-	agentName := fs.String("agent", "codex", "agent provider to run")
+	agentName := fs.String("agent", "", "agent provider to run; defaults to the run or project default")
 	codexBin := fs.String("codex-bin", agent.DefaultCodexBinary, "Codex CLI binary")
 	model := fs.String("model", "", "Codex model override")
 	profile := fs.String("profile", "", "Codex config profile")
@@ -63,14 +65,6 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 }
 
 func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
-	if opts.AgentName == "" {
-		opts.AgentName = "codex"
-	}
-	if opts.AgentName != "codex" {
-		fmt.Fprintf(stderr, "generate currently supports only --agent codex\n")
-		return 2
-	}
-
 	configPath, err := archive.RunConfigPath(opts.ProjectDir, opts.RunID)
 	if err != nil {
 		fmt.Fprintf(stderr, "generate failed: %v\n", err)
@@ -85,6 +79,15 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "generate failed: %v\n", err)
 		return 1
+	}
+	provider, err := resolveGenerationProvider(absProject, cfg, opts.AgentName)
+	if err != nil {
+		fmt.Fprintf(stderr, "generate failed: %v\n", err)
+		return 2
+	}
+	if provider.Kind != "codex" {
+		fmt.Fprintf(stderr, "generate failed: provider %q is not implemented for generation yet\n", provider.Name)
+		return 2
 	}
 	projectDir := absProject
 	if cfg.ProjectDir != "" {
@@ -108,6 +111,7 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 	}
 
 	codexOpts := agent.CodexOptions{
+		ProviderName:      provider.Name,
 		Binary:            opts.CodexBin,
 		ProjectDir:        projectDir,
 		RunDir:            runDir,
@@ -123,6 +127,7 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 
 	command := agent.BuildCodexExecCommand(codexOpts)
 	if opts.DryRun {
+		fmt.Fprintf(stdout, "Agent provider: %s\n", provider.Name)
 		fmt.Fprintf(stdout, "Codex command:\n%s\n\n", agent.FormatCommand(command))
 		fmt.Fprintf(stdout, "Prompt stdin: %s\n", promptPath)
 		fmt.Fprintf(stdout, "Project root: %s\n", projectDir)
@@ -131,7 +136,7 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	fmt.Fprintf(stdout, "Running Codex for run %s\n", cfg.ID)
+	fmt.Fprintf(stdout, "Running %s for run %s\n", provider.Name, cfg.ID)
 	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
 	result, err := agent.RunCodex(context.Background(), codexOpts, stdout, stderr)
 	if err != nil {
@@ -162,4 +167,27 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 	}
 	printAdoptionReport(stdout, stderr, report)
 	return 0
+}
+
+func resolveGenerationProvider(projectDir string, cfg *model.RunConfig, requested string) (agent.ProviderDefinition, error) {
+	name := agent.NormalizeProviderName(requested)
+	if name == "" && cfg != nil {
+		name = agent.NormalizeProviderName(cfg.Agent)
+	}
+	if name == "" {
+		if projectConfig, err := project.Load(projectDir); err == nil {
+			name = agent.NormalizeProviderName(projectConfig.DefaultAgent)
+		}
+	}
+	if name == "" {
+		name = agent.ProviderCodex
+	}
+	provider, ok := agent.Provider(name)
+	if !ok {
+		return agent.ProviderDefinition{}, fmt.Errorf("unsupported --agent %q", name)
+	}
+	if !provider.Supports("generation") {
+		return agent.ProviderDefinition{}, fmt.Errorf("agent provider %q does not support generation", provider.Name)
+	}
+	return provider, nil
 }

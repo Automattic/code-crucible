@@ -57,7 +57,7 @@ func InitWithOptions(projectDir string, opts InitOptions) (*Config, error) {
 	if opts.DefaultAgent == "" {
 		opts.DefaultAgent = agent.ProviderCodex
 	}
-	if err := agent.ValidateProvider(opts.DefaultAgent); err != nil {
+	if err := agent.ValidateProviderCapability(opts.DefaultAgent, "generation"); err != nil {
 		return nil, err
 	}
 

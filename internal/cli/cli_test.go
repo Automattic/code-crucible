@@ -467,11 +467,48 @@ func TestRunGenerateRejectsUnsupportedAgentBeforeCreatingRun(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("Run returned %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "run --generate currently supports only --agent codex") {
+	if !strings.Contains(stderr.String(), `unsupported agent provider "prompt"`) {
 		t.Fatalf("stderr did not explain unsupported agent:\n%s", stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(projectDir, ".crucible", "runs")); !os.IsNotExist(err) {
 		t.Fatalf("expected no run archive to be created, stat err: %v", err)
+	}
+}
+
+func TestGenerateDryRunUsesRunAgentDefault(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--optimize", "make ranking faster",
+		"--source-path", "internal/search/rank.go",
+		"--agent", "codex",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"generate",
+		"--project", projectDir,
+		"--dry-run",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("generate returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Agent provider: codex") {
+		t.Fatalf("stdout did not include resolved provider:\n%s", stdout.String())
 	}
 }
 

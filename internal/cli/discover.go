@@ -53,14 +53,19 @@ func runDiscover(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	if *agentName == "" {
-		*agentName = "local"
+	discoveryAgent := agent.NormalizeProviderName(*agentName)
+	if discoveryAgent == "" {
+		discoveryAgent = agent.ProviderLocal
 	}
-	switch *agentName {
-	case "local":
+	if err := agent.ValidateProviderCapability(discoveryAgent, "discovery"); err != nil {
+		fmt.Fprintf(stderr, "discover failed: %v\n", err)
+		return 2
+	}
+	switch discoveryAgent {
+	case agent.ProviderLocal:
 		printDiscoveryPlan(stdout, plan)
 		return 0
-	case "codex":
+	case agent.ProviderCodex:
 		return runCodexDiscovery(*projectDir, plan, codexDiscoveryOptions{
 			CodexBin:         *codexBin,
 			Model:            *model,
@@ -72,7 +77,7 @@ func runDiscover(args []string, stdout, stderr io.Writer) int {
 			DryRun:           *dryRun,
 		}, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "discover failed: unsupported --agent %q\n", *agentName)
+		fmt.Fprintf(stderr, "discover failed: provider %q is not implemented for discovery yet\n", discoveryAgent)
 		return 2
 	}
 }
@@ -99,6 +104,7 @@ func runCodexDiscovery(projectDir string, plan *discovery.Plan, opts codexDiscov
 	outputLastMessage := filepath.Join(planDir, "agent-plan.md")
 	agentPlanPath := discovery.AgentPlanPath(planDir)
 	codexOpts := agent.CodexOptions{
+		ProviderName:      agent.ProviderCodex,
 		Binary:            opts.CodexBin,
 		ProjectDir:        absProject,
 		RunDir:            planDir,
