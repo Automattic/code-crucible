@@ -384,7 +384,7 @@ For `deny` mode, container evaluation enforces network isolation with `--sandbox
 
 For `allowlist` mode, Code Crucible starts the archived gateway as an HTTP/HTTPS proxy and denies proxied requests to hosts outside `--allow-hosts`. This is partial enforcement: clients that ignore proxy environment variables still require evaluator-specific isolation, and live allowlisted hosts may be unreachable when the container sandbox network is `none`.
 
-Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock` and `replay` evaluation, Code Crucible exports gateway, proxy, and test CA environment variables, then starts the archived mock gateway on loopback before running the evaluator. Container mode can combine this with `--sandbox-network none`; local mode still cannot block unrelated host-network access. Record mode is currently documented and surfaced to agents and evaluators, but framework-level recording remains on the roadmap. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
+Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock`, `replay`, and `record` evaluation, Code Crucible exports gateway and proxy environment variables, then starts the archived gateway before running the evaluator. Record mode captures proxied HTTP responses into each candidate's `recorded-http-fixtures.json` and writes `external-trace.json`; transparent HTTPS tunnels are traced but not replay-captured yet. Container mode can combine this with `--sandbox-network none`; local mode still cannot block unrelated host-network access. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
 
 ## Project Work Area
 
@@ -478,7 +478,7 @@ Feature roadmap:
 Evaluator roadmap:
 
 - [x] Enforce `allowlist` mode for proxied HTTP and HTTPS traffic
-- [ ] Add external trace collection and `record` mode capture
+- [x] Add external trace collection and `record` mode capture
 - [ ] Add lower-level routing for clients that ignore proxy environment variables
 - [ ] Package the fixture gateway for sandbox images without Go
 

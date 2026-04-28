@@ -4,6 +4,7 @@ func mockGatewaySource() string {
 	return `package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -21,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -50,17 +52,53 @@ type response struct {
 	Body    string            ` + "`json:\"body,omitempty\"`" + `
 }
 
+type traceSummary struct {
+	Mode          string       ` + "`json:\"mode,omitempty\"`" + `
+	RequestCount  int          ` + "`json:\"request_count\"`" + `
+	UniqueHosts   []string     ` + "`json:\"unique_hosts,omitempty\"`" + `
+	BytesSent     int64        ` + "`json:\"bytes_sent,omitempty\"`" + `
+	BytesReceived int64        ` + "`json:\"bytes_received,omitempty\"`" + `
+	FailureCount  int          ` + "`json:\"failure_count,omitempty\"`" + `
+	Events        []traceEvent ` + "`json:\"events,omitempty\"`" + `
+}
+
+type traceEvent struct {
+	Method        string ` + "`json:\"method\"`" + `
+	URL           string ` + "`json:\"url\"`" + `
+	Host          string ` + "`json:\"host,omitempty\"`" + `
+	Status        int    ` + "`json:\"status\"`" + `
+	BytesSent     int64  ` + "`json:\"bytes_sent,omitempty\"`" + `
+	BytesReceived int64  ` + "`json:\"bytes_received,omitempty\"`" + `
+	Error         string ` + "`json:\"error,omitempty\"`" + `
+	Recorded      bool   ` + "`json:\"recorded,omitempty\"`" + `
+}
+
+type traceRecorder struct {
+	mu     sync.Mutex
+	path   string
+	mode   string
+	events []traceEvent
+	hosts  map[string]bool
+}
+
 type gateway struct {
 	fixtures    map[string]fixture
 	signer      *certSigner
 	allowlist  []string
 	passthrough bool
 	transport   http.RoundTripper
+	trace       *traceRecorder
+	recordPath  string
+	recordMu    sync.Mutex
+	recorded    []fixture
 }
 
 func main() {
 	fixturesPath := flag.String("fixtures", "http-fixtures.json", "HTTP fixture JSON file")
 	addr := flag.String("addr", "127.0.0.1:0", "listen address")
+	mode := flag.String("mode", "", "external policy mode for trace output")
+	tracePath := flag.String("trace", "", "external trace summary output path")
+	recordFixturesPath := flag.String("record-fixtures", "", "recorded HTTP fixtures output path")
 	caCertPath := flag.String("ca-cert", "", "CA certificate PEM for HTTPS CONNECT replay")
 	caKeyPath := flag.String("ca-key", "", "CA private key PEM for HTTPS CONNECT replay")
 	allowHosts := flag.String("allow-hosts", "", "comma-separated host allowlist for passthrough proxy mode")
@@ -80,23 +118,21 @@ func main() {
 	}
 
 	allowlist := parseAllowlist(*allowHosts)
-	if *passthrough && len(allowlist) == 0 {
-		log.Fatal("-allow-hosts is required with -passthrough")
-	}
-
 	gateway := gateway{
 		fixtures:    fixtures,
 		signer:      signer,
 		allowlist:  allowlist,
 		passthrough: *passthrough,
 		transport:   http.DefaultTransport,
+		trace:       newTraceRecorder(*tracePath, *mode),
+		recordPath:  strings.TrimSpace(*recordFixturesPath),
 	}
 	server := &http.Server{Addr: *addr, Handler: http.HandlerFunc(gateway.handle)}
 	log.Printf("serving %d HTTP fixtures on %s", len(fixtures), *addr)
 	log.Fatal(server.ListenAndServe())
 }
 
-func (g gateway) handle(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) handle(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
 		g.handleConnect(w, r)
 		return
@@ -104,7 +140,7 @@ func (g gateway) handle(w http.ResponseWriter, r *http.Request) {
 	g.serveFixture(w, r)
 }
 
-func (g gateway) handleConnect(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if g.passthrough {
 		g.proxyConnect(w, r)
 		return
@@ -159,7 +195,7 @@ func (g gateway) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-func (g gateway) serveFixture(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) serveFixture(w http.ResponseWriter, r *http.Request) {
 	key := strings.ToUpper(r.Method) + " " + requestURL(r)
 	fixture, ok := g.fixtures[key]
 	if !ok {
@@ -167,10 +203,37 @@ func (g gateway) serveFixture(w http.ResponseWriter, r *http.Request) {
 			g.proxyHTTP(w, r)
 			return
 		}
+		g.recordTrace(traceEvent{
+			Method: r.Method,
+			URL:    requestURL(r),
+			Host:   requestHost(r),
+			Status: http.StatusNotFound,
+			Error:  "no fixture for " + key,
+		})
 		http.Error(w, "no fixture for "+key, http.StatusNotFound)
 		return
 	}
-	if err := validateRequest(r, fixture); err != nil {
+	reqBody, err := readRequestBody(r)
+	if err != nil {
+		g.recordTrace(traceEvent{
+			Method: r.Method,
+			URL:    requestURL(r),
+			Host:   requestHost(r),
+			Status: http.StatusBadRequest,
+			Error:  err.Error(),
+		})
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateRequest(r, fixture, reqBody); err != nil {
+		g.recordTrace(traceEvent{
+			Method:    r.Method,
+			URL:       requestURL(r),
+			Host:      requestHost(r),
+			Status:    http.StatusBadRequest,
+			BytesSent: int64(len(reqBody)),
+			Error:     err.Error(),
+		})
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -179,12 +242,39 @@ func (g gateway) serveFixture(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(fixture.Response.Status)
 	_, _ = w.Write([]byte(fixture.Response.Body))
+	g.recordTrace(traceEvent{
+		Method:        r.Method,
+		URL:           requestURL(r),
+		Host:          requestHost(r),
+		Status:        fixture.Response.Status,
+		BytesSent:     int64(len(reqBody)),
+		BytesReceived: int64(len(fixture.Response.Body)),
+	})
 }
 
-func (g gateway) proxyHTTP(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) proxyHTTP(w http.ResponseWriter, r *http.Request) {
 	host := requestHost(r)
 	if !g.hostAllowed(host) {
+		g.recordTrace(traceEvent{
+			Method: r.Method,
+			URL:    requestURL(r),
+			Host:   host,
+			Status: http.StatusForbidden,
+			Error:  "host not in allowlist",
+		})
 		http.Error(w, "host not in allowlist: "+host, http.StatusForbidden)
+		return
+	}
+	reqBody, err := readRequestBody(r)
+	if err != nil {
+		g.recordTrace(traceEvent{
+			Method: r.Method,
+			URL:    requestURL(r),
+			Host:   host,
+			Status: http.StatusBadRequest,
+			Error:  err.Error(),
+		})
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	out := r.Clone(r.Context())
@@ -193,22 +283,69 @@ func (g gateway) proxyHTTP(w http.ResponseWriter, r *http.Request) {
 		out.URL.Scheme = "http"
 		out.URL.Host = r.Host
 	}
+	out.Body = io.NopCloser(bytes.NewReader(reqBody))
+	out.ContentLength = int64(len(reqBody))
 	out.Header = cloneHeader(r.Header)
 	out.Header.Del("Proxy-Connection")
 	resp, err := g.transport.RoundTrip(out)
 	if err != nil {
+		g.recordTrace(traceEvent{
+			Method:    r.Method,
+			URL:       requestURL(r),
+			Host:      host,
+			Status:    http.StatusBadGateway,
+			BytesSent: int64(len(reqBody)),
+			Error:     err.Error(),
+		})
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		g.recordTrace(traceEvent{
+			Method:    r.Method,
+			URL:       requestURL(r),
+			Host:      host,
+			Status:    http.StatusBadGateway,
+			BytesSent: int64(len(reqBody)),
+			Error:     err.Error(),
+		})
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	recorded := false
+	if g.recordPath != "" {
+		if err := g.recordFixture(r, reqBody, resp, respBody); err != nil {
+			log.Printf("record fixture %s %s: %v", r.Method, requestURL(r), err)
+		} else {
+			recorded = true
+		}
+	}
+	g.recordTrace(traceEvent{
+		Method:        r.Method,
+		URL:           requestURL(r),
+		Host:          host,
+		Status:        resp.StatusCode,
+		BytesSent:     int64(len(reqBody)),
+		BytesReceived: int64(len(respBody)),
+		Recorded:      recorded,
+	})
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	_, _ = w.Write(respBody)
 }
 
-func (g gateway) proxyConnect(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) proxyConnect(w http.ResponseWriter, r *http.Request) {
 	host := connectHost(r.Host)
 	if !g.hostAllowed(host) {
+		g.recordTrace(traceEvent{
+			Method: http.MethodConnect,
+			URL:    "https://" + r.Host,
+			Host:   host,
+			Status: http.StatusForbidden,
+			Error:  "host not in allowlist",
+		})
 		http.Error(w, "host not in allowlist: "+host, http.StatusForbidden)
 		return
 	}
@@ -218,12 +355,26 @@ func (g gateway) proxyConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	upstream, err := net.DialTimeout("tcp", target, 30*time.Second)
 	if err != nil {
+		g.recordTrace(traceEvent{
+			Method: http.MethodConnect,
+			URL:    "https://" + r.Host,
+			Host:   host,
+			Status: http.StatusBadGateway,
+			Error:  err.Error(),
+		})
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		_ = upstream.Close()
+		g.recordTrace(traceEvent{
+			Method: http.MethodConnect,
+			URL:    "https://" + r.Host,
+			Host:   host,
+			Status: http.StatusInternalServerError,
+			Error:  "response writer does not support hijacking",
+		})
 		http.Error(w, "response writer does not support hijacking", http.StatusInternalServerError)
 		return
 	}
@@ -236,14 +387,30 @@ func (g gateway) proxyConnect(w http.ResponseWriter, r *http.Request) {
 	if _, err := conn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
 		_ = conn.Close()
 		_ = upstream.Close()
+		g.recordTrace(traceEvent{
+			Method: http.MethodConnect,
+			URL:    "https://" + r.Host,
+			Host:   host,
+			Status: http.StatusBadGateway,
+			Error:  err.Error(),
+		})
 		log.Printf("ack CONNECT %s: %v", r.Host, err)
 		return
 	}
+	g.recordTrace(traceEvent{
+		Method: http.MethodConnect,
+		URL:    "https://" + r.Host,
+		Host:   host,
+		Status: http.StatusOK,
+	})
 	go copyAndClose(upstream, conn)
 	go copyAndClose(conn, upstream)
 }
 
-func (g gateway) hostAllowed(host string) bool {
+func (g *gateway) hostAllowed(host string) bool {
+	if len(g.allowlist) == 0 {
+		return true
+	}
 	host = normalizeHost(host)
 	for _, allowed := range g.allowlist {
 		if allowed == host {
@@ -254,6 +421,98 @@ func (g gateway) hostAllowed(host string) bool {
 		}
 	}
 	return false
+}
+
+func (g *gateway) recordTrace(event traceEvent) {
+	if g.trace != nil {
+		g.trace.record(event)
+	}
+}
+
+func newTraceRecorder(path, mode string) *traceRecorder {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	recorder := &traceRecorder{
+		path:  path,
+		mode:  strings.TrimSpace(mode),
+		hosts: map[string]bool{},
+	}
+	_ = recorder.flush()
+	return recorder
+}
+
+func (r *traceRecorder) record(event traceEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	event.Host = normalizeHost(event.Host)
+	r.events = append(r.events, event)
+	if event.Host != "" {
+		r.hosts[event.Host] = true
+	}
+	_ = r.flushLocked()
+}
+
+func (r *traceRecorder) flush() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.flushLocked()
+}
+
+func (r *traceRecorder) flushLocked() error {
+	summary := traceSummary{
+		Mode:         r.mode,
+		RequestCount: len(r.events),
+		Events:       append([]traceEvent(nil), r.events...),
+	}
+	for host := range r.hosts {
+		summary.UniqueHosts = append(summary.UniqueHosts, host)
+	}
+	sort.Strings(summary.UniqueHosts)
+	for _, event := range r.events {
+		summary.BytesSent += event.BytesSent
+		summary.BytesReceived += event.BytesReceived
+		if event.Error != "" || event.Status >= 400 {
+			summary.FailureCount++
+		}
+	}
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(r.path, data, 0o644)
+}
+
+func (g *gateway) recordFixture(r *http.Request, reqBody []byte, resp *http.Response, respBody []byte) error {
+	g.recordMu.Lock()
+	defer g.recordMu.Unlock()
+	id := fmt.Sprintf("recorded-%04d", len(g.recorded)+1)
+	recorded := fixture{
+		ID: id,
+		Request: request{
+			Method: strings.ToUpper(r.Method),
+			URL:    requestURL(r),
+		},
+		Response: response{
+			Status:  resp.StatusCode,
+			Headers: firstHeaderValues(resp.Header),
+			Body:    string(respBody),
+		},
+	}
+	if len(reqBody) > 0 {
+		sum := sha256.Sum256(reqBody)
+		recorded.Request.BodySHA256 = hex.EncodeToString(sum[:])
+	}
+	g.recorded = append(g.recorded, recorded)
+	set := fixtureSet{Version: 1, Fixtures: append([]fixture(nil), g.recorded...)}
+	data, err := json.MarshalIndent(set, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(g.recordPath, data, 0o644)
 }
 
 func loadFixtures(path string) (map[string]fixture, error) {
@@ -446,7 +705,32 @@ func copyAndClose(dst, src net.Conn) {
 	_ = src.Close()
 }
 
-func validateRequest(r *http.Request, fixture fixture) error {
+func readRequestBody(r *http.Request) ([]byte, error) {
+	if r.Body == nil {
+		return nil, nil
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return body, nil
+}
+
+func firstHeaderValues(header http.Header) map[string]string {
+	if len(header) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for key, values := range header {
+		if len(values) > 0 {
+			out[key] = values[0]
+		}
+	}
+	return out
+}
+
+func validateRequest(r *http.Request, fixture fixture, body []byte) error {
 	for name, value := range fixture.Request.Headers {
 		if got := r.Header.Get(name); got != value {
 			return fmt.Errorf("request header %s = %q, want %q", name, got, value)
@@ -454,10 +738,6 @@ func validateRequest(r *http.Request, fixture fixture) error {
 	}
 	if fixture.Request.BodySHA256 == "" {
 		return nil
-	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return err
 	}
 	sum := sha256.Sum256(body)
 	got := hex.EncodeToString(sum[:])

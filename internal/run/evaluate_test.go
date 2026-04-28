@@ -326,6 +326,37 @@ func TestExternalEvaluationEnvAddsAllowlistGatewayDefaults(t *testing.T) {
 	}
 }
 
+func TestExternalCandidateEnvAddsTraceAndRecordPaths(t *testing.T) {
+	candidateDir := t.TempDir()
+	env, tracePath, recordPath := externalCandidateEnv(model.ExternalPolicy{
+		Mode: model.ExternalModeRecord,
+	}, SandboxOptions{}, candidateDir, []string{
+		"CRUCIBLE_MOCK_GATEWAY_SOURCE=/tmp/mock-gateway.go",
+		"CRUCIBLE_MOCK_GATEWAY_ADDR=127.0.0.1:18080",
+		"CRUCIBLE_MOCK_GATEWAY_URL=http://127.0.0.1:18080",
+		"HTTP_PROXY=http://127.0.0.1:18080",
+		"HTTPS_PROXY=http://127.0.0.1:18080",
+	})
+
+	if filepath.Base(tracePath) != "external-trace.json" {
+		t.Fatalf("tracePath = %q, want external-trace.json", tracePath)
+	}
+	if filepath.Base(recordPath) != "recorded-http-fixtures.json" {
+		t.Fatalf("recordPath = %q, want recorded-http-fixtures.json", recordPath)
+	}
+	for _, wantPrefix := range []string{
+		"CRUCIBLE_EXTERNAL_TRACE=" + filepath.ToSlash(tracePath),
+		"CRUCIBLE_RECORD_FIXTURES=" + filepath.ToSlash(recordPath),
+		"CRUCIBLE_MOCK_GATEWAY_ADDR=127.0.0.1:",
+		"HTTP_PROXY=http://127.0.0.1:",
+		"HTTPS_PROXY=http://127.0.0.1:",
+	} {
+		if !containsPrefix(env, wantPrefix) {
+			t.Fatalf("env missing prefix %q: %#v", wantPrefix, env)
+		}
+	}
+}
+
 func TestWrapTasksetCommand(t *testing.T) {
 	name, args := wrapTasksetCommand("bash", []string{"evaluator.sh"}, 2)
 	if name != "taskset" {
@@ -489,9 +520,13 @@ func TestSandboxResourceWrapperStartsMockGateway(t *testing.T) {
 		"CRUCIBLE_MOCK_GATEWAY_SOURCE",
 		"CRUCIBLE_HTTP_FIXTURES",
 		"CRUCIBLE_ALLOWED_HOSTS",
+		"CRUCIBLE_EXTERNAL_TRACE",
+		"CRUCIBLE_RECORD_FIXTURES",
 		"gateway_args=(\"$CRUCIBLE_MOCK_GATEWAY_SOURCE\"",
 		"-allow-hosts",
 		"-passthrough",
+		"-trace",
+		"-record-fixtures",
 		"-ca-cert",
 		"-ca-key",
 		"go run \"${gateway_args[@]}\"",
@@ -598,6 +633,11 @@ func TestExternalPolicyEnforcement(t *testing.T) {
 	}, SandboxOptions{})
 	if enforcement.Status != "partial" || enforcement.Mechanism != "proxy-allowlist" || len(enforcement.Warnings) == 0 {
 		t.Fatalf("allowlist enforcement = %#v, want partial proxy warning", enforcement)
+	}
+
+	enforcement = externalPolicyEnforcement(model.ExternalPolicy{Mode: model.ExternalModeRecord}, SandboxOptions{})
+	if enforcement.Status != "partial" || enforcement.Mechanism != "proxy-record" || len(enforcement.Warnings) == 0 {
+		t.Fatalf("record enforcement = %#v, want partial proxy record warning", enforcement)
 	}
 }
 
@@ -817,6 +857,15 @@ func freeTCPAddr(t *testing.T) string {
 func containsArg(args []string, want string) bool {
 	for _, arg := range args {
 		if arg == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPrefix(args []string, want string) bool {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, want) {
 			return true
 		}
 	}

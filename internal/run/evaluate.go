@@ -1,7 +1,7 @@
 package run
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,19 +36,21 @@ type SandboxOptions struct {
 }
 
 type CandidateEvaluation struct {
-	ID               string                           `json:"id"`
-	Status           string                           `json:"status"`
-	Score            float64                          `json:"score"`
-	ScoreExplanation *model.ScoreExplanation          `json:"score_explanation,omitempty"`
-	MetricsPath      string                           `json:"metrics_path"`
-	ResourcePath     string                           `json:"resource_metrics_path,omitempty"`
-	VerdictPath      string                           `json:"verdict_path"`
-	StdoutPath       string                           `json:"stdout_path"`
-	StderrPath       string                           `json:"stderr_path"`
-	Sandbox          *SandboxOptions                  `json:"sandbox,omitempty"`
-	ExternalPolicy   *model.ExternalPolicyEnforcement `json:"external_policy,omitempty"`
-	Errors           []string                         `json:"errors,omitempty"`
-	Warnings         []string                         `json:"warnings,omitempty"`
+	ID                 string                           `json:"id"`
+	Status             string                           `json:"status"`
+	Score              float64                          `json:"score"`
+	ScoreExplanation   *model.ScoreExplanation          `json:"score_explanation,omitempty"`
+	MetricsPath        string                           `json:"metrics_path"`
+	ResourcePath       string                           `json:"resource_metrics_path,omitempty"`
+	ExternalTracePath  string                           `json:"external_trace_path,omitempty"`
+	RecordFixturesPath string                           `json:"record_fixtures_path,omitempty"`
+	VerdictPath        string                           `json:"verdict_path"`
+	StdoutPath         string                           `json:"stdout_path"`
+	StderrPath         string                           `json:"stderr_path"`
+	Sandbox            *SandboxOptions                  `json:"sandbox,omitempty"`
+	ExternalPolicy     *model.ExternalPolicyEnforcement `json:"external_policy,omitempty"`
+	Errors             []string                         `json:"errors,omitempty"`
+	Warnings           []string                         `json:"warnings,omitempty"`
 }
 
 type EvaluationReport struct {
@@ -96,13 +98,6 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 	evaluatorEnv := appendEnvDefault(opts.Env, "CRUCIBLE_PROJECT_DIR", absProject)
 	evaluatorEnv = appendEnvDefault(evaluatorEnv, "CRUCIBLE_RUN_DIR", runDir)
 	evaluatorEnv = externalEvaluationEnv(policy, runDir, evaluatorEnv)
-	if !sandboxEnabled(opts.Sandbox) {
-		cleanup, err := startLocalMockGateway(context.Background(), evaluatorEnv, filepath.Join(runDir, "external", "mock-gateway.local.log"))
-		if err != nil {
-			return nil, err
-		}
-		defer cleanup()
-	}
 
 	report := &EvaluationReport{
 		RunID:           cfg.ID,
@@ -265,6 +260,10 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	stdoutPath := filepath.Join(candidateDir, "evaluation.stdout.log")
 	stderrPath := filepath.Join(candidateDir, "evaluation.stderr.log")
 
+	candidateEnv, tracePath, recordFixturesPath := externalCandidateEnv(cfg.External, execOpts.Sandbox, candidateDir, execOpts.Env)
+	candidateExecOpts := execOpts
+	candidateExecOpts.Env = candidateEnv
+
 	evaluation := CandidateEvaluation{
 		ID:           result.Candidate.ID,
 		MetricsPath:  filepath.ToSlash(metricsPath),
@@ -272,6 +271,12 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 		VerdictPath:  filepath.ToSlash(verdictPath),
 		StdoutPath:   filepath.ToSlash(stdoutPath),
 		StderrPath:   filepath.ToSlash(stderrPath),
+	}
+	if tracePath != "" {
+		evaluation.ExternalTracePath = filepath.ToSlash(tracePath)
+	}
+	if recordFixturesPath != "" {
+		evaluation.RecordFixturesPath = filepath.ToSlash(recordFixturesPath)
 	}
 	if sandboxEnabled(execOpts.Sandbox) {
 		sandbox := execOpts.Sandbox
@@ -282,7 +287,7 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	evaluation.Warnings = append(evaluation.Warnings, policyEnforcement.Warnings...)
 	evaluation.Errors = append(evaluation.Errors, policyEnforcement.Errors...)
 
-	if err := removeEvaluationOutputs(metricsPath, resourcePath, verdictPath); err != nil {
+	if err := removeEvaluationOutputs(metricsPath, resourcePath, tracePath, recordFixturesPath, verdictPath); err != nil {
 		evaluation.Warnings = append(evaluation.Warnings, err.Error())
 	}
 	policyFailed := len(policyEnforcement.Errors) > 0
@@ -290,7 +295,7 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	var resourceMetrics model.Metrics
 	if !policyFailed {
 		var runErr error
-		resourceMetrics, runErr = runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, stdoutPath, stderrPath, execOpts)
+		resourceMetrics, runErr = runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, stdoutPath, stderrPath, candidateExecOpts)
 		if runErr != nil {
 			evaluatorErrors = append(evaluatorErrors, runErr.Error())
 			evaluation.Errors = append(evaluation.Errors, evaluatorErrors...)
@@ -327,6 +332,24 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 			}
 		}
 	}
+	externalTrace := model.ExternalCallTrace{Mode: cfg.External.Mode}
+	if tracePath != "" && !policyFailed {
+		trace, err := loadExternalTrace(tracePath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				evaluation.Warnings = append(evaluation.Warnings, err.Error())
+			}
+		} else {
+			externalTrace = trace
+			metrics = mergeExternalTraceMetrics(metrics, trace)
+		}
+	}
+	if tracePath != "" {
+		externalTrace.TracePath = filepath.ToSlash(tracePath)
+	}
+	if recordFixturesPath != "" {
+		externalTrace.RecordFixturesPath = filepath.ToSlash(recordFixturesPath)
+	}
 	metrics = mergeResourceMetrics(metrics, resourceMetrics)
 	if err := archive.SaveJSON(metricsPath, metrics); err != nil {
 		evaluation.Warnings = append(evaluation.Warnings, fmt.Sprintf("save merged metrics: %v", err))
@@ -345,6 +368,7 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 
 	result.Metrics = metrics
 	result.Verdict = verdict
+	result.External = externalTrace
 	result.External.Mode = cfg.External.Mode
 	result.External.PolicyPassed = verdict.ExternalPolicyPassed
 	result.External.PolicyEnforcement = &policyEnforcement
@@ -359,9 +383,31 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 
 func removeEvaluationOutputs(paths ...string) error {
 	for _, path := range paths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove stale evaluation output %s: %w", path, err)
 		}
 	}
 	return nil
+}
+
+func loadExternalTrace(path string) (model.ExternalCallTrace, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return model.ExternalCallTrace{}, err
+	}
+	var trace model.ExternalCallTrace
+	if err := json.Unmarshal(data, &trace); err != nil {
+		return model.ExternalCallTrace{}, fmt.Errorf("external trace missing or invalid: %w", err)
+	}
+	return trace, nil
+}
+
+func mergeExternalTraceMetrics(metrics model.Metrics, trace model.ExternalCallTrace) model.Metrics {
+	if trace.RequestCount > 0 {
+		metrics.ExternalCallCount = trace.RequestCount
+	}
+	return metrics
 }

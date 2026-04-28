@@ -154,7 +154,9 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 			enforcement.Warnings = append(enforcement.Warnings, "allowlisted live hosts may be unreachable when the container sandbox network is none")
 		}
 	case model.ExternalModeRecord:
-		enforcement.Warnings = append(enforcement.Warnings, "framework-level external recording is not implemented yet")
+		enforcement.Status = "partial"
+		enforcement.Mechanism = "proxy-record"
+		enforcement.Warnings = append(enforcement.Warnings, "record mode captures HTTP proxy traffic and CONNECT metadata; clients that ignore proxy variables or opaque HTTPS tunnels still require evaluator-specific recording support")
 	default:
 		enforcement.Warnings = append(enforcement.Warnings, "external policy mode is not recognized by the enforcement layer")
 	}
@@ -233,7 +235,34 @@ func fixtureBackedMode(mode model.ExternalMode) bool {
 func gatewayBackedMode(mode model.ExternalMode) bool {
 	return mode == model.ExternalModeAllowlist ||
 		mode == model.ExternalModeMock ||
-		mode == model.ExternalModeReplay
+		mode == model.ExternalModeReplay ||
+		mode == model.ExternalModeRecord
+}
+
+func externalCandidateEnv(policy model.ExternalPolicy, sandbox SandboxOptions, candidateDir string, env []string) ([]string, string, string) {
+	out := append([]string(nil), env...)
+	if !gatewayBackedMode(policy.Mode) {
+		return out, "", ""
+	}
+
+	tracePath := filepath.Join(candidateDir, "external-trace.json")
+	out = upsertEnv(out, "CRUCIBLE_EXTERNAL_TRACE", filepath.ToSlash(tracePath))
+
+	recordFixturesPath := ""
+	if policy.Mode == model.ExternalModeRecord {
+		recordFixturesPath = filepath.Join(candidateDir, "recorded-http-fixtures.json")
+		out = upsertEnv(out, "CRUCIBLE_RECORD_FIXTURES", filepath.ToSlash(recordFixturesPath))
+	}
+
+	if !sandboxEnabled(sandbox) && envValue(out, "CRUCIBLE_MOCK_GATEWAY_SOURCE") != "" {
+		addr := envValue(out, "CRUCIBLE_MOCK_GATEWAY_ADDR")
+		if addr == "" || addr == "127.0.0.1:18080" {
+			if candidateAddr, err := freeLocalGatewayAddr(); err == nil {
+				out = setGatewayAddress(out, candidateAddr)
+			}
+		}
+	}
+	return out, tracePath, recordFixturesPath
 }
 
 func normalizedAllowlist(hosts []string) []string {
@@ -255,6 +284,37 @@ func appendEnvDefault(env []string, key, value string) []string {
 		return env
 	}
 	return append(env, key+"="+value)
+}
+
+func upsertEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for i, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
+}
+
+func setGatewayAddress(env []string, addr string) []string {
+	gatewayURL := "http://" + addr
+	env = upsertEnv(env, "CRUCIBLE_MOCK_GATEWAY_ADDR", addr)
+	env = upsertEnv(env, "CRUCIBLE_MOCK_GATEWAY_URL", gatewayURL)
+	env = upsertEnv(env, "HTTP_PROXY", gatewayURL)
+	env = upsertEnv(env, "http_proxy", gatewayURL)
+	env = upsertEnv(env, "HTTPS_PROXY", gatewayURL)
+	env = upsertEnv(env, "https_proxy", gatewayURL)
+	return env
+}
+
+func freeLocalGatewayAddr() (string, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	defer listener.Close()
+	return listener.Addr().String(), nil
 }
 
 func envValue(env []string, key string) string {
@@ -282,12 +342,26 @@ func startLocalMockGateway(ctx context.Context, env []string, logPath string) (f
 	}
 
 	args := []string{"run", source, "-fixtures", fixtures, "-addr", addr}
-	if envValue(env, "CRUCIBLE_EXTERNAL_MODE") == string(model.ExternalModeAllowlist) {
+	mode := envValue(env, "CRUCIBLE_EXTERNAL_MODE")
+	if mode != "" {
+		args = append(args, "-mode", mode)
+	}
+	if tracePath := envValue(env, "CRUCIBLE_EXTERNAL_TRACE"); tracePath != "" {
+		args = append(args, "-trace", tracePath)
+	}
+	if mode == string(model.ExternalModeAllowlist) {
 		allowedHosts := envValue(env, "CRUCIBLE_ALLOWED_HOSTS")
 		if allowedHosts == "" {
 			return func() {}, fmt.Errorf("CRUCIBLE_ALLOWED_HOSTS is required in allowlist mode")
 		}
 		args = append(args, "-allow-hosts", allowedHosts, "-passthrough")
+	}
+	if mode == string(model.ExternalModeRecord) {
+		recordPath := envValue(env, "CRUCIBLE_RECORD_FIXTURES")
+		if recordPath == "" {
+			return func() {}, fmt.Errorf("CRUCIBLE_RECORD_FIXTURES is required in record mode")
+		}
+		args = append(args, "-record-fixtures", recordPath, "-passthrough")
 	}
 	caCert := envValue(env, "CRUCIBLE_MOCK_CA_CERT")
 	caKey := envValue(env, "CRUCIBLE_MOCK_CA_KEY")

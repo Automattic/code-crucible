@@ -85,10 +85,14 @@ After `crucible evaluate`, each evaluated candidate may also contain:
 candidate-NNNN/
   evaluation.stdout.log
   evaluation.stderr.log
+  external-trace.json
   metrics.json
+  recorded-http-fixtures.json
   resource-metrics.json
   verdict.json
 ```
+
+`external-trace.json` is written when the candidate uses a gateway-backed mode such as `allowlist`, `mock`, `replay`, or `record`. It stores request counts, unique hosts, bytes sent and received, failures, and per-request trace events observed through the proxy gateway. In `record` mode, proxied HTTP responses are also captured in `recorded-http-fixtures.json` using the same fixture shape as `external/http-fixtures.json`.
 
 `metrics.json` uses the shared `Metrics` shape from `internal/model`. Evaluator scripts should write benchmark and domain metrics such as:
 
@@ -141,7 +145,7 @@ If `verdict.json` is missing or invalid, Code Crucible marks the candidate as fa
 - `advisory`: the evaluator and generated code were instructed to honor the policy, but the framework did not enforce it
 - `failed`: the requested policy could not be enforced safely, so the candidate failed closed
 
-Currently, `deny` mode is enforced only for Docker or Podman evaluation with `--sandbox-network none`. `allowlist`, `mock`, and `replay` modes can be `partial` when Code Crucible starts the gateway and exports proxy environment variables; clients that ignore proxy or trust environment variables still require evaluator-specific configuration. Record enforcement is still planned.
+Currently, `deny` mode is enforced only for Docker or Podman evaluation with `--sandbox-network none`. `allowlist`, `mock`, `replay`, and `record` modes can be `partial` when Code Crucible starts the gateway and exports proxy environment variables; clients that ignore proxy or trust environment variables still require evaluator-specific configuration.
 
 `p95_latency_ms` should be a true 95th percentile over the evaluator's sampled timings. Use `runtime_mean_ms` for averages and `benchmark_ns_per_op` for the mean `go test -bench` style operation time.
 

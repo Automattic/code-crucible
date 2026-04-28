@@ -49,6 +49,12 @@ func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resour
 		if err := ensureSandboxResourceWrapper(runDir); err != nil {
 			return model.Metrics{}, err
 		}
+	} else {
+		cleanup, err := startLocalMockGateway(ctx, opts.Env, resourcePath+".mock-gateway.log")
+		if err != nil {
+			return model.Metrics{}, err
+		}
+		defer cleanup()
 	}
 
 	name, args, err := buildEvaluatorCommand(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, opts)
@@ -206,12 +212,25 @@ if [[ -n "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" ]]; then
   gateway_port="${gateway_addr##*:}"
   rm -f "$gateway_log"
   gateway_args=("$CRUCIBLE_MOCK_GATEWAY_SOURCE" -fixtures "$CRUCIBLE_HTTP_FIXTURES" -addr "$gateway_addr")
+  if [[ -n "${CRUCIBLE_EXTERNAL_MODE:-}" ]]; then
+    gateway_args+=(-mode "$CRUCIBLE_EXTERNAL_MODE")
+  fi
+  if [[ -n "${CRUCIBLE_EXTERNAL_TRACE:-}" ]]; then
+    gateway_args+=(-trace "$CRUCIBLE_EXTERNAL_TRACE")
+  fi
   if [[ "${CRUCIBLE_EXTERNAL_MODE:-}" == "allowlist" ]]; then
     if [[ -z "${CRUCIBLE_ALLOWED_HOSTS:-}" ]]; then
       echo "CRUCIBLE_ALLOWED_HOSTS is required in allowlist mode" >&2
       exit 126
     fi
     gateway_args+=(-allow-hosts "$CRUCIBLE_ALLOWED_HOSTS" -passthrough)
+  fi
+  if [[ "${CRUCIBLE_EXTERNAL_MODE:-}" == "record" ]]; then
+    if [[ -z "${CRUCIBLE_RECORD_FIXTURES:-}" ]]; then
+      echo "CRUCIBLE_RECORD_FIXTURES is required in record mode" >&2
+      exit 126
+    fi
+    gateway_args+=(-record-fixtures "$CRUCIBLE_RECORD_FIXTURES" -passthrough)
   fi
   if [[ -n "${CRUCIBLE_MOCK_CA_CERT:-}" && -n "${CRUCIBLE_MOCK_CA_KEY:-}" ]]; then
     gateway_args+=(-ca-cert "$CRUCIBLE_MOCK_CA_CERT" -ca-key "$CRUCIBLE_MOCK_CA_KEY")

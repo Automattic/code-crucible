@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"go/ast"
 	"go/importer"
@@ -185,11 +186,123 @@ func TestMockGatewaySourceIncludesProxyRouting(t *testing.T) {
 		"singleConnListener",
 		"allow-hosts",
 		"proxyConnect",
+		"traceSummary",
+		"record-fixtures",
 		"BodySHA256",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("mock gateway source missing %q", want)
 		}
+	}
+}
+
+func TestGeneratedMockGatewayRecordsHTTPFixtureAndTrace(t *testing.T) {
+	dir := t.TempDir()
+	gatewayPath := filepath.Join(dir, MockGatewayName)
+	if err := WriteMockGateway(gatewayPath); err != nil {
+		t.Fatal(err)
+	}
+	fixturesPath := filepath.Join(dir, HTTPFixturesName)
+	if err := SaveHTTPFixtureSet(fixturesPath, EmptyHTTPFixtureSet()); err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(upstream.Close)
+	upstreamURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tracePath := filepath.Join(dir, "external-trace.json")
+	recordPath := filepath.Join(dir, "recorded-http-fixtures.json")
+	addr := freeLocalAddress(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "run", gatewayPath,
+		"-fixtures", fixturesPath,
+		"-addr", addr,
+		"-mode", "record",
+		"-trace", tracePath,
+		"-record-fixtures", recordPath,
+		"-passthrough",
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+		}
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+		}
+	})
+	waitForTCP(t, addr, &stderr)
+
+	proxyURL, err := url.Parse("http://" + addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		},
+	}
+	resp, err := client.Get(upstream.URL + "/record-me")
+	if err != nil {
+		t.Fatalf("record GET through proxy failed: %v\nstderr:\n%s", err, stderr.String())
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 || string(body) != `{"ok":true}` {
+		t.Fatalf("record response = %d %q, want 200 JSON\nstderr:\n%s", resp.StatusCode, body, stderr.String())
+	}
+
+	recorded, err := LoadHTTPFixtureSet(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recorded.Fixtures) != 1 {
+		t.Fatalf("recorded fixtures = %d, want 1", len(recorded.Fixtures))
+	}
+	if recorded.Fixtures[0].Request.URL != upstream.URL+"/record-me" {
+		t.Fatalf("recorded URL = %q, want upstream URL", recorded.Fixtures[0].Request.URL)
+	}
+	if recorded.Fixtures[0].Response.Body != `{"ok":true}` {
+		t.Fatalf("recorded body = %q, want JSON", recorded.Fixtures[0].Response.Body)
+	}
+
+	traceData, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var trace struct {
+		Mode          string   `json:"mode"`
+		RequestCount  int      `json:"request_count"`
+		UniqueHosts   []string `json:"unique_hosts"`
+		BytesReceived int64    `json:"bytes_received"`
+	}
+	if err := json.Unmarshal(traceData, &trace); err != nil {
+		t.Fatal(err)
+	}
+	if trace.Mode != "record" || trace.RequestCount != 1 || trace.BytesReceived == 0 {
+		t.Fatalf("trace = %#v, want one recorded request", trace)
+	}
+	if len(trace.UniqueHosts) != 1 || trace.UniqueHosts[0] != upstreamURL.Hostname() {
+		t.Fatalf("trace hosts = %#v, want %s", trace.UniqueHosts, upstreamURL.Hostname())
 	}
 }
 
