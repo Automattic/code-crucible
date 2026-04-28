@@ -37,6 +37,10 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 		parentIDs = []string{"candidate-0000-baseline"}
 	}
 	nextCandidateID := fmt.Sprintf("candidate-%04d", nextCandidate)
+	candidateAgent := strings.TrimSpace(cfg.Agent)
+	if candidateAgent == "" {
+		candidateAgent = "selected provider name"
+	}
 
 	fmt.Fprintf(&b, "# Code Crucible Candidate Generation Prompt\n\n")
 	fmt.Fprintf(&b, "Optimization request: %s\n\n", cfg.Optimize)
@@ -133,7 +137,7 @@ For each competitor:
      "name": "short descriptive name",
      "round": %d,
      "parent_ids": %s,
-     "agent": "codex",
+     "agent": "%s",
      "model": "model name if known",
      "source_path": "src",
      "baseline": false,
@@ -145,7 +149,7 @@ For each competitor:
 7. Avoid destructive cleanup commands such as rm -rf. Create fresh temporary paths under the scratch directory instead and leave scratch artifacts for archive inspection.
 
 Favor measurable changes. If a competitor is experimental, make the experiment explicit in design.md.
-`, nextCandidateID, round, jsonStringArray(parentIDs), baselineModificationRule(baselinePending))
+`, nextCandidateID, round, jsonStringArray(parentIDs), candidateAgent, baselineModificationRule(baselinePending))
 
 	return b.String()
 }

@@ -35,7 +35,7 @@ crucible run "make this feature faster"
 crucible run --task-file crucible-task.md
 ```
 
-The bare `crucible` command starts a guided workflow. It confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan for new optimization requests, optionally runs Codex discovery, records clarifying answers, creates runs, and offers common follow-up actions for existing run data. Interactive run actions prompt for a run selector instead of silently assuming the latest run, standalone discovery can run locally or through a discovery-capable agent, generated candidates can be adopted, next rounds can be prepared, archive queries can be run, generate and evolve actions can select a generation agent, and agent settings can update the project `default_agent`. When a structured Codex discovery handoff is available, the wizard can use the recommended source path and copies the handoff into the run's `docs/` directory. The project receives a `.crucible/` directory automatically when the first run or discovery plan is created. This keeps optimization artifacts close to the code being evaluated without requiring the host project to adopt Code Crucible as a dependency. `crucible init` remains available for explicit preflight setup or a custom project name.
+The bare `crucible` command starts a guided workflow. It confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan for new optimization requests, optionally runs discovery through a configured agent, records clarifying answers, creates runs, and offers common follow-up actions for existing run data. Interactive run actions prompt for a run selector instead of silently assuming the latest run, standalone discovery can run locally or through a discovery-capable agent, generated candidates can be adopted, next rounds can be prepared, archive queries can be run, generate and evolve actions can select a generation agent, and agent settings can update the project `default_agent`. When a structured agent discovery handoff is available, the wizard can use the recommended source path and copies the handoff into the run's `docs/` directory. The project receives a `.crucible/` directory automatically when the first run or discovery plan is created. This keeps optimization artifacts close to the code being evaluated without requiring the host project to adopt Code Crucible as a dependency. `crucible init` remains available for explicit preflight setup or a custom project name.
 
 ## Discovery Archive
 
@@ -45,7 +45,7 @@ The bare `crucible` command starts a guided workflow. It confirms the project di
 .crucible/discoveries/<discovery-id>/
 ```
 
-Each discovery archive contains the original request, a local plan with heuristic source-path suggestions, and a prompt that can be sent to Codex with `--agent codex`. Codex discovery writes agent artifacts under the discovery archive's `agents/` directory, stores the final agent response as `agent-plan.md`, and extracts the machine-readable handoff to `agent-plan.json` when the response includes the requested JSON block.
+Each discovery archive contains the original request, a local plan with heuristic source-path suggestions, and a prompt that can be sent to any discovery-capable agent. Agent discovery writes artifacts under the discovery archive's `agents/` directory, stores the final agent response as `agent-plan.md`, and extracts the machine-readable handoff to `agent-plan.json` when the response includes the requested JSON block.
 
 Archive metadata stores project-local paths where possible, such as `.crucible/runs/<run-id>/...`, instead of absolute host paths. Runtime commands resolve those archive paths against the current project directory so the same archive can be inspected, indexed, or moved without hard-coding a private workstation path.
 
@@ -138,7 +138,7 @@ For `allowlist`, `mock`, `replay`, and `record` modes, each run archives an HTTP
 
 Agent integration is routed through a small provider contract. A provider declares whether it supports discovery, generation, evolution, JSON output, and whether it requires a Git repository. Built-in providers currently include `codex`, which supports discovery, generation, and evolution through Codex CLI, and `local`, which supports heuristic discovery without invoking a model. Project config can also define `kind: command` providers with an argv-style `command` list and capability metadata.
 
-Each project can store a default provider in `.crucible/config.json` as `default_agent`. New work areas default to `codex`, and `crucible init --default-agent codex` can set it explicitly. Agent-invoking commands accept `--agent`; generation and evolution resolve from the command flag, then the run archive, then the project default. Discovery defaults to `local` unless Codex is requested explicitly.
+Each project can store a default provider in `.crucible/config.json` as `default_agent`. New work areas default to `codex`, and `crucible init --default-agent codex` can set it explicitly. Agent-invoking commands accept `--agent`; generation and evolution resolve from the command flag, then the run archive, then the project default. Discovery defaults to `local` for non-interactive `crucible discover`; the interactive new-run wizard uses the project default when it supports discovery and otherwise falls back to `codex` for structured agent handoffs.
 
 The first live model-backed integration is Codex CLI. Code Crucible still writes a prompt package:
 
@@ -178,7 +178,7 @@ Command providers are invoked with the prompt on stdin and receive environment v
 
 Codex uses the host project as its working root. The prompt instructs it to write generated competitor artifacts only under the current round directory, use the run `tmp/` scratch area for optional verification work, avoid destructive cleanup commands, and not modify host project source outside `.crucible`.
 
-`crucible run --generate` is an explicit shortcut. It creates the run archive first, then calls the same Codex generation path with the newly-created run ID. The separate `run` and `generate` commands remain the safer default workflow when the operator wants to review or edit interface docs, evaluator scripts, or prompts before spending a model run.
+`crucible run --generate` is an explicit shortcut. It creates the run archive first, then calls the selected generation provider with the newly-created run ID. The separate `run` and `generate` commands remain the safer default workflow when the operator wants to review or edit interface docs, evaluator scripts, or prompts before spending a model run.
 
 After successful generation, Code Crucible adopts valid `candidate-NNNN` directories into `leaderboard.json`. The same adoption step is available manually with `crucible adopt`.
 

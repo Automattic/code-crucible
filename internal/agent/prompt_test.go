@@ -69,6 +69,46 @@ func TestBuildGenerationPromptIncludesScoreExplanation(t *testing.T) {
 	}
 }
 
+func TestBuildGenerationPromptUsesSelectedAgentPlaceholder(t *testing.T) {
+	prompt := BuildGenerationPrompt(GenerationPromptRequest{
+		RunConfig: model.RunConfig{
+			Optimize: "optimize ranking",
+			Agent:    "custom-agent",
+			Variants: 1,
+			External: model.ExternalPolicy{
+				Mode: "deny",
+			},
+		},
+		InterfaceDocPath:  "interfaces/contract.md",
+		RunDir:            ".crucible/runs/run",
+		RoundDir:          ".crucible/runs/run/round-0001",
+		BaselineSourceDir: ".crucible/runs/run/round-0001/candidate-0000-baseline/src",
+	})
+	if !strings.Contains(prompt, `"agent": "custom-agent"`) {
+		t.Fatalf("generation prompt did not use configured agent:\n%s", prompt)
+	}
+
+	prompt = BuildGenerationPrompt(GenerationPromptRequest{
+		RunConfig: model.RunConfig{
+			Optimize: "optimize ranking",
+			Variants: 1,
+			External: model.ExternalPolicy{
+				Mode: "deny",
+			},
+		},
+		InterfaceDocPath:  "interfaces/contract.md",
+		RunDir:            ".crucible/runs/run",
+		RoundDir:          ".crucible/runs/run/round-0001",
+		BaselineSourceDir: ".crucible/runs/run/round-0001/candidate-0000-baseline/src",
+	})
+	if !strings.Contains(prompt, `"agent": "selected provider name"`) {
+		t.Fatalf("generation prompt did not use provider-neutral placeholder:\n%s", prompt)
+	}
+	if strings.Contains(prompt, `"agent": "codex"`) {
+		t.Fatalf("generation prompt still hard-codes Codex:\n%s", prompt)
+	}
+}
+
 func TestBuildGenerationPromptRequiresBaselineDiscoveryWhenSourcePathMissing(t *testing.T) {
 	prompt := BuildGenerationPrompt(GenerationPromptRequest{
 		RunConfig: model.RunConfig{

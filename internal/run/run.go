@@ -335,7 +335,7 @@ func runReadme(cfg model.RunConfig) string {
 	fmt.Fprintf(&b, "- `evaluator/semantic-checks.json` can store baseline-vs-candidate semantic prechecks.\n")
 	fmt.Fprintf(&b, "- `external/policy.json` stores external call policy.\n")
 	fmt.Fprintf(&b, "- `prompts/generation-round-0001.md` stores the prompt package for the selected agent.\n")
-	fmt.Fprintf(&b, "- `agents/` stores Codex invocation logs and final messages.\n")
+	fmt.Fprintf(&b, "- `agents/` stores agent invocation logs and final messages.\n")
 	fmt.Fprintf(&b, "- `leaderboard.json` stores current candidate standings.\n")
 	return b.String()
 }

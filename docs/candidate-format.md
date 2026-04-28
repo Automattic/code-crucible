@@ -38,7 +38,7 @@ candidate-NNNN/
   "name": "short descriptive name",
   "round": 1,
   "parent_ids": ["candidate-0000-baseline"],
-  "agent": "codex",
+  "agent": "selected-agent",
   "model": "gpt-5.5",
   "source_path": "src",
   "baseline": false,

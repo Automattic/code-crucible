@@ -287,13 +287,13 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 	fmt.Fprintf(s.stdout, "Discovery plan: %s\n", plan.PlanPath)
 	s.printSourceSuggestions(plan)
 
-	agentPlan, ok := s.maybeRunCodexDiscovery(projectDir, plan)
+	agentPlan, agentPlanProvider, ok := s.maybeRunAgentDiscovery(projectDir, plan)
 	if !ok {
 		return 0
 	}
 	var clarifications []clarificationAnswer
 	if agentPlan != nil {
-		request, clarifications, ok = s.applyAgentClarifications(request, agentPlan)
+		request, clarifications, ok = s.applyAgentClarifications(request, agentPlan, agentDisplayName(agentPlanProvider))
 		if !ok {
 			return 0
 		}
@@ -303,7 +303,7 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 	if agentPlan != nil && strings.TrimSpace(agentPlan.SourcePath) != "" {
 		recommended := strings.TrimSpace(agentPlan.SourcePath)
 		if sourcePathExists(projectDir, recommended) {
-			useSource, ok := s.confirm(fmt.Sprintf("Use Codex recommended %s as the baseline source path?", recommended), true)
+			useSource, ok := s.confirm(fmt.Sprintf("Use %s recommended %s as the baseline source path?", agentDisplayName(agentPlanProvider), recommended), true)
 			if !ok {
 				return 0
 			}
@@ -311,7 +311,7 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 				sourcePath = recommended
 			}
 		} else {
-			fmt.Fprintf(s.stdout, "Codex recommended source path %s, but that path was not found. Leaving source path unset unless you choose a local suggestion.\n", recommended)
+			fmt.Fprintf(s.stdout, "%s recommended source path %s, but that path was not found. Leaving source path unset unless you choose a local suggestion.\n", agentDisplayName(agentPlanProvider), recommended)
 		}
 	}
 	if sourcePath == "" && len(plan.Suggestions) > 0 {
@@ -327,7 +327,7 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 		fmt.Fprintln(s.stdout, "No source path selected. Generation will ask the agent to discover the involved code.")
 	}
 
-	externalMode := s.externalModeFromAgentPlan(agentPlan)
+	externalMode := s.externalModeFromAgentPlan(agentPlan, agentDisplayName(agentPlanProvider))
 
 	created, err := run.Create(run.Options{
 		ProjectDir:   projectDir,
@@ -434,7 +434,14 @@ func (s interactiveSession) queryArchive(projectDir string) int {
 }
 
 func (s interactiveSession) askDiscoveryAgent(projectDir string) (string, bool) {
-	defaultAgent := agent.ProviderLocal
+	return s.askDiscoveryAgentWithDefault(projectDir, agent.ProviderLocal)
+}
+
+func (s interactiveSession) askDiscoveryAgentWithDefault(projectDir, defaultAgent string) (string, bool) {
+	defaultAgent = agent.NormalizeProviderName(defaultAgent)
+	if defaultAgent == "" {
+		defaultAgent = agent.ProviderLocal
+	}
 	cfg, _ := project.Load(projectDir)
 	s.printDiscoveryProviders(cfg)
 	answer, ok := s.ask(fmt.Sprintf("Discovery agent [%s]: ", defaultAgent))
@@ -545,25 +552,60 @@ func (s interactiveSession) printSourceSuggestions(plan *discovery.Plan) {
 	}
 }
 
-func (s interactiveSession) maybeRunCodexDiscovery(projectDir string, plan *discovery.Plan) (*discovery.AgentPlan, bool) {
-	runAgent, ok := s.confirm("Run Codex discovery before creating the run?", false)
+func (s interactiveSession) maybeRunAgentDiscovery(projectDir string, plan *discovery.Plan) (*discovery.AgentPlan, string, bool) {
+	runAgent, ok := s.confirm("Run agent discovery before creating the run?", false)
 	if !ok {
-		return nil, false
+		return nil, "", false
 	}
 	if !runAgent {
-		return nil, true
+		return nil, "", true
 	}
-	code := runCodexDiscovery(projectDir, plan, codexDiscoveryOptions{}, s.stdout, s.stderr)
+	defaultAgent := s.defaultInteractiveDiscoveryAgent(projectDir)
+	discoveryAgent, ok := s.askDiscoveryAgentWithDefault(projectDir, defaultAgent)
+	if !ok {
+		return nil, "", false
+	}
+	provider, err := configuredProvider(projectDir, discoveryAgent, "discovery")
+	if err != nil {
+		fmt.Fprintf(s.stderr, "discovery failed: %v\n", err)
+		return nil, "", false
+	}
+	code := 0
+	switch provider.Kind {
+	case agent.ProviderLocal:
+		fmt.Fprintln(s.stdout, "Local discovery plan already created; continuing without a structured agent handoff.")
+		return nil, provider.Name, true
+	case agent.ProviderCodex:
+		code = runCodexDiscovery(projectDir, plan, codexDiscoveryOptions{}, s.stdout, s.stderr)
+	case "command":
+		code = runCommandDiscovery(projectDir, plan, provider, "", false, s.stdout, s.stderr)
+	default:
+		fmt.Fprintf(s.stderr, "discovery failed: provider %q is not implemented for discovery yet\n", provider.Name)
+		return nil, "", false
+	}
 	if code != 0 {
-		return nil, false
+		return nil, "", false
 	}
 	agentPlanPath := discovery.AgentPlanPath(archive.ProjectPath(projectDir, plan.PlanDir))
 	agentPlan, err := discovery.LoadAgentPlan(agentPlanPath)
 	if err != nil {
-		fmt.Fprintf(s.stderr, "discovery warning: could not load structured Codex plan: %v\n", err)
-		return nil, true
+		fmt.Fprintf(s.stderr, "discovery warning: could not load structured agent plan: %v\n", err)
+		return nil, provider.Name, true
 	}
-	return agentPlan, true
+	return agentPlan, provider.Name, true
+}
+
+func (s interactiveSession) defaultInteractiveDiscoveryAgent(projectDir string) string {
+	cfg, err := project.Load(projectDir)
+	if err == nil {
+		defaultAgent := agent.NormalizeProviderName(cfg.DefaultAgent)
+		if defaultAgent != "" {
+			if provider, err := configuredProvider(projectDir, defaultAgent, "discovery"); err == nil && provider.Supports("discovery") {
+				return provider.Name
+			}
+		}
+	}
+	return agent.ProviderCodex
 }
 
 type clarificationAnswer struct {
@@ -571,12 +613,15 @@ type clarificationAnswer struct {
 	Answer   string
 }
 
-func (s interactiveSession) applyAgentClarifications(request string, plan *discovery.AgentPlan) (string, []clarificationAnswer, bool) {
+func (s interactiveSession) applyAgentClarifications(request string, plan *discovery.AgentPlan, providerName string) (string, []clarificationAnswer, bool) {
 	if plan == nil || len(plan.ClarifyingQuestions) == 0 {
 		return request, nil, true
 	}
+	if strings.TrimSpace(providerName) == "" {
+		providerName = "Agent"
+	}
 	fmt.Fprintln(s.stdout)
-	fmt.Fprintln(s.stdout, "Codex requested clarification before generation.")
+	fmt.Fprintf(s.stdout, "%s requested clarification before generation.\n", providerName)
 	answers := make([]clarificationAnswer, 0, len(plan.ClarifyingQuestions))
 	for _, question := range plan.ClarifyingQuestions {
 		question = strings.TrimSpace(question)
@@ -601,20 +646,23 @@ func (s interactiveSession) applyAgentClarifications(request string, plan *disco
 	return b.String(), answers, true
 }
 
-func (s interactiveSession) externalModeFromAgentPlan(plan *discovery.AgentPlan) string {
+func (s interactiveSession) externalModeFromAgentPlan(plan *discovery.AgentPlan, providerName string) string {
 	mode := "deny"
 	if plan == nil || strings.TrimSpace(plan.ExternalMode) == "" {
 		return mode
 	}
+	if strings.TrimSpace(providerName) == "" {
+		providerName = "Agent"
+	}
 	recommended := model.ExternalMode(strings.ToLower(strings.TrimSpace(plan.ExternalMode)))
 	if !recommended.Valid() {
-		fmt.Fprintf(s.stdout, "Ignoring unsupported Codex external mode recommendation %q.\n", plan.ExternalMode)
+		fmt.Fprintf(s.stdout, "Ignoring unsupported %s external mode recommendation %q.\n", providerName, plan.ExternalMode)
 		return mode
 	}
 	if recommended == model.ExternalModeDeny {
 		return string(recommended)
 	}
-	useMode, ok := s.confirm(fmt.Sprintf("Use Codex recommended external mode %s?", recommended), true)
+	useMode, ok := s.confirm(fmt.Sprintf("Use %s recommended external mode %s?", providerName, recommended), true)
 	if !ok {
 		return mode
 	}
@@ -759,4 +807,15 @@ func (s interactiveSession) ask(prompt string) (string, bool) {
 
 func oneLine(value string) string {
 	return strings.Join(strings.Fields(value), " ")
+}
+
+func agentDisplayName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "Agent"
+	}
+	if name == agent.ProviderCodex {
+		return "Codex"
+	}
+	return name
 }

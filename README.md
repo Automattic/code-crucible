@@ -70,7 +70,7 @@ cd /path/to/your/project
 crucible
 ```
 
-The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run Codex discovery before creating the run. When Codex returns clarifying questions, the wizard records the answers in the run request. When Codex recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the agent to discover the involved code. The wizard then shows the current leaderboard and offers actions such as new run, standalone discovery, leaderboard, generate, adopt, evaluate, next round, evolve, query, report, inspect, index rebuild, and agent settings. Interactive run actions prompt for a run selector, generate/evolve actions can select a generation agent, discovery can run locally or through an agent, and agent settings can update the project `default_agent`.
+The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run discovery through a configured agent before creating the run. When the agent returns clarifying questions, the wizard records the answers in the run request. When the agent recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the generation agent to discover the involved code. The wizard then shows the current leaderboard and offers actions such as new run, standalone discovery, leaderboard, generate, adopt, evaluate, next round, evolve, query, report, inspect, index rebuild, and agent settings. Interactive run actions prompt for a run selector, generate/evolve actions can select a generation agent, discovery can run locally or through an agent, and agent settings can update the project `default_agent`.
 
 Create a tournament run from inside an existing project:
 
@@ -121,7 +121,7 @@ If the source path or evaluator boundary is unclear, create a discovery plan fir
 crucible discover "reduce p95 latency of the search ranking function"
 ```
 
-`discover` writes a local plan under `.crucible/discoveries/<discovery-id>/` with source-path suggestions, an agent discovery prompt, and a review checklist. Use `--agent codex --dry-run` to preview Codex discovery, or remove `--dry-run` to let Codex write `agent-plan.md`; Code Crucible extracts the structured handoff into `agent-plan.json` when the final response includes the requested JSON block.
+`discover` writes a local plan under `.crucible/discoveries/<discovery-id>/` with source-path suggestions, an agent discovery prompt, and a review checklist. Use `--agent codex --dry-run` to preview Codex discovery, or pass any configured discovery-capable provider with `--agent`. Code Crucible extracts the structured handoff into `agent-plan.json` when the final response includes the requested JSON block.
 
 Use a structured discovery handoff when creating the run to seed interface docs, evaluator scaffold guidance, and the baseline source path:
 
@@ -228,10 +228,10 @@ Inspect a candidate:
 crucible inspect candidate-0000-baseline
 ```
 
-Ask Codex to generate competitor implementations for the latest run:
+Ask the selected agent to generate competitor implementations for the latest run:
 
 ```bash
-crucible generate --agent codex
+crucible generate
 ```
 
 `generate` automatically adopts valid generated candidates into `leaderboard.json`. If competitors are added by hand or an external agent, adopt them manually:
@@ -256,7 +256,7 @@ Prepare the next round after at least one candidate has passed:
 
 ```bash
 crucible next-round --parents 3
-crucible generate --agent codex
+crucible generate
 ```
 
 `next-round` creates the next `round-NNNN/` directory, writes a new generation prompt seeded from the top passed candidates, and updates the run archive so `generate` and `adopt` target that active round.
@@ -269,13 +269,13 @@ crucible evolve --rounds 3 --parents 3
 
 `evolve` runs the active generation prompt, evaluates adopted candidates, and prepares the next prompt between cycles.
 
-Preview the exact Codex invocation first:
+Preview the exact provider invocation first:
 
 ```bash
-crucible generate --agent codex --dry-run
+crucible generate --dry-run
 ```
 
-When you already trust the generated scaffold for a task, create the run and invoke Codex in one command:
+When you already trust the generated scaffold for a task, create the run and invoke generation in one command:
 
 ```bash
 crucible run \
@@ -446,7 +446,7 @@ It provides:
 - A deliberately slow `ranking.TopN` implementation
 - Golden tests and a benchmark
 - A reusable evaluator script
-- A task prompt for Codex generation
+- A task prompt for agent generation
 
 Run the local baseline loop:
 
@@ -525,7 +525,7 @@ Core packages:
 - `internal/project`: `.crucible/` initialization and config
 - `internal/run`: tournament run creation and candidate adoption
 - `internal/discovery`: source path inspection, discovery plans, and interface doc generation
-- `internal/agent`: agent prompt construction and Codex CLI provider
+- `internal/agent`: provider contracts, agent prompt construction, and Codex/command provider runners
 - `internal/evaluator`: evaluator scaffold generation
 - `internal/archive`: JSON archive helpers and baseline copying
 - `internal/indexer`: rebuildable SQLite summary index
@@ -610,7 +610,7 @@ Model-agnostic agent roadmap:
 - [x] Add provider capability metadata, such as supports-discovery, supports-generation, supports-json-output, and requires-git-repo
 - [x] Add validation and dry-run output for provider command construction
 - [x] Add interactive agent selection and project default-agent management
-- [ ] Keep Codex as the first concrete provider while avoiding Codex-specific assumptions in shared prompt, archive, and tournament code
+- [x] Keep Codex as the first concrete provider while avoiding Codex-specific assumptions in shared prompt, archive, and tournament code
 
 Interactive interface roadmap:
 

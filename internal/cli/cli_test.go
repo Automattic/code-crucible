@@ -11,6 +11,7 @@ import (
 	"github.com/Automattic/code-crucible/internal/agent"
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/project"
 	"github.com/Automattic/code-crucible/internal/run"
 )
 
@@ -126,7 +127,7 @@ MD
 	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	var stdout, stderr bytes.Buffer
-	input := "\n\nreduce checkout pricing latency\n\ny\np95 of PriceCheckout\n\nq\n"
+	input := "\n\nreduce checkout pricing latency\n\ny\n\np95 of PriceCheckout\n\nq\n"
 	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
@@ -174,6 +175,103 @@ MD
 	}
 	if !strings.Contains(string(interfaceDoc), "Agent Discovery Handoff") {
 		t.Fatalf("interface doc did not include agent handoff:\n%s", string(interfaceDoc))
+	}
+}
+
+func TestInteractiveCommandDiscoveryCreatesRunFromAgentPlan(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n\nfunc Rank() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeProvider := filepath.Join(t.TempDir(), "fake-agent")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+mkdir -p "$(dirname "$CRUCIBLE_OUTPUT_LAST_MESSAGE")"
+cat > "$CRUCIBLE_OUTPUT_LAST_MESSAGE" <<'MD'
+# Discovery
+
+Use the search ranking implementation.
+
+` + "```json" + `
+{
+  "source_path": "internal/search/rank.go",
+  "source_path_confidence": "high",
+  "drop_in_interface": "Rank",
+  "inputs": ["search query fixture"],
+  "outputs": ["ranked results"],
+  "external_communications": [],
+  "external_mode": "deny",
+  "evaluator_strategy": ["golden fixture test", "benchmark ranking"],
+  "metrics": ["cpu user seconds"],
+  "clarifying_questions": [],
+  "suggested_next_command": "crucible run \"make ranking faster\" --source-path internal/search/rank.go",
+  "notes": ["fake command provider plan"]
+}
+` + "```" + `
+MD
+`
+	if err := os.WriteFile(fakeProvider, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := project.Init(projectDir, "search")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DefaultAgent = "mock"
+	cfg.AgentProviders = map[string]agent.ProviderDefinition{
+		"mock": {
+			Name:    "mock",
+			Kind:    "command",
+			Command: []string{fakeProvider},
+			Capabilities: agent.ProviderCapabilities{
+				SupportsDiscovery:  true,
+				SupportsGeneration: true,
+				SupportsEvolution:  true,
+				SupportsJSONOutput: true,
+			},
+		},
+	}
+	if err := project.Save(projectDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	input := "\n1\nmake ranking faster\n\ny\n\n\nq\n"
+	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"mock discovery complete",
+		"Use mock recommended internal/search/rank.go as the baseline source path?",
+		"Source path: internal/search/rank.go",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not contain %q:\n%s", want, stdout.String())
+		}
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one run config, found %d", len(matches))
+	}
+	runCfg, err := archive.LoadRunConfig(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runCfg.SourcePath != "internal/search/rank.go" {
+		t.Fatalf("SourcePath = %q", runCfg.SourcePath)
 	}
 }
 
