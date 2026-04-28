@@ -308,6 +308,73 @@ func TestInteractiveExistingProjectShowsLeaderboard(t *testing.T) {
 	}
 }
 
+func TestInteractiveReportPromptsForOutputAndJSON(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		SourcePath:   "internal/search/rank.go",
+		Variants:     1,
+		ExternalMode: "deny",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	outputPath := filepath.Join(projectDir, "interactive-report.html")
+	var stdout, stderr bytes.Buffer
+	input := "\n6\n\n" + outputPath + "\ny\nq\n"
+	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"output_path"`) {
+		t.Fatalf("stdout did not include report JSON:\n%s", stdout.String())
+	}
+	if _, err := os.Stat(outputPath); err != nil {
+		t.Fatalf("report output missing: %v", err)
+	}
+}
+
+func TestInteractiveIndexPromptsForRunAndJSON(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		SourcePath:   "internal/search/rank.go",
+		Variants:     1,
+		ExternalMode: "deny",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader("\n8\ny\n\ny\nq\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"runs": 1`, `"candidates": 1`, `"rebuild_mode": "run"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestInteractiveAgentSettingsUpdatesDefaultAgent(t *testing.T) {
 	projectDir := t.TempDir()
 	chdir(t, projectDir)

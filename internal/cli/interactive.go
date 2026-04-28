@@ -176,7 +176,22 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			if code := runReport([]string{"--project-dir", projectDir, "--run", runSelector}, s.stdout, s.stderr); code != 0 {
+			outputPath, ok := s.ask("Report output path [archive default]: ")
+			if !ok {
+				return 0
+			}
+			jsonOut, ok := s.confirm("Print report metadata JSON?", false)
+			if !ok {
+				return 0
+			}
+			args := []string{"--project-dir", projectDir, "--run", runSelector}
+			if strings.TrimSpace(outputPath) != "" {
+				args = append(args, "--output", strings.TrimSpace(outputPath))
+			}
+			if jsonOut {
+				args = append(args, "--json")
+			}
+			if code := runReport(args, s.stdout, s.stderr); code != 0 {
 				return code
 			}
 		case "7", "inspect":
@@ -196,7 +211,26 @@ func (s interactiveSession) menu(projectDir string) int {
 				return code
 			}
 		case "8", "index":
-			if code := runIndex([]string{"--project-dir", projectDir}, s.stdout, s.stderr); code != 0 {
+			args := []string{"--project-dir", projectDir}
+			scopeRun, ok := s.confirm("Rebuild only one run?", false)
+			if !ok {
+				return 0
+			}
+			if scopeRun {
+				runSelector, ok := s.askRunSelector(projectDir)
+				if !ok {
+					return 0
+				}
+				args = append(args, "--run", runSelector)
+			}
+			jsonOut, ok := s.confirm("Print index rebuild JSON?", false)
+			if !ok {
+				return 0
+			}
+			if jsonOut {
+				args = append(args, "--json")
+			}
+			if code := runIndex(args, s.stdout, s.stderr); code != 0 {
 				return code
 			}
 		case "9", "agent", "agents", "agent settings":

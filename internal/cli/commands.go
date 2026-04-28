@@ -302,9 +302,24 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	resolvedRunID := strings.TrimSpace(*runID)
+	if resolvedRunID != "" {
+		configPath, err := archive.RunConfigPath(*projectDir, resolvedRunID)
+		if err != nil {
+			fmt.Fprintf(stderr, "index failed: %v\n", err)
+			return 1
+		}
+		cfg, err := archive.LoadRunConfig(configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "index failed: %v\n", err)
+			return 1
+		}
+		resolvedRunID = cfg.ID
+	}
+
 	report, err := indexer.Rebuild(indexer.Options{
 		ProjectDir: *projectDir,
-		RunID:      *runID,
+		RunID:      resolvedRunID,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "index failed: %v\n", err)
