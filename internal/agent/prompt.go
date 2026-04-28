@@ -9,6 +9,9 @@ import (
 
 type GenerationPromptRequest struct {
 	RunConfig         model.RunConfig
+	Round             int
+	NextCandidate     int
+	ParentIDs         []string
 	InterfaceDocPath  string
 	RunDir            string
 	RoundDir          string
@@ -20,10 +23,23 @@ type GenerationPromptRequest struct {
 func BuildGenerationPrompt(req GenerationPromptRequest) string {
 	var b strings.Builder
 	cfg := req.RunConfig
+	round := req.Round
+	if round <= 0 {
+		round = 1
+	}
+	nextCandidate := req.NextCandidate
+	if nextCandidate <= 0 {
+		nextCandidate = 1
+	}
+	parentIDs := req.ParentIDs
+	if len(parentIDs) == 0 {
+		parentIDs = []string{"candidate-0000-baseline"}
+	}
+	nextCandidateID := fmt.Sprintf("candidate-%04d", nextCandidate)
 
 	fmt.Fprintf(&b, "# Code Crucible Candidate Generation Prompt\n\n")
 	fmt.Fprintf(&b, "Optimization request: %s\n\n", cfg.Optimize)
-	fmt.Fprintf(&b, "Generate %d competitor implementations for round 1.\n\n", cfg.Variants)
+	fmt.Fprintf(&b, "Generate %d competitor implementations for round %d.\n\n", cfg.Variants, round)
 
 	fmt.Fprintf(&b, "## Workspace\n\n")
 	fmt.Fprintf(&b, "- Host project directory: `%s`\n", cfg.ProjectDir)
@@ -53,6 +69,14 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 	fmt.Fprintf(&b, "- Lower values should favor incremental improvements to known-good approaches.\n")
 	fmt.Fprintf(&b, "- Higher values should reserve more variants for structurally different approaches.\n")
 	fmt.Fprintf(&b, "- Keep all competitors compatible with the evaluator and external policy.\n\n")
+
+	fmt.Fprintf(&b, "## Evolution Strategy\n\n")
+	fmt.Fprintf(&b, "- Preferred parent candidates: `%s`\n", strings.Join(parentIDs, "`, `"))
+	fmt.Fprintf(&b, "- Create candidates starting at `%s` and continue sequentially.\n", nextCandidateID)
+	if round > 1 {
+		fmt.Fprintf(&b, "- Use the historical metrics below to improve the strongest prior approaches while reserving exploration budget for different designs.\n")
+	}
+	fmt.Fprintf(&b, "\n")
 
 	fmt.Fprintf(&b, "## Historical Context\n\n")
 	if len(req.History) == 0 {
@@ -89,7 +113,7 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 
 For each competitor:
 
-1. Create a directory named candidate-NNNN under the current round directory, starting with candidate-0001.
+1. Create a directory named candidate-NNNN under the current round directory, starting with %s.
 2. Put replacement source under candidate-NNNN/src.
 3. Include candidate-NNNN/design.md explaining the approach, expected tradeoffs, and known risks.
 4. Include candidate-NNNN/candidate.json using this shape:
@@ -97,8 +121,8 @@ For each competitor:
    {
      "id": "candidate-NNNN",
      "name": "short descriptive name",
-     "round": 1,
-     "parent_ids": ["candidate-0000-baseline"],
+     "round": %d,
+     "parent_ids": %s,
      "agent": "codex",
      "model": "model name if known",
      "source_path": "src",
@@ -111,8 +135,21 @@ For each competitor:
 7. Avoid destructive cleanup commands such as rm -rf. Create fresh temporary paths under the scratch directory instead and leave scratch artifacts for archive inspection.
 
 Favor measurable changes. If a competitor is experimental, make the experiment explicit in design.md.
-`)
+`, nextCandidateID, round, jsonStringArray(parentIDs))
 
+	return b.String()
+}
+
+func jsonStringArray(values []string) string {
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, value := range values {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%q", value)
+	}
+	b.WriteByte(']')
 	return b.String()
 }
 

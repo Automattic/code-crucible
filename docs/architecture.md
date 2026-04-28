@@ -18,7 +18,7 @@ optimization request
   -> next generation prompt
 ```
 
-The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP/HTTPS proxy env routing, leaderboard scoring, and resource metric archival. Multi-round evolution is the next major execution-layer gap.
+The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP/HTTPS proxy env routing, next-round prompt preparation, leaderboard scoring, and resource metric archival. Automated multi-round execution loops are the next major execution-layer gap.
 
 ## Project Mode
 
@@ -68,6 +68,8 @@ leaderboard.json
 ```
 
 Future rounds will add `round-0002`, `round-0003`, and so on.
+
+`crucible next-round` creates those follow-up directories and writes `prompts/generation-round-NNNN.md`. Candidate IDs remain run-global, so a second round normally starts after the highest existing candidate number rather than restarting at `candidate-0001`.
 
 Generated candidates are described in [candidate-format.md](candidate-format.md).
 
@@ -154,6 +156,8 @@ Codex uses the host project as its working root. The prompt instructs it to writ
 
 After successful generation, Code Crucible adopts valid `candidate-NNNN` directories into `leaderboard.json`. The same adoption step is available manually with `crucible adopt`.
 
+After evaluation produces passed candidates, `crucible next-round` selects the top passed parents by score, updates the active round in `run.json`, and writes the next generation prompt with historical metrics and parent IDs. The next `crucible generate` invocation uses that active prompt and round directory.
+
 Future providers can use the same run metadata and prompt package through a common provider interface.
 
 ## Evaluation
@@ -186,6 +190,8 @@ The planned evaluator layer will add:
 - Allowlist enforcement
 - External trace collection
 - Richer sandbox profiles
+
+The planned orchestration layer will add automated multi-round loops that chain generation, adoption, evaluation, and next-round preparation.
 
 ## Data Model
 

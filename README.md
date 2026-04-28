@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, route standard HTTP and HTTPS proxy traffic to fixtures, and archive leaderboard metrics. Multi-round evolution and automated reporting are still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, route standard HTTP and HTTPS proxy traffic to fixtures, prepare follow-up rounds from passed candidates, and archive leaderboard metrics. Automated round loops and reporting are still under active development.
 
 ## Why
 
@@ -31,6 +31,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Local evaluator execution through `crucible evaluate`
 - Docker and Podman evaluator sandboxing with in-container resource metrics
 - Fixture-backed mock gateway startup and HTTP/HTTPS proxy env wiring for sandboxed `mock` and `replay` evaluations
+- `crucible next-round` for preparing follow-up generation prompts from passed candidates
 - Ranked human-readable leaderboard output for passed candidates
 - Machine-readable score explanations in `leaderboard.json`
 - File-backed leaderboard and candidate metadata
@@ -150,6 +151,15 @@ Evaluation runs one candidate at a time by default and starts evaluator processe
 ```bash
 crucible evaluate --jobs 1 --nice 10 --cpu-limit 2 --env GOMAXPROCS=1
 ```
+
+Prepare the next round after at least one candidate has passed:
+
+```bash
+crucible next-round --parents 3
+crucible generate --agent codex
+```
+
+`next-round` creates the next `round-NNNN/` directory, writes a new generation prompt seeded from the top passed candidates, and updates the run archive so `generate` and `adopt` target that active round.
 
 Preview the exact Codex invocation first:
 
@@ -387,7 +397,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 ## Roadmap
 
-- Add multi-round evolution strategy
+- Automate multi-round generate/evaluate loops
 - Add SQLite index alongside filesystem artifacts
 - Add HTML reports
 - Expand sandbox profiles and limits

@@ -65,6 +65,10 @@ func AdoptCandidates(opts AdoptionOptions) (*AdoptionReport, error) {
 	if roundDir == "" {
 		roundDir = filepath.Join(runDir, "round-0001")
 	}
+	roundNumber := roundNumberFromDir(roundDir)
+	if roundNumber <= 0 {
+		roundNumber = 1
+	}
 
 	leaderboardPath := filepath.Join(runDir, "leaderboard.json")
 	board, err := archive.LoadLeaderboard(leaderboardPath)
@@ -116,7 +120,7 @@ func AdoptCandidates(opts AdoptionOptions) (*AdoptionReport, error) {
 			continue
 		}
 
-		candidate, issue := loadAdoptableCandidate(filepath.Join(roundDir, id), roundDir, id, opts)
+		candidate, issue := loadAdoptableCandidate(filepath.Join(roundDir, id), roundDir, id, roundNumber, opts)
 		if issue != nil {
 			report.Invalid = append(report.Invalid, *issue)
 			continue
@@ -151,7 +155,7 @@ func AdoptCandidates(opts AdoptionOptions) (*AdoptionReport, error) {
 	return report, nil
 }
 
-func loadAdoptableCandidate(candidateDir, roundDir, id string, opts AdoptionOptions) (model.Candidate, *AdoptionIssue) {
+func loadAdoptableCandidate(candidateDir, roundDir, id string, roundNumber int, opts AdoptionOptions) (model.Candidate, *AdoptionIssue) {
 	srcDir := filepath.Join(candidateDir, "src")
 	if info, err := os.Stat(srcDir); err != nil || !info.IsDir() {
 		return model.Candidate{}, invalidCandidate(id, candidateDir, "missing src directory")
@@ -179,8 +183,8 @@ func loadAdoptableCandidate(candidateDir, roundDir, id string, opts AdoptionOpti
 	if strings.TrimSpace(candidate.Name) == "" {
 		return model.Candidate{}, invalidCandidate(id, metadataPath, "candidate.json name is required")
 	}
-	if candidate.Round != 1 {
-		return model.Candidate{}, invalidCandidate(id, metadataPath, "candidate.json round must be 1")
+	if candidate.Round != roundNumber {
+		return model.Candidate{}, invalidCandidate(id, metadataPath, fmt.Sprintf("candidate.json round must be %d", roundNumber))
 	}
 	if candidate.Baseline {
 		return model.Candidate{}, invalidCandidate(id, metadataPath, "generated candidates cannot be marked as baseline")

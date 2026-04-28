@@ -284,7 +284,7 @@ func runReadme(cfg model.RunConfig) string {
 	fmt.Fprintf(&b, "Run ID: `%s`\n\n", cfg.ID)
 	fmt.Fprintf(&b, "Optimization request:\n\n%s\n\n", cfg.Optimize)
 	fmt.Fprintf(&b, "Important files:\n\n")
-	fmt.Fprintf(&b, "- `run.json` stores the immutable run configuration.\n")
+	fmt.Fprintf(&b, "- `run.json` stores the active run configuration.\n")
 	fmt.Fprintf(&b, "- `docs/interfaces.md` stores the drop-in replacement contract.\n")
 	fmt.Fprintf(&b, "- `round-0001/candidate-0000-baseline/` stores the extracted baseline.\n")
 	fmt.Fprintf(&b, "- `evaluator/evaluator.sh` stores the generated evaluator scaffold.\n")

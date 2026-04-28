@@ -13,6 +13,8 @@ For the first round:
 
 `candidate-0000-baseline` is created from the original project source. Generated competitors must use the `candidate-NNNN` form, starting at `candidate-0001`.
 
+Candidate IDs are unique across the whole run archive. Later rounds continue after the highest existing candidate number instead of restarting at `candidate-0001`.
+
 ## Required Files
 
 Every generated candidate must include:
@@ -58,7 +60,7 @@ Required fields:
 
 ## Adoption
 
-`crucible adopt` scans the current round directory and adds valid generated candidates to `leaderboard.json`.
+`crucible adopt` scans the active round directory from `run.json` and adds valid generated candidates to `leaderboard.json`. `crucible next-round` advances that active directory after prior candidates have passed.
 
 Adoption validates:
 
@@ -68,6 +70,7 @@ Adoption validates:
 - `design.md` exists
 - `src/` exists
 - `source_path` resolves to the candidate's `src/` directory
+- `round` matches the active round
 - Generated candidates are not marked as baseline
 
 Malformed candidates are reported and skipped. Adoption does not silently repair candidate artifacts.

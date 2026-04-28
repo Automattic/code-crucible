@@ -61,6 +61,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runAdopt(args[1:], stdout, stderr)
 	case "evaluate":
 		return runEvaluate(args[1:], stdout, stderr)
+	case "next-round":
+		return runNextRound(args[1:], stdout, stderr)
 	case "leaderboard":
 		return runLeaderboard(args[1:], stdout, stderr)
 	case "inspect":
@@ -230,6 +232,49 @@ func runLeaderboard(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "Run: %s\n", board.RunID)
 	fmt.Fprintf(stdout, "Optimize: %s\n\n", board.Optimize)
 	printLeaderboardTable(stdout, rankedResults(board.Results))
+	return 0
+}
+
+func runNextRound(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("next-round", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	runID := fs.String("run", "", "run ID; defaults to latest run")
+	parents := fs.Int("parents", 3, "number of passed candidates to seed the next round")
+	jsonOut := fs.Bool("json", false, "print raw next-round report JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *parents < 1 {
+		fmt.Fprintf(stderr, "next-round failed: --parents must be at least 1\n")
+		return 2
+	}
+
+	report, err := run.PrepareNextRound(run.NextRoundOptions{
+		ProjectDir: *projectDir,
+		RunID:      *runID,
+		Parents:    *parents,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "next-round failed: %v\n", err)
+		return 1
+	}
+
+	if *jsonOut {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "next-round failed: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%s\n", data)
+		return 0
+	}
+
+	fmt.Fprintf(stdout, "Prepared round %d for run %s\n", report.Round, report.RunID)
+	fmt.Fprintf(stdout, "Round directory: %s\n", report.RoundDir)
+	fmt.Fprintf(stdout, "Prompt: %s\n", report.PromptPath)
+	fmt.Fprintf(stdout, "Parent candidates: %s\n", strings.Join(report.ParentIDs, ", "))
+	fmt.Fprintf(stdout, "Next candidate: %s\n", report.NextCandidateID)
 	return 0
 }
 
@@ -930,6 +975,7 @@ Usage:
   crucible generate [--project DIR] [--run RUN_ID] [--agent codex]
   crucible adopt [--project DIR] [--run RUN_ID]
   crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--nice N] [--cpu-limit N] [--sandbox-engine docker|podman --sandbox-image IMAGE]
+  crucible next-round [--project DIR] [--run RUN_ID] [--parents N]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]
   crucible inspect [--project DIR] [--run RUN_ID] [candidate-id]
   crucible version
@@ -940,6 +986,7 @@ Core workflow:
   3. Fill in docs/interfaces.md and evaluator/evaluator.sh.
   4. Run "crucible generate --agent codex" to ask Codex for competitors, or use "crucible run --generate" as an explicit shortcut.
   5. Run "crucible evaluate" to execute the run evaluator and update leaderboard results.
+  6. Run "crucible next-round" to prepare the next generation prompt from passed candidates.
 
 `)
 }

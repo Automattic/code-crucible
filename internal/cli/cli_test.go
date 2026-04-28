@@ -216,6 +216,69 @@ func TestEvaluateCommandUpdatesLeaderboard(t *testing.T) {
 	}
 }
 
+func TestNextRoundCommandPreparesActiveRound(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--optimize", "make ranking faster",
+		"--target-path", "internal/search/rank.go",
+		"--evaluator", "true",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"evaluate",
+		"--project", projectDir,
+		"--candidate", "candidate-0000-baseline",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("evaluate returned %d, stderr: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"next-round",
+		"--project", projectDir,
+		"--parents", "1",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("next-round returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Prepared round 2") {
+		t.Fatalf("stdout did not describe prepared round:\n%s", stdout.String())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one run config, found %d", len(matches))
+	}
+	cfg, err := archive.LoadRunConfig(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(filepath.FromSlash(cfg.RoundDir), "round-0002") {
+		t.Fatalf("RoundDir = %q, want round-0002", cfg.RoundDir)
+	}
+}
+
 func TestEvaluateRejectsInvalidResourceOptions(t *testing.T) {
 	for _, tt := range []struct {
 		name string
