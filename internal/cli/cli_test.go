@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -458,6 +460,35 @@ func TestInteractiveGeneratePromptsForAdvancedOptions(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
 		}
+	}
+}
+
+func TestInteractiveAdvancedEvaluateOptionsBuildArgs(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	session := interactiveSession{
+		in:     bufio.NewReader(strings.NewReader("y\ncandidate-0001\n30s\n2\n5\n1\nstrict\ndocker\ngolang:1.22\nnone\n512m\n128\n")),
+		stdout: &stdout,
+		stderr: &stderr,
+	}
+	got, ok := session.askAdvancedEvaluateOptions()
+	if !ok {
+		t.Fatalf("askAdvancedEvaluateOptions returned false, stderr: %s", stderr.String())
+	}
+	want := []string{
+		"--candidate", "candidate-0001",
+		"--timeout", "30s",
+		"--jobs", "2",
+		"--nice", "5",
+		"--cpu-limit", "1",
+		"--sandbox-profile", "strict",
+		"--sandbox-engine", "docker",
+		"--sandbox-image", "golang:1.22",
+		"--sandbox-network", "none",
+		"--memory-limit", "512m",
+		"--pids-limit", "128",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("advanced evaluate args = %#v, want %#v", got, want)
 	}
 }
 

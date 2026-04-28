@@ -159,7 +159,13 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			if code := runEvaluate([]string{"--project-dir", projectDir, "--run", runSelector}, s.stdout, s.stderr); code != 0 {
+			args := []string{"--project-dir", projectDir, "--run", runSelector}
+			advancedArgs, ok := s.askAdvancedEvaluateOptions()
+			if !ok {
+				return 0
+			}
+			args = append(args, advancedArgs...)
+			if code := runEvaluate(args, s.stdout, s.stderr); code != 0 {
 				return code
 			}
 		case "5", "evolve":
@@ -610,6 +616,84 @@ func (s interactiveSession) resolveInteractiveGenerationProvider(projectDir, run
 	return resolveGenerationProvider(absProject, cfg, generationAgent)
 }
 
+func (s interactiveSession) askAdvancedEvaluateOptions() ([]string, bool) {
+	configure, ok := s.confirm("Configure advanced evaluation options?", false)
+	if !ok || !configure {
+		return nil, ok
+	}
+	var args []string
+	candidateID, ok := s.ask("Candidate ID [all]: ")
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(candidateID) != "" {
+		args = append(args, "--candidate", strings.TrimSpace(candidateID))
+	}
+	timeoutValue, ok := s.ask("Timeout [none]: ")
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(timeoutValue) != "" {
+		args = append(args, "--timeout", strings.TrimSpace(timeoutValue))
+	}
+	jobs, ok := s.askInt("Jobs", 1)
+	if !ok {
+		return nil, false
+	}
+	args = append(args, "--jobs", strconv.Itoa(jobs))
+	nice, ok := s.askIntRange("Nice priority", 10, 0, 19)
+	if !ok {
+		return nil, false
+	}
+	args = append(args, "--nice", strconv.Itoa(nice))
+	cpuLimit, ok := s.askIntRange("CPU limit", 0, 0, 1024)
+	if !ok {
+		return nil, false
+	}
+	args = append(args, "--cpu-limit", strconv.Itoa(cpuLimit))
+	sandboxProfile, ok := s.ask("Sandbox profile [default]: ")
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(sandboxProfile) != "" {
+		args = append(args, "--sandbox-profile", strings.TrimSpace(sandboxProfile))
+	}
+	sandboxEngine, ok := s.ask("Sandbox engine [local]: ")
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(sandboxEngine) != "" {
+		args = append(args, "--sandbox-engine", strings.TrimSpace(sandboxEngine))
+	}
+	sandboxImage, ok := s.ask("Sandbox image [none]: ")
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(sandboxImage) != "" {
+		args = append(args, "--sandbox-image", strings.TrimSpace(sandboxImage))
+	}
+	sandboxNetwork, ok := s.ask("Sandbox network [profile default]: ")
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(sandboxNetwork) != "" {
+		args = append(args, "--sandbox-network", strings.TrimSpace(sandboxNetwork))
+	}
+	memoryLimit, ok := s.ask("Memory limit [profile default]: ")
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(memoryLimit) != "" {
+		args = append(args, "--memory-limit", strings.TrimSpace(memoryLimit))
+	}
+	pidsLimit, ok := s.askIntRange("PID limit", 0, 0, 1_000_000)
+	if !ok {
+		return nil, false
+	}
+	args = append(args, "--pids-limit", strconv.Itoa(pidsLimit))
+	return args, true
+}
+
 func (s interactiveSession) queryArchive(projectDir string) int {
 	kind, ok := s.ask("Query runs or candidates [runs]: ")
 	if !ok {
@@ -974,6 +1058,24 @@ func (s interactiveSession) askInt(label string, fallback int) (int, bool) {
 			return value, true
 		}
 		fmt.Fprintf(s.stdout, "%s must be a positive integer.\n", label)
+	}
+}
+
+func (s interactiveSession) askIntRange(label string, fallback, min, max int) (int, bool) {
+	for {
+		answer, ok := s.ask(fmt.Sprintf("%s [%d]: ", label, fallback))
+		if !ok {
+			return 0, false
+		}
+		answer = strings.TrimSpace(answer)
+		if answer == "" {
+			return fallback, true
+		}
+		value, err := strconv.Atoi(answer)
+		if err == nil && value >= min && value <= max {
+			return value, true
+		}
+		fmt.Fprintf(s.stdout, "%s must be between %d and %d.\n", label, min, max)
 	}
 }
 
