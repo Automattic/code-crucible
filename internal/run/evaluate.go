@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Automattic/code-crucible/internal/archive"
+	externalfixtures "github.com/Automattic/code-crucible/internal/external"
 	"github.com/Automattic/code-crucible/internal/model"
 	"github.com/Automattic/code-crucible/internal/scoring"
 )
@@ -91,6 +92,7 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 	}
 	leaderboardPath := filepath.Join(runDir, "leaderboard.json")
 	evaluatorPath := filepath.Join(runDir, "evaluator", "evaluator.sh")
+	evaluatorEnv := externalEvaluationEnv(cfg.External, runDir, opts.Env)
 
 	report := &EvaluationReport{
 		RunID:           cfg.ID,
@@ -129,7 +131,7 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 				Timeout:    opts.Timeout,
 				Nice:       opts.Nice,
 				CPULimit:   opts.CPULimit,
-				Env:        opts.Env,
+				Env:        evaluatorEnv,
 				ProjectDir: absProject,
 				Sandbox:    opts.Sandbox,
 			})
@@ -141,7 +143,7 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 			Timeout:    opts.Timeout,
 			Nice:       opts.Nice,
 			CPULimit:   opts.CPULimit,
-			Env:        opts.Env,
+			Env:        evaluatorEnv,
 			ProjectDir: absProject,
 			Sandbox:    opts.Sandbox,
 		})
@@ -409,10 +411,10 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 	case model.ExternalModeMock, model.ExternalModeReplay:
 		if sandboxEnabled(sandbox) && sandbox.Network == "none" {
 			enforcement.Status = "partial"
-			enforcement.Warnings = append(enforcement.Warnings, "live network is blocked, but framework-level mock/replay fixture serving is not implemented yet")
+			enforcement.Warnings = append(enforcement.Warnings, "live network is blocked and the fixture gateway is available inside the sandbox; transparent HTTPS replay and protocol-specific routing are not implemented yet")
 			return enforcement
 		}
-		enforcement.Warnings = append(enforcement.Warnings, "framework-level mock/replay fixture serving is not implemented yet")
+		enforcement.Warnings = append(enforcement.Warnings, "fixture gateway environment is available when fixtures are archived, but network isolation requires a container sandbox with --sandbox-network none")
 	case model.ExternalModeAllowlist:
 		enforcement.Warnings = append(enforcement.Warnings, "framework-level allowlist enforcement is not implemented yet")
 	case model.ExternalModeRecord:
@@ -422,6 +424,75 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 	}
 
 	return enforcement
+}
+
+func externalEvaluationEnv(policy model.ExternalPolicy, runDir string, env []string) []string {
+	out := append([]string(nil), env...)
+	out = appendEnvDefault(out, "CRUCIBLE_EXTERNAL_MODE", string(policy.Mode))
+
+	if !fixtureBackedMode(policy.Mode) {
+		return out
+	}
+
+	fixturesPath := strings.TrimSpace(policy.Fixtures)
+	if fixturesPath == "" {
+		candidatePath := filepath.Join(runDir, "external", externalfixtures.HTTPFixturesName)
+		if fileExists(candidatePath) {
+			fixturesPath = candidatePath
+		}
+	}
+	if fixturesPath != "" {
+		out = appendEnvDefault(out, "CRUCIBLE_HTTP_FIXTURES", filepath.ToSlash(fixturesPath))
+	}
+	if !gatewayBackedMode(policy.Mode) {
+		return out
+	}
+
+	gatewaySource := filepath.Join(runDir, "external", externalfixtures.MockGatewayName)
+	if fileExists(gatewaySource) {
+		out = appendEnvDefault(out, "CRUCIBLE_MOCK_GATEWAY_SOURCE", filepath.ToSlash(gatewaySource))
+	}
+
+	gatewayAddr := envValue(out, "CRUCIBLE_MOCK_GATEWAY_ADDR")
+	if gatewayAddr == "" {
+		gatewayAddr = "127.0.0.1:18080"
+		out = appendEnvDefault(out, "CRUCIBLE_MOCK_GATEWAY_ADDR", gatewayAddr)
+	}
+	out = appendEnvDefault(out, "CRUCIBLE_MOCK_GATEWAY_URL", "http://"+gatewayAddr)
+	return out
+}
+
+func fixtureBackedMode(mode model.ExternalMode) bool {
+	return mode == model.ExternalModeMock ||
+		mode == model.ExternalModeReplay ||
+		mode == model.ExternalModeRecord
+}
+
+func gatewayBackedMode(mode model.ExternalMode) bool {
+	return mode == model.ExternalModeMock ||
+		mode == model.ExternalModeReplay
+}
+
+func appendEnvDefault(env []string, key, value string) []string {
+	if envValue(env, key) != "" {
+		return env
+	}
+	return append(env, key+"="+value)
+}
+
+func envValue(env []string, key string) string {
+	prefix := key + "="
+	for _, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			return strings.TrimPrefix(item, prefix)
+		}
+	}
+	return ""
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, stdoutPath, stderrPath string, opts evaluatorExecutionOptions) (model.Metrics, error) {
@@ -587,6 +658,51 @@ verdict_out="${6:?verdict output path required}"
 mkdir -p "$(dirname "$resource_out")"
 timing_out="${resource_out}.time"
 rm -f "$timing_out"
+
+gateway_pid=""
+gateway_log="${resource_out}.mock-gateway.log"
+cleanup_gateway() {
+  if [[ -n "$gateway_pid" ]] && kill -0 "$gateway_pid" 2>/dev/null; then
+    kill "$gateway_pid" 2>/dev/null || true
+    wait "$gateway_pid" 2>/dev/null || true
+  fi
+}
+trap cleanup_gateway EXIT
+
+if [[ -n "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" ]]; then
+  if [[ -z "${CRUCIBLE_HTTP_FIXTURES:-}" ]]; then
+    echo "CRUCIBLE_HTTP_FIXTURES is required when CRUCIBLE_MOCK_GATEWAY_SOURCE is set" >&2
+    exit 126
+  fi
+  if ! command -v go >/dev/null 2>&1; then
+    echo "mock gateway startup requires go in the sandbox image" >&2
+    exit 126
+  fi
+  gateway_addr="${CRUCIBLE_MOCK_GATEWAY_ADDR:-127.0.0.1:18080}"
+  gateway_host="${gateway_addr%:*}"
+  gateway_port="${gateway_addr##*:}"
+  rm -f "$gateway_log"
+  go run "$CRUCIBLE_MOCK_GATEWAY_SOURCE" -fixtures "$CRUCIBLE_HTTP_FIXTURES" -addr "$gateway_addr" >"$gateway_log" 2>&1 &
+  gateway_pid=$!
+  gateway_ready=0
+  for _ in {1..100}; do
+    if ! kill -0 "$gateway_pid" 2>/dev/null; then
+      echo "mock gateway exited during startup" >&2
+      cat "$gateway_log" >&2 2>/dev/null || true
+      exit 126
+    fi
+    if (: >"/dev/tcp/${gateway_host}/${gateway_port}") >/dev/null 2>&1; then
+      gateway_ready=1
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ "$gateway_ready" != "1" ]]; then
+    echo "mock gateway did not become ready on ${gateway_addr}" >&2
+    cat "$gateway_log" >&2 2>/dev/null || true
+    exit 126
+  fi
+fi
 
 start_ns="$(date +%s%N 2>/dev/null || printf '0')"
 exec 3>&2

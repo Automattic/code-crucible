@@ -3,9 +3,11 @@ package run
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Automattic/code-crucible/internal/archive"
+	externalfixtures "github.com/Automattic/code-crucible/internal/external"
 	"github.com/Automattic/code-crucible/internal/model"
 )
 
@@ -165,6 +167,97 @@ JSON
 	}
 }
 
+func TestEvaluateCandidatesAppliesExternalFixtureEnvironment(t *testing.T) {
+	projectDir, created := createEvaluationFixtureWithExternalMode(t, "replay")
+
+	evaluator := `#!/usr/bin/env bash
+set -euo pipefail
+metrics_out="$3"
+verdict_out="$4"
+if [[ "${CRUCIBLE_EXTERNAL_MODE:-}" != "replay" ]]; then
+  echo "missing CRUCIBLE_EXTERNAL_MODE" >&2
+  exit 3
+fi
+if [[ ! -f "${CRUCIBLE_HTTP_FIXTURES:-}" ]]; then
+  echo "missing CRUCIBLE_HTTP_FIXTURES" >&2
+  exit 3
+fi
+if [[ ! -f "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" ]]; then
+  echo "missing CRUCIBLE_MOCK_GATEWAY_SOURCE" >&2
+  exit 3
+fi
+if [[ "${CRUCIBLE_MOCK_GATEWAY_ADDR:-}" != "127.0.0.1:18080" ]]; then
+  echo "missing CRUCIBLE_MOCK_GATEWAY_ADDR" >&2
+  exit 3
+fi
+if [[ "${CRUCIBLE_MOCK_GATEWAY_URL:-}" != "http://127.0.0.1:18080" ]]; then
+  echo "missing CRUCIBLE_MOCK_GATEWAY_URL" >&2
+  exit 3
+fi
+cat > "$metrics_out" <<'JSON'
+{
+  "runtime_mean_ms": 1
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+`
+	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluator), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCandidates(EvaluationOptions{
+		ProjectDir:  projectDir,
+		RunID:       created.ID,
+		CandidateID: "candidate-0000-baseline",
+		Adopt:       false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("evaluated results = %d, want one", len(report.Results))
+	}
+	if report.Results[0].Status != "passed" {
+		t.Fatalf("status = %q, want passed", report.Results[0].Status)
+	}
+}
+
+func TestExternalEvaluationEnvAddsFixtureGatewayDefaults(t *testing.T) {
+	runDir := t.TempDir()
+	externalDir := filepath.Join(runDir, "external")
+	if err := os.MkdirAll(externalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gatewaySource := filepath.Join(externalDir, externalfixtures.MockGatewayName)
+	if err := externalfixtures.WriteMockGateway(gatewaySource); err != nil {
+		t.Fatal(err)
+	}
+	fixturesPath := filepath.Join(externalDir, externalfixtures.HTTPFixturesName)
+
+	env := externalEvaluationEnv(model.ExternalPolicy{
+		Mode:     model.ExternalModeMock,
+		Fixtures: fixturesPath,
+	}, runDir, []string{"CRUCIBLE_MOCK_GATEWAY_ADDR=127.0.0.1:19090"})
+
+	for _, want := range []string{
+		"CRUCIBLE_EXTERNAL_MODE=mock",
+		"CRUCIBLE_HTTP_FIXTURES=" + filepath.ToSlash(fixturesPath),
+		"CRUCIBLE_MOCK_GATEWAY_SOURCE=" + filepath.ToSlash(gatewaySource),
+		"CRUCIBLE_MOCK_GATEWAY_ADDR=127.0.0.1:19090",
+		"CRUCIBLE_MOCK_GATEWAY_URL=http://127.0.0.1:19090",
+	} {
+		if !containsArg(env, want) {
+			t.Fatalf("env missing %q: %#v", want, env)
+		}
+	}
+}
+
 func TestWrapTasksetCommand(t *testing.T) {
 	name, args := wrapTasksetCommand("bash", []string{"evaluator.sh"}, 2)
 	if name != "taskset" {
@@ -258,6 +351,20 @@ func TestBuildContainerEvaluatorCommand(t *testing.T) {
 	} {
 		if !containsArg(args, want) {
 			t.Fatalf("args missing %q: %#v", want, args)
+		}
+	}
+}
+
+func TestSandboxResourceWrapperStartsMockGateway(t *testing.T) {
+	script := sandboxResourceWrapperScript()
+	for _, want := range []string{
+		"CRUCIBLE_MOCK_GATEWAY_SOURCE",
+		"CRUCIBLE_HTTP_FIXTURES",
+		"go run \"$CRUCIBLE_MOCK_GATEWAY_SOURCE\"",
+		"/dev/tcp/${gateway_host}/${gateway_port}",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("resource wrapper missing %q", want)
 		}
 	}
 }
@@ -486,6 +593,11 @@ JSON
 
 func createEvaluationFixture(t *testing.T) (string, *CreatedRun) {
 	t.Helper()
+	return createEvaluationFixtureWithExternalMode(t, "deny")
+}
+
+func createEvaluationFixtureWithExternalMode(t *testing.T, externalMode string) (string, *CreatedRun) {
+	t.Helper()
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "search")
 	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
@@ -500,7 +612,7 @@ func createEvaluationFixture(t *testing.T) (string, *CreatedRun) {
 		Optimize:     "make ranking faster",
 		TargetPath:   "internal/search/rank.go",
 		Variants:     1,
-		ExternalMode: "deny",
+		ExternalMode: externalMode,
 		Agent:        "codex",
 	})
 	if err != nil {

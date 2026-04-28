@@ -60,4 +60,24 @@ Runs with fixture-backed modes also archive:
 external/mock-gateway.go
 ```
 
-This is the first generated gateway artifact. It can serve matching fixtures, but evaluator integration and proxy routing are still being built. Until that wiring lands, evaluators that need mock or replay behavior should start the gateway explicitly and configure the candidate under test to call it.
+This is the first generated gateway artifact. During sandboxed `mock` and `replay` evaluation, Code Crucible exports:
+
+- `CRUCIBLE_EXTERNAL_MODE`
+- `CRUCIBLE_HTTP_FIXTURES`
+- `CRUCIBLE_MOCK_GATEWAY_SOURCE`
+- `CRUCIBLE_MOCK_GATEWAY_ADDR`
+- `CRUCIBLE_MOCK_GATEWAY_URL`
+
+The container resource wrapper starts the gateway on `CRUCIBLE_MOCK_GATEWAY_ADDR` before invoking `evaluator.sh`, and stops it after the evaluator exits. The default URL is:
+
+```text
+http://127.0.0.1:18080
+```
+
+Evaluators should configure the candidate under test to call `CRUCIBLE_MOCK_GATEWAY_URL` when deterministic HTTP responses are required. The current gateway is generated Go source, so sandbox images must include `go` until Code Crucible ships a packaged gateway binary.
+
+Current limits:
+
+- Transparent routing for arbitrary outbound HTTP clients is not implemented yet.
+- HTTPS replay is not implemented yet.
+- Local evaluation receives the same environment variables, but Code Crucible does not auto-start the gateway outside the container wrapper yet.
