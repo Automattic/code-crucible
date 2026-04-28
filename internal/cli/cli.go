@@ -588,7 +588,10 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	timeoutValue := fs.String("timeout", "", "optional evaluator timeout, such as 30s or 2m")
 	jobs := fs.Int("jobs", 1, "maximum number of candidates to evaluate concurrently")
 	nice := fs.Int("nice", 10, "nice priority for evaluator processes; 0 disables priority adjustment")
-	cpuLimit := fs.Int("cpu-limit", 0, "optional CPU affinity limit for evaluator processes; 0 disables affinity control")
+	cpuLimit := fs.Int("cpu-limit", 0, "optional CPU limit for evaluator processes; local mode uses taskset affinity")
+	sandboxEngine := fs.String("sandbox-engine", "local", "evaluator sandbox engine: local, docker, or podman")
+	sandboxImage := fs.String("sandbox-image", "", "container image for docker or podman evaluator sandboxes")
+	sandboxNetwork := fs.String("sandbox-network", "none", "container network mode for docker or podman evaluator sandboxes")
 	var env repeatedStrings
 	fs.Var(&env, "env", "environment variable for evaluators in KEY=VALUE form; may be repeated")
 	adoptBefore := fs.Bool("adopt", true, "adopt generated candidates before evaluation")
@@ -607,6 +610,15 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	}
 	if *cpuLimit < 0 {
 		fmt.Fprintf(stderr, "evaluate failed: --cpu-limit must be at least 0\n")
+		return 2
+	}
+	sandbox, err := run.NormalizeSandboxOptions(run.SandboxOptions{
+		Engine:  *sandboxEngine,
+		Image:   *sandboxImage,
+		Network: *sandboxNetwork,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "evaluate failed: %v\n", err)
 		return 2
 	}
 
@@ -630,6 +642,7 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 		Nice:        *nice,
 		CPULimit:    *cpuLimit,
 		Env:         []string(env),
+		Sandbox:     sandbox,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "evaluate failed: %v\n", err)
@@ -916,7 +929,7 @@ Usage:
   crucible run (--optimize TEXT | --task-file PATH) [--project DIR] [--target-path PATH] [--variants N] [--generate]
   crucible generate [--project DIR] [--run RUN_ID] [--agent codex]
   crucible adopt [--project DIR] [--run RUN_ID]
-  crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--nice N] [--cpu-limit N]
+  crucible evaluate [--project DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--nice N] [--cpu-limit N] [--sandbox-engine docker|podman --sandbox-image IMAGE]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]
   crucible inspect [--project DIR] [--run RUN_ID] [candidate-id]
   crucible version

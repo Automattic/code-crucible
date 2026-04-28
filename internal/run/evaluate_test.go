@@ -91,6 +91,9 @@ JSON
 		if result.Metrics.WallTimeMS <= 0 {
 			t.Fatalf("%s wall time = %f, want positive", result.Candidate.ID, result.Metrics.WallTimeMS)
 		}
+		if result.Metrics.ResourceMetricSource != "host-process" {
+			t.Fatalf("%s resource metric source = %q, want host-process", result.Candidate.ID, result.Metrics.ResourceMetricSource)
+		}
 	}
 
 	metricsPath := filepath.Join(created.RunDir, "round-0001", "candidate-0000-baseline", "metrics.json")
@@ -100,6 +103,9 @@ JSON
 	}
 	if metrics.WallTimeMS <= 0 {
 		t.Fatalf("metrics artifact wall time = %f, want positive", metrics.WallTimeMS)
+	}
+	if metrics.ResourceMetricSource != "host-process" {
+		t.Fatalf("metrics artifact resource source = %q, want host-process", metrics.ResourceMetricSource)
 	}
 }
 
@@ -175,6 +181,104 @@ func TestWrapTasksetCommand(t *testing.T) {
 	}
 }
 
+func TestNormalizeSandboxOptions(t *testing.T) {
+	sandbox, err := NormalizeSandboxOptions(SandboxOptions{
+		Engine: "docker",
+		Image:  "golang:1.25",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sandbox.Network != "none" {
+		t.Fatalf("network = %q, want none", sandbox.Network)
+	}
+
+	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "docker"}); err == nil {
+		t.Fatal("expected missing image error")
+	}
+	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "local", Image: "golang:1.25"}); err == nil {
+		t.Fatal("expected local image error")
+	}
+}
+
+func TestBuildContainerEvaluatorCommand(t *testing.T) {
+	projectDir := t.TempDir()
+	runDir := filepath.Join(projectDir, ".crucible", "runs", "run")
+	candidateDir := filepath.Join(runDir, "round-0001", "candidate-0001")
+	evaluatorPath := filepath.Join(runDir, "evaluator", "evaluator.sh")
+	metricsPath := filepath.Join(candidateDir, "metrics.json")
+	resourcePath := filepath.Join(candidateDir, "resource-metrics.json")
+	verdictPath := filepath.Join(candidateDir, "verdict.json")
+
+	name, args, err := buildEvaluatorCommand(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, evaluatorExecutionOptions{
+		ProjectDir: projectDir,
+		CPULimit:   2,
+		Env:        []string{"GOMAXPROCS=1"},
+		Sandbox: SandboxOptions{
+			Engine:  "podman",
+			Image:   "golang:1.25",
+			Network: "none",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "podman" {
+		t.Fatalf("name = %q, want podman", name)
+	}
+
+	for _, want := range []string{
+		"run",
+		"--rm",
+		"--network",
+		"none",
+		"--volume",
+		sandboxMount(runDir, "rw"),
+		"--volume",
+		sandboxMount(projectDir, "ro"),
+		"--cpus",
+		"2",
+		"--userns",
+		"keep-id",
+		"--workdir",
+		runDir,
+		"--env",
+		"HOME=" + sandboxHomeDir(runDir),
+		"--env",
+		"GOMAXPROCS=1",
+		"golang:1.25",
+		"bash",
+		sandboxResourceWrapperPath(runDir),
+		evaluatorPath,
+		candidateDir,
+		runDir,
+		metricsPath,
+		resourcePath,
+		verdictPath,
+	} {
+		if !containsArg(args, want) {
+			t.Fatalf("args missing %q: %#v", want, args)
+		}
+	}
+}
+
+func TestMergeResourceMetricsCopiesSource(t *testing.T) {
+	metrics := mergeResourceMetrics(model.Metrics{RuntimeMeanMS: 1}, model.Metrics{
+		WallTimeMS:           250,
+		CPUUserSeconds:       0.2,
+		ResourceMetricSource: "container-wrapper",
+	})
+	if metrics.RuntimeMeanMS != 1 {
+		t.Fatalf("runtime_mean_ms = %f, want evaluator metric preserved", metrics.RuntimeMeanMS)
+	}
+	if metrics.WallTimeMS != 250 {
+		t.Fatalf("wall_time_ms = %f, want resource metric merged", metrics.WallTimeMS)
+	}
+	if metrics.ResourceMetricSource != "container-wrapper" {
+		t.Fatalf("resource metric source = %q, want container-wrapper", metrics.ResourceMetricSource)
+	}
+}
+
 func TestEvaluateCandidatesFailsClosedWhenVerdictMissing(t *testing.T) {
 	projectDir, created := createEvaluationFixture(t)
 
@@ -226,6 +330,67 @@ JSON
 	}
 }
 
+func TestEvaluateCandidatesFailsClosedWhenEvaluatorExitsAfterWritingPassedVerdict(t *testing.T) {
+	projectDir, created := createEvaluationFixture(t)
+	candidateDir := filepath.Join(created.RunDir, "round-0001", "candidate-0000-baseline")
+	if err := os.WriteFile(filepath.Join(candidateDir, "metrics.json"), []byte(`{"runtime_mean_ms": 999}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateDir, "verdict.json"), []byte(`{"correctness_passed":true,"benchmark_passed":true,"external_policy_passed":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluator := `#!/usr/bin/env bash
+set -euo pipefail
+metrics_out="$3"
+verdict_out="$4"
+cat > "$metrics_out" <<'JSON'
+{
+  "runtime_mean_ms": 1
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+exit 7
+`
+	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluator), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCandidates(EvaluationOptions{
+		ProjectDir:  projectDir,
+		RunID:       created.ID,
+		CandidateID: "candidate-0000-baseline",
+		Adopt:       false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("evaluated results = %d, want one", len(report.Results))
+	}
+
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := board.Results[0]
+	if result.Status != "failed" {
+		t.Fatalf("status = %q, want failed", result.Status)
+	}
+	if result.Metrics.RuntimeMeanMS != 1 {
+		t.Fatalf("runtime_mean_ms = %f, want freshly written metrics", result.Metrics.RuntimeMeanMS)
+	}
+	if result.Verdict.BenchmarkPassed {
+		t.Fatalf("benchmark_passed = true, want evaluator process failure to fail closed")
+	}
+}
+
 func createEvaluationFixture(t *testing.T) (string, *CreatedRun) {
 	t.Helper()
 	projectDir := t.TempDir()
@@ -249,4 +414,13 @@ func createEvaluationFixture(t *testing.T) (string, *CreatedRun) {
 		t.Fatal(err)
 	}
 	return projectDir, created
+}
+
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
 }

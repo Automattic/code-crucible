@@ -73,6 +73,7 @@ type Metrics struct {
 	InvoluntaryContextSwitches int64   `json:"involuntary_context_switches,omitempty"`
 	IOBytesRead                int64   `json:"io_bytes_read,omitempty"`
 	IOBytesWritten             int64   `json:"io_bytes_written,omitempty"`
+	ResourceMetricSource       string  `json:"resource_metric_source,omitempty"`
 	ExternalCallCount          int     `json:"external_call_count,omitempty"`
 	ExternalLatencyMS          float64 `json:"external_latency_ms,omitempty"`
 	ExternalCostCents          float64 `json:"external_cost_cents,omitempty"`

@@ -158,6 +158,12 @@ If `--evaluator` is provided, the scaffold wraps that command and records minima
 
 `crucible evaluate` executes the run evaluator for each candidate currently listed in `leaderboard.json`. The default CLI behavior is sequential (`--jobs 1`) and lower-priority (`--nice 10`) so tournaments do not monopolize an interactive workstation. CPU affinity can be constrained with `--cpu-limit N` on systems with `taskset`. Additional evaluator environment variables can be passed with repeated `--env KEY=VALUE` flags.
 
+Evaluator execution is local by default. Passing `--sandbox-engine docker` or `--sandbox-engine podman` with `--sandbox-image IMAGE` wraps each evaluator invocation in `docker run` or `podman run`. Container mode bind-mounts the run archive read/write, bind-mounts the host project read-only, defaults to `--network none`, maps `--cpu-limit` to a container CPU quota, and records the sandbox settings in JSON evaluation reports.
+
+Each evaluator run writes `resource-metrics.json` beside the candidate's `metrics.json` and `verdict.json`. Local mode records host child-process metrics. Container mode runs `evaluator/resource-wrapper.sh` inside the sandbox so wall time, user CPU time, system CPU time, and CPU percent come from the isolated evaluator process rather than the host Docker or Podman client. `metrics.resource_metric_source` identifies the source used for the merged resource metrics.
+
+Tournament results should be compared within a single sandbox engine. Docker and Podman runs are both measured inside their containers, but their timings are not interchangeable because runtime, storage, rootless configuration, and cache behavior can differ.
+
 It passes:
 
 ```text
@@ -168,8 +174,7 @@ The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads 
 
 The planned evaluator layer will add:
 
-- Containerized execution
-- Resource limits
+- Richer sandbox profiles and resource accounting
 - External trace collection
 
 ## Data Model

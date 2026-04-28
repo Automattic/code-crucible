@@ -28,6 +28,13 @@ type EvaluationOptions struct {
 	Nice        int
 	CPULimit    int
 	Env         []string
+	Sandbox     SandboxOptions
+}
+
+type SandboxOptions struct {
+	Engine  string `json:"engine,omitempty"`
+	Image   string `json:"image,omitempty"`
+	Network string `json:"network,omitempty"`
 }
 
 type CandidateEvaluation struct {
@@ -36,9 +43,11 @@ type CandidateEvaluation struct {
 	Score            float64                 `json:"score"`
 	ScoreExplanation *model.ScoreExplanation `json:"score_explanation,omitempty"`
 	MetricsPath      string                  `json:"metrics_path"`
+	ResourcePath     string                  `json:"resource_metrics_path,omitempty"`
 	VerdictPath      string                  `json:"verdict_path"`
 	StdoutPath       string                  `json:"stdout_path"`
 	StderrPath       string                  `json:"stderr_path"`
+	Sandbox          *SandboxOptions         `json:"sandbox,omitempty"`
 	Errors           []string                `json:"errors,omitempty"`
 	Warnings         []string                `json:"warnings,omitempty"`
 }
@@ -69,6 +78,11 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	sandbox, err := NormalizeSandboxOptions(opts.Sandbox)
+	if err != nil {
+		return nil, err
+	}
+	opts.Sandbox = sandbox
 
 	runDir := cfg.RunDir
 	if runDir == "" {
@@ -111,20 +125,24 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 	if jobs <= 1 {
 		for _, index := range indexes {
 			evaluation, updated := evaluateOne(cfg, evaluatorPath, runDir, board.Results[index], evaluatorExecutionOptions{
-				Timeout:  opts.Timeout,
-				Nice:     opts.Nice,
-				CPULimit: opts.CPULimit,
-				Env:      opts.Env,
+				Timeout:    opts.Timeout,
+				Nice:       opts.Nice,
+				CPULimit:   opts.CPULimit,
+				Env:        opts.Env,
+				ProjectDir: absProject,
+				Sandbox:    opts.Sandbox,
 			})
 			board.Results[index] = updated
 			report.Results = append(report.Results, evaluation)
 		}
 	} else {
 		results := evaluateParallel(cfg, evaluatorPath, runDir, board.Results, indexes, jobs, evaluatorExecutionOptions{
-			Timeout:  opts.Timeout,
-			Nice:     opts.Nice,
-			CPULimit: opts.CPULimit,
-			Env:      opts.Env,
+			Timeout:    opts.Timeout,
+			Nice:       opts.Nice,
+			CPULimit:   opts.CPULimit,
+			Env:        opts.Env,
+			ProjectDir: absProject,
+			Sandbox:    opts.Sandbox,
 		})
 		for _, result := range results {
 			board.Results[result.index] = result.updated
@@ -146,10 +164,12 @@ func EvaluateCandidates(opts EvaluationOptions) (*EvaluationReport, error) {
 }
 
 type evaluatorExecutionOptions struct {
-	Timeout  time.Duration
-	Nice     int
-	CPULimit int
-	Env      []string
+	Timeout    time.Duration
+	Nice       int
+	CPULimit   int
+	Env        []string
+	ProjectDir string
+	Sandbox    SandboxOptions
 }
 
 type evaluationResult struct {
@@ -227,21 +247,33 @@ func evaluateParallel(cfg *model.RunConfig, evaluatorPath, runDir string, result
 func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result model.CandidateResult, execOpts evaluatorExecutionOptions) (CandidateEvaluation, model.CandidateResult) {
 	candidateDir := candidateDirectory(result.Candidate)
 	metricsPath := filepath.Join(candidateDir, "metrics.json")
+	resourcePath := filepath.Join(candidateDir, "resource-metrics.json")
 	verdictPath := filepath.Join(candidateDir, "verdict.json")
 	stdoutPath := filepath.Join(candidateDir, "evaluation.stdout.log")
 	stderrPath := filepath.Join(candidateDir, "evaluation.stderr.log")
 
 	evaluation := CandidateEvaluation{
-		ID:          result.Candidate.ID,
-		MetricsPath: filepath.ToSlash(metricsPath),
-		VerdictPath: filepath.ToSlash(verdictPath),
-		StdoutPath:  filepath.ToSlash(stdoutPath),
-		StderrPath:  filepath.ToSlash(stderrPath),
+		ID:           result.Candidate.ID,
+		MetricsPath:  filepath.ToSlash(metricsPath),
+		ResourcePath: filepath.ToSlash(resourcePath),
+		VerdictPath:  filepath.ToSlash(verdictPath),
+		StdoutPath:   filepath.ToSlash(stdoutPath),
+		StderrPath:   filepath.ToSlash(stderrPath),
+	}
+	if sandboxEnabled(execOpts.Sandbox) {
+		sandbox := execOpts.Sandbox
+		evaluation.Sandbox = &sandbox
 	}
 
-	resourceMetrics, err := runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, verdictPath, stdoutPath, stderrPath, execOpts)
+	if err := removeEvaluationOutputs(metricsPath, resourcePath, verdictPath); err != nil {
+		evaluation.Warnings = append(evaluation.Warnings, err.Error())
+	}
+	resourceMetrics, err := runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, stdoutPath, stderrPath, execOpts)
 	if err != nil {
 		evaluation.Errors = append(evaluation.Errors, err.Error())
+	}
+	if err := archive.SaveJSON(resourcePath, resourceMetrics); err != nil {
+		evaluation.Warnings = append(evaluation.Warnings, fmt.Sprintf("save resource metrics: %v", err))
 	}
 
 	metrics, err := loadMetrics(metricsPath)
@@ -266,6 +298,7 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	}
 	if len(evaluation.Errors) > 0 {
 		verdict.Errors = append(verdict.Errors, evaluation.Errors...)
+		verdict.BenchmarkPassed = false
 	}
 	if len(evaluation.Warnings) > 0 {
 		verdict.Warnings = append(verdict.Warnings, evaluation.Warnings...)
@@ -283,7 +316,44 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	return evaluation, result
 }
 
-func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, verdictPath, stdoutPath, stderrPath string, opts evaluatorExecutionOptions) (model.Metrics, error) {
+func removeEvaluationOutputs(paths ...string) error {
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove stale evaluation output %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func NormalizeSandboxOptions(opts SandboxOptions) (SandboxOptions, error) {
+	opts.Engine = strings.TrimSpace(opts.Engine)
+	opts.Image = strings.TrimSpace(opts.Image)
+	opts.Network = strings.TrimSpace(opts.Network)
+
+	if opts.Engine == "" {
+		opts.Engine = "local"
+	}
+
+	switch opts.Engine {
+	case "local":
+		if opts.Image != "" {
+			return SandboxOptions{}, fmt.Errorf("--sandbox-image requires --sandbox-engine docker or podman")
+		}
+		return SandboxOptions{Engine: "local"}, nil
+	case "docker", "podman":
+		if opts.Image == "" {
+			return SandboxOptions{}, fmt.Errorf("--sandbox-image is required when --sandbox-engine is %s", opts.Engine)
+		}
+		if opts.Network == "" {
+			opts.Network = "none"
+		}
+		return opts, nil
+	default:
+		return SandboxOptions{}, fmt.Errorf("--sandbox-engine must be local, docker, or podman")
+	}
+}
+
+func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, stdoutPath, stderrPath string, opts evaluatorExecutionOptions) (model.Metrics, error) {
 	if info, err := os.Stat(evaluatorPath); err != nil || info.IsDir() {
 		return model.Metrics{}, fmt.Errorf("evaluator script is missing: %s", evaluatorPath)
 	}
@@ -313,6 +383,57 @@ func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, verdic
 	}
 	defer cancel()
 
+	if sandboxEnabled(opts.Sandbox) {
+		if err := os.MkdirAll(sandboxHomeDir(runDir), 0o755); err != nil {
+			return model.Metrics{}, err
+		}
+		if err := ensureSandboxResourceWrapper(runDir); err != nil {
+			return model.Metrics{}, err
+		}
+	}
+
+	name, args, err := buildEvaluatorCommand(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, opts)
+	if err != nil {
+		return model.Metrics{}, err
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = runDir
+	if !sandboxEnabled(opts.Sandbox) && len(opts.Env) > 0 {
+		cmd.Env = append(os.Environ(), opts.Env...)
+	}
+	cmd.Stdout = stdoutFile
+	cmd.Stderr = stderrFile
+	start := time.Now()
+	err = cmd.Run()
+	resourceMetrics := processMetrics(cmd.ProcessState, time.Since(start))
+	if sandboxEnabled(opts.Sandbox) {
+		containerMetrics, loadErr := loadResourceMetrics(resourcePath)
+		if loadErr == nil {
+			resourceMetrics = containerMetrics
+		} else if err == nil {
+			err = loadErr
+		}
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		return resourceMetrics, fmt.Errorf("evaluator timed out after %s", opts.Timeout)
+	}
+	if err != nil {
+		return resourceMetrics, fmt.Errorf("evaluator failed: %w", err)
+	}
+	return resourceMetrics, nil
+}
+
+func buildEvaluatorCommand(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath string, opts evaluatorExecutionOptions) (string, []string, error) {
+	sandbox, err := NormalizeSandboxOptions(opts.Sandbox)
+	if err != nil {
+		return "", nil, err
+	}
+	opts.Sandbox = sandbox
+
+	if sandboxEnabled(opts.Sandbox) {
+		return buildContainerEvaluatorCommand(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, opts)
+	}
+
 	name := "bash"
 	args := []string{evaluatorPath, candidateDir, runDir, metricsPath, verdictPath}
 	if opts.CPULimit > 0 {
@@ -322,23 +443,122 @@ func runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, verdic
 		args = append([]string{"-n", strconv.Itoa(opts.Nice), name}, args...)
 		name = "nice"
 	}
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = runDir
-	if len(opts.Env) > 0 {
-		cmd.Env = append(os.Environ(), opts.Env...)
+	return name, args, nil
+}
+
+func buildContainerEvaluatorCommand(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath string, opts evaluatorExecutionOptions) (string, []string, error) {
+	args := []string{
+		"run",
+		"--rm",
+		"--network", opts.Sandbox.Network,
+		"--volume", sandboxMount(runDir, "rw"),
 	}
-	cmd.Stdout = stdoutFile
-	cmd.Stderr = stderrFile
-	start := time.Now()
-	err = cmd.Run()
-	resourceMetrics := processMetrics(cmd.ProcessState, time.Since(start))
-	if ctx.Err() == context.DeadlineExceeded {
-		return resourceMetrics, fmt.Errorf("evaluator timed out after %s", opts.Timeout)
+
+	if opts.ProjectDir != "" && filepath.Clean(opts.ProjectDir) != filepath.Clean(runDir) {
+		args = append(args, "--volume", sandboxMount(opts.ProjectDir, "ro"))
 	}
-	if err != nil {
-		return resourceMetrics, fmt.Errorf("evaluator failed: %w", err)
+
+	if opts.CPULimit > 0 {
+		args = append(args, "--cpus", strconv.Itoa(opts.CPULimit))
 	}
-	return resourceMetrics, nil
+
+	if opts.Sandbox.Engine == "podman" {
+		args = append(args, "--userns", "keep-id")
+	} else if uid := os.Getuid(); uid >= 0 {
+		args = append(args, "--user", fmt.Sprintf("%d:%d", uid, os.Getgid()))
+	}
+
+	args = append(args,
+		"--workdir", runDir,
+		"--env", "HOME="+sandboxHomeDir(runDir),
+	)
+	for _, env := range opts.Env {
+		args = append(args, "--env", env)
+	}
+
+	args = append(args,
+		opts.Sandbox.Image,
+		"bash",
+		sandboxResourceWrapperPath(runDir),
+		evaluatorPath,
+		candidateDir,
+		runDir,
+		metricsPath,
+		resourcePath,
+		verdictPath,
+	)
+	return opts.Sandbox.Engine, args, nil
+}
+
+func ensureSandboxResourceWrapper(runDir string) error {
+	path := sandboxResourceWrapperPath(runDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(sandboxResourceWrapperScript()), 0o755)
+}
+
+func sandboxResourceWrapperPath(runDir string) string {
+	return filepath.Join(runDir, "evaluator", "resource-wrapper.sh")
+}
+
+func sandboxResourceWrapperScript() string {
+	return `#!/usr/bin/env bash
+set -u
+
+evaluator_path="${1:?evaluator path required}"
+candidate_dir="${2:?candidate directory required}"
+run_dir="${3:?run directory required}"
+metrics_out="${4:?metrics output path required}"
+resource_out="${5:?resource metrics output path required}"
+verdict_out="${6:?verdict output path required}"
+
+mkdir -p "$(dirname "$resource_out")"
+timing_out="${resource_out}.time"
+rm -f "$timing_out"
+
+start_ns="$(date +%s%N 2>/dev/null || printf '0')"
+exec 3>&2
+TIMEFORMAT=$'real_seconds=%3R\nuser_seconds=%3U\nsystem_seconds=%3S'
+{ time bash "$evaluator_path" "$candidate_dir" "$run_dir" "$metrics_out" "$verdict_out" 2>&3; } 2>"$timing_out"
+status=$?
+exec 3>&-
+end_ns="$(date +%s%N 2>/dev/null || printf '0')"
+
+real_seconds="$(awk -F= '$1 == "real_seconds" { print $2 }' "$timing_out" 2>/dev/null || printf '0')"
+user_seconds="$(awk -F= '$1 == "user_seconds" { print $2 }' "$timing_out" 2>/dev/null || printf '0')"
+system_seconds="$(awk -F= '$1 == "system_seconds" { print $2 }' "$timing_out" 2>/dev/null || printf '0')"
+real_seconds="${real_seconds:-0}"
+user_seconds="${user_seconds:-0}"
+system_seconds="${system_seconds:-0}"
+
+wall_time_ms="$(awk -v start="$start_ns" -v end="$end_ns" -v real="$real_seconds" 'BEGIN {
+  if (start > 0 && end >= start) {
+    printf "%.3f", (end - start) / 1000000
+  } else {
+    printf "%.3f", real * 1000
+  }
+}')"
+cpu_percent="$(awk -v user="$user_seconds" -v sys="$system_seconds" -v wall_ms="$wall_time_ms" 'BEGIN {
+  if (wall_ms > 0) {
+    printf "%.6f", (user + sys) / (wall_ms / 1000) * 100
+  } else {
+    printf "0"
+  }
+}')"
+
+cat > "$resource_out" <<JSON
+{
+  "wall_time_ms": $wall_time_ms,
+  "cpu_user_seconds": $user_seconds,
+  "cpu_system_seconds": $system_seconds,
+  "cpu_percent": $cpu_percent,
+  "resource_metric_source": "container-wrapper"
+}
+JSON
+
+exit "$status"
+`
 }
 
 func wrapTasksetCommand(name string, args []string, cpuLimit int) (string, []string) {
@@ -351,9 +571,23 @@ func wrapTasksetCommand(name string, args []string, cpuLimit int) (string, []str
 	return "taskset", wrapped
 }
 
+func sandboxEnabled(opts SandboxOptions) bool {
+	return opts.Engine == "docker" || opts.Engine == "podman"
+}
+
+func sandboxMount(path, access string) string {
+	clean := filepath.Clean(path)
+	return clean + ":" + clean + ":" + access
+}
+
+func sandboxHomeDir(runDir string) string {
+	return filepath.Join(runDir, "tmp", "sandbox-home")
+}
+
 func processMetrics(state *os.ProcessState, wall time.Duration) model.Metrics {
 	metrics := model.Metrics{
-		WallTimeMS: float64(wall.Microseconds()) / 1000,
+		WallTimeMS:           float64(wall.Microseconds()) / 1000,
+		ResourceMetricSource: "host-process",
 	}
 	if state == nil {
 		return metrics
@@ -406,6 +640,9 @@ func mergeResourceMetrics(metrics, resource model.Metrics) model.Metrics {
 	if resource.IOBytesWritten > 0 {
 		metrics.IOBytesWritten = resource.IOBytesWritten
 	}
+	if resource.ResourceMetricSource != "" {
+		metrics.ResourceMetricSource = resource.ResourceMetricSource
+	}
 	return metrics
 }
 
@@ -413,6 +650,14 @@ func loadMetrics(path string) (model.Metrics, error) {
 	var metrics model.Metrics
 	if err := loadJSON(path, &metrics); err != nil {
 		return metrics, fmt.Errorf("metrics missing or invalid: %w", err)
+	}
+	return metrics, nil
+}
+
+func loadResourceMetrics(path string) (model.Metrics, error) {
+	var metrics model.Metrics
+	if err := loadJSON(path, &metrics); err != nil {
+		return metrics, fmt.Errorf("resource metrics missing or invalid: %w", err)
 	}
 	return metrics, nil
 }

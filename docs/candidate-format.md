@@ -81,6 +81,7 @@ candidate-NNNN/
   evaluation.stdout.log
   evaluation.stderr.log
   metrics.json
+  resource-metrics.json
   verdict.json
 ```
 
@@ -108,6 +109,11 @@ Code Crucible augments those script-provided values with process-level resource 
 - `involuntary_context_switches`
 - `io_bytes_read`
 - `io_bytes_written`
+- `resource_metric_source`
+
+Local evaluator runs use `resource_metric_source: "host-process"`. Docker and Podman evaluator runs use `resource_metric_source: "container-wrapper"` and measure from inside the sandbox.
+
+Compare resource metrics only within the same sandbox engine. Docker and Podman runs can produce different timings because they may use different runtimes, storage drivers, rootless settings, and cache states.
 
 `verdict.json` must include:
 

@@ -250,12 +250,27 @@ candidate-NNNN/
   evaluation.stdout.log
   evaluation.stderr.log
   metrics.json
+  resource-metrics.json
   verdict.json
 ```
 
 If the evaluator fails or omits `verdict.json`, Code Crucible marks the candidate as failed. If `metrics.json` is missing or invalid, the candidate can still receive a failed verdict with a warning.
 
-Code Crucible also records process-level resource metrics around each evaluator invocation and merges them into `metrics.json` before updating `leaderboard.json`. These include wall time, user CPU time, system CPU time, CPU percent, max RSS, context switches, and block I/O counts. Evaluator scripts should still emit domain-specific metrics such as benchmark latency, allocations, external calls, and correctness verdicts. When an evaluator reports `p95_latency_ms`, it should be a true 95th percentile value for the sampled benchmark or request timings, not an average or median.
+Code Crucible also records resource metrics for each evaluator invocation in `resource-metrics.json` and merges them into `metrics.json` before updating `leaderboard.json`. These include wall time, user CPU time, system CPU time, CPU percent, max RSS, context switches, block I/O counts, and `resource_metric_source`. Evaluator scripts should still emit domain-specific metrics such as benchmark latency, allocations, external calls, and correctness verdicts. When an evaluator reports `p95_latency_ms`, it should be a true 95th percentile value for the sampled benchmark or request timings, not an average or median.
+
+Evaluator execution is local by default. For containerized evaluation, pass `--sandbox-engine docker` or `--sandbox-engine podman` with an image that contains `bash` and the required project toolchain:
+
+```bash
+crucible evaluate \
+  --sandbox-engine podman \
+  --sandbox-image golang:1.25 \
+  --sandbox-network none \
+  --cpu-limit 2
+```
+
+Container sandboxes bind-mount the run archive read/write and the host project read-only at their original absolute paths, run with network isolation by default, and pass `--cpu-limit` through as a container CPU quota. Container runs execute an archived resource wrapper inside the sandbox, so CPU and wall-time resource metrics describe the evaluator process inside the container instead of the host Docker or Podman client.
+
+Keep all candidates in a tournament on the same sandbox engine. Docker and Podman timings should not be compared as equivalent results because storage drivers, rootless behavior, cache state, and runtime overhead can differ even when both use the same image and wrapper.
 
 ## Proof Of Concept Fixture
 
@@ -306,7 +321,7 @@ crucible run \
   --allow-hosts api.example.com,auth.example.com
 ```
 
-Proxy and container enforcement are not implemented yet. The current scaffold records the policy and requires generated competitors and evaluators to respect it.
+Proxy enforcement is not implemented yet. Container evaluation can enforce `--sandbox-network none`, while the current external policy scaffold still records the intended policy and requires generated competitors and evaluators to respect it.
 
 ## Project Work Area
 
@@ -366,8 +381,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 ## Roadmap
 
-- Add Docker or Podman sandbox execution
 - Add proxy or mock gateway enforcement
+- Expand sandbox profiles and resource accounting
 - Add SQLite index alongside filesystem artifacts
 - Add replay fixture format and mock handler generator
 - Add multi-round evolution strategy

@@ -237,6 +237,21 @@ func TestEvaluateRejectsInvalidResourceOptions(t *testing.T) {
 			args: []string{"evaluate", "--cpu-limit", "-1"},
 			want: "--cpu-limit must be at least 0",
 		},
+		{
+			name: "sandbox engine",
+			args: []string{"evaluate", "--sandbox-engine", "jail"},
+			want: "--sandbox-engine must be local, docker, or podman",
+		},
+		{
+			name: "sandbox image",
+			args: []string{"evaluate", "--sandbox-engine", "docker"},
+			want: "--sandbox-image is required when --sandbox-engine is docker",
+		},
+		{
+			name: "local sandbox image",
+			args: []string{"evaluate", "--sandbox-image", "golang:1.25"},
+			want: "--sandbox-image requires --sandbox-engine docker or podman",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
