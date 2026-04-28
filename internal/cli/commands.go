@@ -47,6 +47,92 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runProvider(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		printProviderHelp(stderr)
+		return 2
+	}
+	switch args[0] {
+	case "help", "-h", "--help":
+		printProviderHelp(stdout)
+		return 0
+	case "list":
+		return runProviderList(args[1:], stdout, stderr)
+	case "template":
+		return runProviderTemplate(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown provider command %q\n\n", args[0])
+		printProviderHelp(stderr)
+		return 2
+	}
+}
+
+func runProviderList(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("provider list", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(stderr, "provider list does not accept positional arguments\n")
+		return 2
+	}
+	for _, name := range agent.ProviderTemplateNames() {
+		fmt.Fprintf(stdout, "%s\n", name)
+	}
+	return 0
+}
+
+func runProviderTemplate(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("provider template", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	jsonOut := fs.Bool("json", false, "print only the JSON config fragment")
+	if err := fs.Parse(flagsAnywhere(args, fs)); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintf(stderr, "provider template requires exactly one provider name\n")
+		return 2
+	}
+	name := fs.Arg(0)
+	template, ok := agent.LookupProviderTemplate(name)
+	if !ok {
+		fmt.Fprintf(stderr, "unsupported provider template %q; available templates: %s\n", agent.NormalizeProviderName(name), strings.Join(agent.ProviderTemplateNames(), ", "))
+		return 2
+	}
+	if err := agent.ValidateProviderTemplate(template); err != nil {
+		fmt.Fprintf(stderr, "provider template failed: %v\n", err)
+		return 1
+	}
+	data, err := json.MarshalIndent(template.Config, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "provider template failed: %v\n", err)
+		return 1
+	}
+	if *jsonOut {
+		fmt.Fprintf(stdout, "%s\n", data)
+		return 0
+	}
+	fmt.Fprintf(stdout, "Provider template: %s\n", template.Name)
+	fmt.Fprintf(stdout, "Description: %s\n\n", template.Description)
+	fmt.Fprintf(stdout, "Dry run only. Merge this JSON fragment into .crucible/config.json when ready:\n\n%s\n\n", data)
+	fmt.Fprintf(stdout, "Validate command construction before running the provider:\n")
+	fmt.Fprintf(stdout, "  crucible generate --agent %s --dry-run\n", template.Config.DefaultAgent)
+	return 0
+}
+
+func printProviderHelp(w io.Writer) {
+	fmt.Fprint(w, `Usage:
+  crucible provider list
+  crucible provider template PROVIDER [--json]
+
+Available provider templates:
+`)
+	for _, name := range agent.ProviderTemplateNames() {
+		fmt.Fprintf(w, "  %s\n", name)
+	}
+}
+
 func runTournament(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)

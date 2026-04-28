@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, package gateway binaries for container sandboxes, route standard HTTP/HTTPS proxy and declared raw socket traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, rebuild a SQLite index from filesystem artifacts, write static HTML run reports, and open a TUI dashboard with basic action forms. Reporting and the TUI are still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, print command-provider setup templates, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, package gateway binaries for container sandboxes, route standard HTTP/HTTPS proxy and declared raw socket traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, rebuild a SQLite index from filesystem artifacts, write static HTML run reports, and open a TUI dashboard with basic action forms. Reporting and the TUI are still under active development.
 
 ## Why
 
@@ -125,7 +125,14 @@ Additional local command providers can be configured in `.crucible/config.json`:
 
 Command providers receive the prompt on stdin. Code Crucible also exports `CRUCIBLE_PROVIDER_NAME`, `CRUCIBLE_PROJECT_DIR`, `CRUCIBLE_RUN_DIR`, `CRUCIBLE_PROMPT_PATH`, `CRUCIBLE_OUTPUT_LAST_MESSAGE`, and `CRUCIBLE_MODEL` when a model override is supplied. If the provider does not write the final response file itself, stdout is archived as the final response.
 
-The repository includes a Claude Code command-provider example at [examples/agent-providers/claude-code-config.json](examples/agent-providers/claude-code-config.json). It uses Claude Code print mode with the Code Crucible prompt supplied on stdin:
+The repository includes a Claude Code command-provider example at [examples/agent-providers/claude-code-config.json](examples/agent-providers/claude-code-config.json). You can also print the same config fragment from the CLI without changing the project config:
+
+```bash
+crucible provider template claude
+crucible provider template claude --json
+```
+
+The template uses Claude Code print mode with the Code Crucible prompt supplied on stdin:
 
 ```json
 {
@@ -134,6 +141,7 @@ The repository includes a Claude Code command-provider example at [examples/agen
     "claude": {
       "name": "claude",
       "kind": "command",
+      "description": "Claude Code CLI provider using print mode with the Code Crucible prompt supplied on stdin.",
       "command": [
         "claude",
         "--bare",
@@ -156,7 +164,7 @@ The repository includes a Claude Code command-provider example at [examples/agen
 }
 ```
 
-Use `crucible generate --agent claude --dry-run` to inspect the archived command before spending a model run.
+Merge the fragment into `.crucible/config.json` when ready, then use `crucible generate --agent claude --dry-run` to inspect the archived command before spending a model run.
 
 If the source path or evaluator boundary is unclear, create a discovery plan first:
 
@@ -638,6 +646,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 Current priorities:
 
+- [x] Add provider setup templates and a dry-run CLI path for Claude
+- [ ] Add an async TUI app shell with live job progress for long-running actions
+- [ ] Add cancellable TUI long-running actions after async execution is factored cleanly
+
+Deferred roadmap:
+
+- [ ] Add a full provider install or marketplace flow after provider templates prove useful
+- [ ] Add a full TUI job manager with logs, history, parallel jobs, cancellation, and richer progress displays
+- [ ] Revisit pre-release planning after stability work has run for a few days
+- [ ] Revisit a gRPC external routing adapter when a concrete target project needs protocol-specific routing
+
+Completed recent priorities:
+
 - [x] Validate `gateway-network` with a live Podman proof of concept covering declared raw HTTP and HTTPS fixture hosts
 - [x] Make the Podman `gateway-network` proof of concept repeatable from the Makefile and release checklist
 - [x] Run an equivalent Docker `gateway-network` check, while keeping Podman and Docker timing results separate
@@ -646,13 +667,6 @@ Current priorities:
 - [x] Upgrade TUI forms, candidate selection, and action output to Bubbles widgets
 - [x] Add optional/manual gateway-network CI coverage
 - [x] Run a public experimental-readiness pass after TUI polish
-
-Deferred roadmap:
-
-- [ ] Add an async TUI app shell with live job progress and cancellable long-running actions
-- [ ] Add provider setup templates or an install command for Claude and other command providers
-- [ ] Prepare a caveated GitHub pre-release after the experimental UX stabilizes
-- [ ] Revisit protocol-specific external routing adapters only when a concrete target project needs one; start with gRPC when that need appears
 
 Completed cleanup and infrastructure:
 

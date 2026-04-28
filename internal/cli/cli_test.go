@@ -119,6 +119,48 @@ func TestInitStoresDefaultAgent(t *testing.T) {
 	}
 }
 
+func TestProviderTemplateClaudeJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"provider", "template", "claude", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("provider template returned %d, stderr: %s", code, stderr.String())
+	}
+	var cfg struct {
+		DefaultAgent   string                              `json:"default_agent"`
+		AgentProviders map[string]agent.ProviderDefinition `json:"agent_providers"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &cfg); err != nil {
+		t.Fatalf("template output is not JSON: %v\n%s", err, stdout.String())
+	}
+	provider, ok := agent.ProviderFromConfig(cfg.DefaultAgent, cfg.AgentProviders)
+	if !ok {
+		t.Fatalf("default agent %q not found in template output", cfg.DefaultAgent)
+	}
+	if err := agent.ValidateProviderDefinition(provider); err != nil {
+		t.Fatalf("provider definition is invalid: %v", err)
+	}
+	if !provider.Supports("discovery") || !provider.Supports("generation") || !provider.Supports("evolution") {
+		t.Fatalf("provider capabilities = %#v, want discovery/generation/evolution", provider.Capabilities)
+	}
+	if len(provider.Command) == 0 || provider.Command[0] != "claude" {
+		t.Fatalf("provider command = %#v, want claude command", provider.Command)
+	}
+}
+
+func TestProviderTemplateUnknown(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"provider", "template", "unknown"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("provider template returned %d, want 2", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "unsupported provider template") || !strings.Contains(stderr.String(), "claude") {
+		t.Fatalf("stderr did not describe available templates:\n%s", stderr.String())
+	}
+}
+
 func TestInteractiveCodexDiscoveryCreatesRunFromAgentPlan(t *testing.T) {
 	projectDir := t.TempDir()
 	chdir(t, projectDir)

@@ -82,3 +82,28 @@ func TestClaudeCodeProviderExampleIsValid(t *testing.T) {
 		t.Fatalf("example command = %#v, want claude command", got)
 	}
 }
+
+func TestClaudeProviderTemplateIsValid(t *testing.T) {
+	template, ok := LookupProviderTemplate("CLAUDE")
+	if !ok {
+		t.Fatal("claude template missing")
+	}
+	if err := ValidateProviderTemplate(template); err != nil {
+		t.Fatalf("claude template is invalid: %v", err)
+	}
+	provider, ok := ProviderFromConfig(template.Config.DefaultAgent, template.Config.AgentProviders)
+	if !ok {
+		t.Fatalf("default agent %q not found in template config", template.Config.DefaultAgent)
+	}
+	if got := BuildCommandProviderCommand(provider); len(got) == 0 || got[0] != "claude" {
+		t.Fatalf("template command = %#v, want claude command", got)
+	}
+}
+
+func TestProviderTemplateNamesSorted(t *testing.T) {
+	got := ProviderTemplateNames()
+	want := []string{"claude"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ProviderTemplateNames() = %#v, want %#v", got, want)
+	}
+}
