@@ -254,10 +254,20 @@ func printPostGenerationNextSteps(stdout io.Writer, projectDir string, cfg *mode
 		return
 	}
 	fmt.Fprintln(stdout)
-	fmt.Fprintf(stdout, "Evaluate candidates: %s\n", agent.FormatCommand([]string{"crucible", "evaluate", "--project-dir", projectDir, "--run", cfg.ID}))
-	if strings.TrimSpace(cfg.Evaluator) == "" && strings.TrimSpace(cfg.EvaluatorScript) == "" {
-		fmt.Fprintln(stdout, "Evaluator warning: this run uses the placeholder evaluator scaffold. Configure evaluator/evaluator.sh before expecting candidates to pass or produce meaningful metrics.")
+	if !runConfigHasEvaluator(cfg) {
+		fmt.Fprintf(stdout, "Generate evaluator: %s\n", agent.FormatCommand([]string{"crucible", "evaluator", "generate", "--project-dir", projectDir, "--run", cfg.ID}))
 	}
+	fmt.Fprintf(stdout, "Evaluate candidates: %s\n", agent.FormatCommand([]string{"crucible", "evaluate", "--project-dir", projectDir, "--run", cfg.ID}))
+	if !runConfigHasEvaluator(cfg) {
+		fmt.Fprintln(stdout, "Evaluator warning: this run uses the placeholder evaluator scaffold. Run evaluator generate or configure evaluator/evaluator.sh before expecting candidates to pass or produce meaningful metrics.")
+	}
+}
+
+func runConfigHasEvaluator(cfg *model.RunConfig) bool {
+	if cfg == nil {
+		return false
+	}
+	return strings.TrimSpace(cfg.Evaluator) != "" || strings.TrimSpace(cfg.EvaluatorScript) != "" || cfg.EvaluatorGenerated
 }
 
 func resolveGenerationProvider(projectDir string, cfg *model.RunConfig, requested string) (agent.ProviderDefinition, error) {

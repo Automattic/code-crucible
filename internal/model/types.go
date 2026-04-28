@@ -36,22 +36,23 @@ type ExternalPolicy struct {
 }
 
 type RunConfig struct {
-	ID              string         `json:"id"`
-	ProjectDir      string         `json:"project_dir"`
-	RunDir          string         `json:"run_dir"`
-	RoundDir        string         `json:"round_dir"`
-	Optimize        string         `json:"optimize"`
-	SourcePath      string         `json:"source_path,omitempty"`
-	Agent           string         `json:"agent"`
-	Variants        int            `json:"variants"`
-	Rounds          int            `json:"rounds"`
-	Exploration     float64        `json:"exploration"`
-	Evaluator       string         `json:"evaluator,omitempty"`
-	EvaluatorScript string         `json:"evaluator_script,omitempty"`
-	External        ExternalPolicy `json:"external"`
-	CreatedAt       time.Time      `json:"created_at"`
-	InterfaceDocs   string         `json:"interface_docs"`
-	PromptPath      string         `json:"prompt_path"`
+	ID                 string         `json:"id"`
+	ProjectDir         string         `json:"project_dir"`
+	RunDir             string         `json:"run_dir"`
+	RoundDir           string         `json:"round_dir"`
+	Optimize           string         `json:"optimize"`
+	SourcePath         string         `json:"source_path,omitempty"`
+	Agent              string         `json:"agent"`
+	Variants           int            `json:"variants"`
+	Rounds             int            `json:"rounds"`
+	Exploration        float64        `json:"exploration"`
+	Evaluator          string         `json:"evaluator,omitempty"`
+	EvaluatorScript    string         `json:"evaluator_script,omitempty"`
+	EvaluatorGenerated bool           `json:"evaluator_generated,omitempty"`
+	External           ExternalPolicy `json:"external"`
+	CreatedAt          time.Time      `json:"created_at"`
+	InterfaceDocs      string         `json:"interface_docs"`
+	PromptPath         string         `json:"prompt_path"`
 }
 
 type Candidate struct {

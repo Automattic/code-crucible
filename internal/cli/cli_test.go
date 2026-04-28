@@ -22,7 +22,7 @@ func TestInteractiveCreatesRun(t *testing.T) {
 	chdir(t, projectDir)
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n\nmake checkout pricing faster\n\nn\nn\nq\n"), &stdout, &stderr)
+	code := RunWithIO(nil, strings.NewReader("\n\nmake checkout pricing faster\n\nn\nskip\nn\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -60,7 +60,7 @@ func TestInteractiveNewRunPromptsForAdvancedOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	input := "\n\nmake ranking faster\n\nn\ny\ny\n2\n0.80\ngo test ./...\n\nallowlist\n\napi.example.com,cache.example.com\nq\n"
+	input := "\n\nmake ranking faster\n\nn\ny\nsupply\ngo test ./...\n\ny\n2\n0.80\nallowlist\n\napi.example.com,cache.example.com\nq\n"
 	var stdout, stderr bytes.Buffer
 	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
@@ -216,7 +216,7 @@ MD
 	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	var stdout, stderr bytes.Buffer
-	input := "\n\nreduce checkout pricing latency\n\ny\n\np95 of PriceCheckout\n\nn\nq\n"
+	input := "\n\nreduce checkout pricing latency\n\ny\n\np95 of PriceCheckout\n\nskip\nn\nq\n"
 	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
@@ -333,7 +333,7 @@ MD
 	}
 
 	var stdout, stderr bytes.Buffer
-	input := "\n1\nmake ranking faster\n\ny\n\n\nn\nq\n"
+	input := "\n1\nmake ranking faster\n\ny\n\n\nskip\nn\nq\n"
 	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
@@ -1079,6 +1079,145 @@ printf 'command provider complete\n'
 		t.Fatalf("stdout did not include adoption result:\n%s", stdout.String())
 	}
 	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "agents", "custom-*-invocation.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one command provider invocation, found %d", len(matches))
+	}
+}
+
+func TestEvaluatorGenerateUsesConfiguredCommandProvider(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n\nfunc Rank() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	providerScript := filepath.Join(t.TempDir(), "provider.sh")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+cat > "$CRUCIBLE_RUN_DIR/evaluator/evaluator.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+metrics_out="${3:?metrics path required}"
+verdict_out="${4:?verdict path required}"
+cat > "$metrics_out" <<'JSON'
+{
+  "runtime_mean_ms": 1,
+  "p95_latency_ms": 1,
+  "memory_peak_bytes": 1024
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+SH
+cat > "$CRUCIBLE_RUN_DIR/evaluator/evaluator.md" <<'MD'
+# Evaluator
+
+Runs a deterministic smoke benchmark for the archived candidate.
+MD
+printf 'evaluator provider complete\n'
+`
+	if err := os.WriteFile(providerScript, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := project.Init(projectDir, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DefaultAgent = "custom"
+	cfg.AgentProviders = map[string]agent.ProviderDefinition{
+		"custom": {
+			Name:    "custom",
+			Kind:    "command",
+			Command: []string{providerScript},
+			Capabilities: agent.ProviderCapabilities{
+				SupportsGeneration: true,
+			},
+		},
+	}
+	if err := project.Save(projectDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := run.Create(run.Options{
+		ProjectDir: projectDir,
+		Optimize:   "make ranking faster",
+		SourcePath: "internal/search/rank.go",
+		Variants:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if board.Results[0].Status != model.CandidateStatusNeedsEvaluator {
+		t.Fatalf("baseline status = %q, want needs-evaluator", board.Results[0].Status)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"evaluator",
+		"generate",
+		"--project", projectDir,
+		"--run", created.ID,
+		"--agent", "custom",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("evaluator generate returned %d, stderr: %s\nstdout:\n%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		"evaluator provider complete",
+		"Evaluator generation complete",
+		"Ready for evaluation: candidate-0000-baseline",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
+		}
+	}
+
+	runCfg, err := archive.LoadRunConfig(filepath.Join(created.RunDir, "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !runCfg.EvaluatorGenerated {
+		t.Fatal("run config was not marked evaluator_generated")
+	}
+	board, err = archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if board.Results[0].Status != "pending" {
+		t.Fatalf("baseline status = %q, want pending", board.Results[0].Status)
+	}
+	prompt, err := os.ReadFile(filepath.Join(created.RunDir, "prompts", "evaluator-generation.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(prompt), "Code Crucible Evaluator Generation Prompt") {
+		t.Fatalf("evaluator prompt missing expected heading:\n%s", prompt)
+	}
+	evaluatorScript, err := os.ReadFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(evaluatorScript), "runtime_mean_ms") {
+		t.Fatalf("generated evaluator did not contain expected metric:\n%s", evaluatorScript)
+	}
+	matches, err := filepath.Glob(filepath.Join(created.RunDir, "agents", "custom-*-invocation.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

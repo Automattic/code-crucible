@@ -35,6 +35,13 @@ type interactiveRunOptions struct {
 	AllowHosts      []string
 }
 
+type interactiveEvaluatorSetup struct {
+	Mode            string
+	Agent           string
+	Evaluator       string
+	EvaluatorScript string
+}
+
 type reviewArtifact struct {
 	Label string
 	Path  string
@@ -416,10 +423,18 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 		fmt.Fprintln(s.stdout, "No source path selected. Generation will ask the agent to discover the involved code.")
 	}
 
+	evaluatorSetup, ok := s.askEvaluatorSetup(projectDir)
+	if !ok {
+		return 0
+	}
 	externalMode := s.externalModeFromAgentPlan(agentPlan, agentDisplayName(agentPlanProvider))
 	advancedRun, ok := s.askAdvancedRunOptions(externalMode)
 	if !ok {
 		return 0
+	}
+	if evaluatorSetup.Mode == "supply" {
+		advancedRun.Evaluator = evaluatorSetup.Evaluator
+		advancedRun.EvaluatorScript = evaluatorSetup.EvaluatorScript
 	}
 
 	created, err := run.Create(run.Options{
@@ -464,8 +479,60 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 	} else {
 		fmt.Fprintf(s.stdout, "Source path: %s\n", sourcePath)
 	}
+	if evaluatorSetup.Mode == "generate" {
+		fmt.Fprintln(s.stdout)
+		code := evaluatorGenerateWithOptions(evaluatorGenerationOptions{
+			ProjectDir: projectDir,
+			RunID:      created.ID,
+			AgentName:  evaluatorSetup.Agent,
+		}, s.stdout, s.stderr)
+		if code != 0 {
+			return code
+		}
+	}
 	fmt.Fprintln(s.stdout)
 	return runLeaderboard([]string{"--project-dir", projectDir}, s.stdout, s.stderr)
+}
+
+func (s interactiveSession) askEvaluatorSetup(projectDir string) (interactiveEvaluatorSetup, bool) {
+	for {
+		answer, ok := s.ask("Evaluator setup [generate/supply/skip]: ")
+		if !ok {
+			return interactiveEvaluatorSetup{}, false
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "", "g", "generate":
+			evaluatorAgent, ok := s.askGenerationAgent(projectDir)
+			if !ok {
+				return interactiveEvaluatorSetup{}, false
+			}
+			return interactiveEvaluatorSetup{Mode: "generate", Agent: evaluatorAgent}, true
+		case "s", "supply", "manual":
+			evaluator, ok := s.ask("Evaluator command [none]: ")
+			if !ok {
+				return interactiveEvaluatorSetup{}, false
+			}
+			evaluatorScript, ok := s.ask("Evaluator script path [none]: ")
+			if !ok {
+				return interactiveEvaluatorSetup{}, false
+			}
+			evaluator = strings.TrimSpace(evaluator)
+			evaluatorScript = strings.TrimSpace(evaluatorScript)
+			if evaluator == "" && evaluatorScript == "" {
+				fmt.Fprintln(s.stdout, "Supply either an evaluator command or evaluator script path.")
+				continue
+			}
+			return interactiveEvaluatorSetup{
+				Mode:            "supply",
+				Evaluator:       evaluator,
+				EvaluatorScript: evaluatorScript,
+			}, true
+		case "skip", "none":
+			return interactiveEvaluatorSetup{Mode: "skip"}, true
+		default:
+			fmt.Fprintln(s.stdout, "Please choose generate, supply, or skip.")
+		}
+	}
 }
 
 func (s interactiveSession) askAdvancedRunOptions(externalMode string) (interactiveRunOptions, bool) {
@@ -491,16 +558,6 @@ func (s interactiveSession) askAdvancedRunOptions(externalMode string) (interact
 		return opts, false
 	}
 	opts.Exploration = exploration
-	evaluator, ok := s.ask("Evaluator command [none]: ")
-	if !ok {
-		return opts, false
-	}
-	opts.Evaluator = strings.TrimSpace(evaluator)
-	evaluatorScript, ok := s.ask("Evaluator script path [none]: ")
-	if !ok {
-		return opts, false
-	}
-	opts.EvaluatorScript = strings.TrimSpace(evaluatorScript)
 	mode, ok := s.askExternalMode(opts.ExternalMode)
 	if !ok {
 		return opts, false
