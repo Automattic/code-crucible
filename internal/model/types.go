@@ -3,10 +3,11 @@ package model
 import "time"
 
 const (
-	CandidateStatusGenerated = "generated"
-	CandidateStatusPassed    = "passed"
-	CandidateStatusFailed    = "failed"
-	CandidateStatusCanceled  = "canceled"
+	CandidateStatusGenerated      = "generated"
+	CandidateStatusPassed         = "passed"
+	CandidateStatusFailed         = "failed"
+	CandidateStatusCanceled       = "canceled"
+	CandidateStatusNeedsEvaluator = "needs-evaluator"
 )
 
 type ExternalMode string

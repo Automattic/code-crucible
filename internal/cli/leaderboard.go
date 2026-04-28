@@ -80,10 +80,12 @@ func leaderboardStatusPriority(status string) int {
 		return 1
 	case "generated":
 		return 2
-	case "pending":
+	case model.CandidateStatusNeedsEvaluator:
 		return 3
-	default:
+	case "pending":
 		return 4
+	default:
+		return 5
 	}
 }
 

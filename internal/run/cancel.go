@@ -210,7 +210,7 @@ func markCanceledGeneratedCandidates(board *model.Leaderboard, event *Cancellati
 
 func candidateStatusCancelable(status string) bool {
 	switch strings.TrimSpace(status) {
-	case "", model.CandidateStatusGenerated, "pending", "running":
+	case "", model.CandidateStatusGenerated, model.CandidateStatusNeedsEvaluator, "pending", "running":
 		return true
 	default:
 		return false

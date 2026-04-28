@@ -209,11 +209,9 @@ func Create(opts Options) (*CreatedRun, error) {
 					CorrectnessPassed:    false,
 					BenchmarkPassed:      false,
 					ExternalPolicyPassed: false,
-					Notes: []string{
-						"Baseline has been extracted but not evaluated yet.",
-					},
+					Notes:                baselineInitialNotes(opts),
 				},
-				Status: "pending",
+				Status: baselineInitialStatus(opts),
 			},
 		},
 	}
@@ -273,6 +271,25 @@ func Create(opts Options) (*CreatedRun, error) {
 		PromptPath:        promptPath,
 		BaselineSourceDir: baselineSrc,
 	}, nil
+}
+
+func baselineInitialStatus(opts Options) string {
+	if strings.TrimSpace(opts.Evaluator) == "" && strings.TrimSpace(opts.EvaluatorScript) == "" {
+		return model.CandidateStatusNeedsEvaluator
+	}
+	return "pending"
+}
+
+func baselineInitialNotes(opts Options) []string {
+	if baselineInitialStatus(opts) == model.CandidateStatusNeedsEvaluator {
+		return []string{
+			"Baseline has been extracted, but no evaluator is configured yet.",
+			"Configure evaluator/evaluator.sh or create the run with --evaluator/--evaluator-script before expecting baseline metrics.",
+		}
+	}
+	return []string{
+		"Baseline has been extracted but not evaluated yet.",
+	}
 }
 
 func writeAgentDiscoveryDocs(docsDir string, plan *discovery.AgentPlan, clarifications []discovery.Clarification) error {

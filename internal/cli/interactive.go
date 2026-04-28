@@ -1125,7 +1125,7 @@ func (s interactiveSession) printProjectStatus(projectDir string) {
 	fmt.Fprintf(s.stdout, "Latest run: %s\n", cfg.ID)
 	fmt.Fprintf(s.stdout, "Request: %s\n", oneLine(cfg.Optimize))
 	fmt.Fprintf(s.stdout, "Active round: %s\n", filepath.Base(archive.ProjectPath(projectDir, cfg.RoundDir)))
-	fmt.Fprintf(s.stdout, "Candidates: %d passed, %d failed, %d pending/generated\n", passed, failed, pending)
+	fmt.Fprintf(s.stdout, "Candidates: %d passed, %d failed, %d waiting\n", passed, failed, pending)
 	if best != "" {
 		fmt.Fprintf(s.stdout, "Best candidate: %s\n", best)
 	}

@@ -96,6 +96,12 @@ func TestCreateRunCopiesFileBaseline(t *testing.T) {
 	if filepath.IsAbs(filepath.FromSlash(board.Results[0].Candidate.SourcePath)) {
 		t.Fatalf("baseline source_path = %q, want project-relative path", board.Results[0].Candidate.SourcePath)
 	}
+	if board.Results[0].Status != model.CandidateStatusNeedsEvaluator {
+		t.Fatalf("baseline status = %q, want needs-evaluator", board.Results[0].Status)
+	}
+	if !strings.Contains(strings.Join(board.Results[0].Verdict.Notes, "\n"), "no evaluator is configured") {
+		t.Fatalf("baseline notes did not explain missing evaluator: %#v", board.Results[0].Verdict.Notes)
+	}
 }
 
 func TestCreateRunWithoutSourcePathCreatesDiscoveryPrompt(t *testing.T) {
@@ -185,6 +191,39 @@ func TestCreateRunCopiesEvaluatorScript(t *testing.T) {
 	}
 	if cfg.EvaluatorScript != "custom-evaluator.sh" {
 		t.Fatalf("EvaluatorScript = %q, want custom-evaluator.sh", cfg.EvaluatorScript)
+	}
+}
+
+func TestCreateRunWithEvaluatorLeavesBaselinePending(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := Create(Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		SourcePath:   "internal/search/rank.go",
+		Evaluator:    "go test ./...",
+		ExternalMode: "deny",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if board.Results[0].Status != "pending" {
+		t.Fatalf("baseline status = %q, want pending", board.Results[0].Status)
+	}
+	if !strings.Contains(strings.Join(board.Results[0].Verdict.Notes, "\n"), "not evaluated yet") {
+		t.Fatalf("baseline notes did not explain pending evaluation: %#v", board.Results[0].Verdict.Notes)
 	}
 }
 
