@@ -80,7 +80,7 @@ crucible tui
 crucible tui --run previous
 ```
 
-The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and basic forms for creating runs, discovery, generation, evaluation, reports, and archive queries. The forms execute the same command paths as the shell CLI and show captured command output when the action finishes.
+The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and basic forms for creating runs, discovery, generation, evaluation, reports, and archive queries. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, and show captured command output when the action finishes.
 
 Create a tournament run from inside an existing project:
 
@@ -647,7 +647,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 Current priorities:
 
 - [x] Add provider setup templates and a dry-run CLI path for Claude
-- [ ] Add an async TUI app shell with live job progress for long-running actions
+- [x] Add async TUI action progress with spinner, elapsed time, and command preview
 - [ ] Add cancellable TUI long-running actions after async execution is factored cleanly
 
 Deferred roadmap:

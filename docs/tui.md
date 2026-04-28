@@ -20,11 +20,12 @@ Code Crucible uses Bubble Tea v1.2.x and Bubbles v0.20.x because that pair suppo
 - Keep `crucible tui` as the explicit entrypoint instead of replacing bare `crucible`.
 - Use the existing `internal/cli.WorkflowController` from prompt mode and the TUI so both interfaces share command construction and execution.
 - The first implementation includes a run dashboard: latest or selected run status, leaderboard rows, selected candidate detail, and common next action commands.
-- Forms cover run creation, discovery, generation, evaluation, reports, and archive queries. They use Bubbles text inputs, execute through the shared CLI controller, and show captured output in a scrollable viewport after completion.
+- Forms cover run creation, discovery, generation, evaluation, reports, and archive queries. They use Bubbles text inputs, execute through the shared CLI controller, show a live spinner with elapsed time while actions run, and show captured output in a scrollable viewport after completion.
 - Candidate selection uses the Bubbles table widget, and candidate details use a scrollable viewport.
 - Keep tests focused on state transitions and command construction. Avoid terminal snapshot tests until the UI stabilizes.
 
 ## Deferred
 
 - Exact screen layout and keybindings.
-- Whether to add a full async app shell with live progress, cancellation, and richer background job management.
+- Cancellable long-running actions.
+- A full async app shell with richer background job management, including logs, history, parallel jobs, and detailed progress displays.

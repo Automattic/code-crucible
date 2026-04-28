@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -40,6 +42,9 @@ type tuiDashboardModel struct {
 	actionOutput string
 	actionError  string
 	busy         bool
+	actionStart  time.Time
+	actionCmd    string
+	spinner      spinner.Model
 	table        table.Model
 	detail       viewport.Model
 	result       viewport.Model
@@ -187,6 +192,7 @@ func newTUIDashboardModel(data tuiDashboardData, message string) tuiDashboardMod
 		data:    data,
 		width:   100,
 		message: message,
+		spinner: spinner.New(),
 	}
 	m.configureBubbles()
 	return m
@@ -204,6 +210,7 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.configureBubbles()
 	case tuiActionDoneMsg:
 		m.busy = false
+		m.actionStart = time.Time{}
 		m.mode = tuiModeActionResult
 		m.actionTitle = msg.Title
 		m.actionOutput = msg.Stdout
@@ -220,6 +227,12 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.configureBubbles()
+	case spinner.TickMsg:
+		if m.busy {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
 	case tea.KeyMsg:
 		if m.busy {
 			return m, nil
@@ -277,7 +290,7 @@ func (m tuiDashboardModel) View() string {
 		return m.actionResultView()
 	}
 	if m.busy {
-		return fmt.Sprintf("Code Crucible\n\nRunning %s...\n", displayValue(m.actionTitle))
+		return m.actionProgressView()
 	}
 	return m.dashboardView()
 }
@@ -382,8 +395,10 @@ func (m tuiDashboardModel) submitForm() (tea.Model, tea.Cmd) {
 	m.actionTitle = title
 	m.actionOutput = ""
 	m.actionError = ""
+	m.actionStart = time.Now()
+	m.actionCmd = form.commandPreview(projectDir, m.data.Config.ID)
 	m.message = ""
-	return m, func() tea.Msg {
+	runCmd := func() tea.Msg {
 		var stdout, stderr strings.Builder
 		controller := WorkflowController{
 			ProjectDir: projectDir,
@@ -407,6 +422,7 @@ func (m tuiDashboardModel) submitForm() (tea.Model, tea.Cmd) {
 			Err:    err,
 		}
 	}
+	return m, tea.Batch(runCmd, tuiSpinnerTick(m.spinner))
 }
 
 func (m tuiDashboardModel) formView() string {
@@ -437,14 +453,28 @@ func (m tuiDashboardModel) actionResultView() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Code Crucible\n\n")
 	if m.busy {
-		fmt.Fprintf(&b, "Running %s...\n", displayValue(m.actionTitle))
-		return b.String()
+		return m.actionProgressView()
 	}
 	fmt.Fprintf(&b, "%s\n", displayValue(m.message))
 	if strings.TrimSpace(m.result.View()) != "" {
 		fmt.Fprintf(&b, "\n%s\n", m.result.View())
 	}
 	b.WriteString("\nKeys: j/k scroll, pgup/pgdown page, b back to dashboard, q quit\n")
+	return b.String()
+}
+
+func (m tuiDashboardModel) actionProgressView() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Code Crucible\n\n")
+	fmt.Fprintf(&b, "%s Running %s\n", m.spinner.View(), displayValue(m.actionTitle))
+	if !m.actionStart.IsZero() {
+		fmt.Fprintf(&b, "Elapsed: %s\n", formatTUIDuration(time.Since(m.actionStart)))
+	}
+	if strings.TrimSpace(m.actionCmd) != "" {
+		fmt.Fprintf(&b, "\nCommand\n%s\n", m.actionCmd)
+	}
+	b.WriteString("\nOutput will appear when the action finishes.\n")
+	b.WriteString("Cancellation is not available yet.\n")
 	return b.String()
 }
 
@@ -753,6 +783,32 @@ func (m tuiDashboardModel) formWidth() int {
 		width = 96
 	}
 	return width
+}
+
+func tuiSpinnerTick(sp spinner.Model) tea.Cmd {
+	return func() tea.Msg {
+		return sp.Tick()
+	}
+}
+
+func formatTUIDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Second {
+		return "<1s"
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d/time.Second))
+	}
+	if d < time.Hour {
+		minutes := int(d / time.Minute)
+		seconds := int((d % time.Minute) / time.Second)
+		return fmt.Sprintf("%dm%02ds", minutes, seconds)
+	}
+	hours := int(d / time.Hour)
+	minutes := int((d % time.Hour) / time.Minute)
+	return fmt.Sprintf("%dh%02dm", hours, minutes)
 }
 
 func (m *tuiDashboardModel) configureBubbles() {

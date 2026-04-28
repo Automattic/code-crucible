@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -171,6 +172,53 @@ func TestTUIFormEditingAcceptsSpacesAndBackspace(t *testing.T) {
 	dashboard = updated.(tuiDashboardModel)
 	if got := dashboard.form.value("optimize"); got != "m" {
 		t.Fatalf("form value after backspace = %q, want trimmed m", got)
+	}
+}
+
+func TestTUIActionProgressViewShowsElapsedAndCommand(t *testing.T) {
+	projectDir := t.TempDir()
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		ProjectDir: projectDir,
+		Config: model.RunConfig{
+			ID:       "run-1",
+			Variants: 1,
+		},
+	}, "")
+	dashboard.openForm(tuiActionGenerate)
+
+	updated, cmd := dashboard.submitForm()
+	if cmd == nil {
+		t.Fatal("submitForm did not return an async command")
+	}
+	running := updated.(tuiDashboardModel)
+	running.actionStart = time.Now().Add(-90 * time.Second)
+	view := running.View()
+	for _, want := range []string{
+		"Running Generate Competitors",
+		"Elapsed: 1m30s",
+		"crucible generate",
+		"--run run-1",
+		"Output will appear when the action finishes.",
+		"Cancellation is not available yet.",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("progress view did not contain %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestTUISpinnerTickContinuesWhileBusy(t *testing.T) {
+	dashboard := newTUIDashboardModel(tuiDashboardData{}, "")
+	dashboard.busy = true
+	dashboard.actionTitle = "Evaluate Candidates"
+
+	updated, cmd := dashboard.Update(dashboard.spinner.Tick())
+	running := updated.(tuiDashboardModel)
+	if !running.busy {
+		t.Fatal("spinner tick cleared busy state")
+	}
+	if cmd == nil {
+		t.Fatal("spinner tick did not schedule the next tick")
 	}
 }
 
