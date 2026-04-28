@@ -269,6 +269,45 @@ func TestInteractiveAgentSettingsUpdatesDefaultAgent(t *testing.T) {
 	}
 }
 
+func TestInteractiveStandaloneDiscoveryCreatesPlan(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	sourceDir := filepath.Join(projectDir, "internal", "checkout")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "pricing.go"), []byte("package checkout\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "seed work area",
+		Variants:     1,
+		ExternalMode: "deny",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader("\n10\nreduce checkout pricing latency\n\nq\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Discovery-capable agents:") {
+		t.Fatalf("stdout did not list discovery agents:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Created discovery plan") {
+		t.Fatalf("stdout did not create discovery plan:\n%s", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "discoveries", "*", "plan.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one discovery plan, found %d", len(matches))
+	}
+}
+
 func TestDiscoverCreatesPlan(t *testing.T) {
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "checkout")

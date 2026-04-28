@@ -99,6 +99,7 @@ func (s interactiveSession) menu(projectDir string) int {
 		fmt.Fprintln(s.stdout, "  7. Inspect candidate")
 		fmt.Fprintln(s.stdout, "  8. Rebuild index")
 		fmt.Fprintln(s.stdout, "  9. Agent settings")
+		fmt.Fprintln(s.stdout, "  10. Discovery")
 		fmt.Fprintln(s.stdout, "  q. Quit")
 		choice, ok := s.ask("Choose an action [q]: ")
 		if !ok {
@@ -197,6 +198,10 @@ func (s interactiveSession) menu(projectDir string) int {
 			}
 		case "9", "agent", "agents", "agent settings":
 			if code := s.agentSettings(projectDir); code != 0 {
+				return code
+			}
+		case "10", "discover", "discovery":
+			if code := s.standaloneDiscovery(projectDir); code != 0 {
 				return code
 			}
 		default:
@@ -349,6 +354,38 @@ func (s interactiveSession) askGenerationAgent(projectDir string) (string, bool)
 	return answer, true
 }
 
+func (s interactiveSession) standaloneDiscovery(projectDir string) int {
+	request, ok := s.askRequired("Optimization request: ")
+	if !ok {
+		return 0
+	}
+	discoveryAgent, ok := s.askDiscoveryAgent(projectDir)
+	if !ok {
+		return 0
+	}
+	args := []string{"--project-dir", projectDir, "--agent", discoveryAgent, request}
+	return runDiscover(args, s.stdout, s.stderr)
+}
+
+func (s interactiveSession) askDiscoveryAgent(projectDir string) (string, bool) {
+	defaultAgent := agent.ProviderLocal
+	cfg, _ := project.Load(projectDir)
+	s.printDiscoveryProviders(cfg)
+	answer, ok := s.ask(fmt.Sprintf("Discovery agent [%s]: ", defaultAgent))
+	if !ok {
+		return "", false
+	}
+	answer = agent.NormalizeProviderName(answer)
+	if answer == "" {
+		return defaultAgent, true
+	}
+	if _, err := configuredProvider(projectDir, answer, "discovery"); err != nil {
+		fmt.Fprintf(s.stdout, "%v\n", err)
+		return s.askDiscoveryAgent(projectDir)
+	}
+	return answer, true
+}
+
 func (s interactiveSession) agentSettings(projectDir string) int {
 	cfg, err := project.Load(projectDir)
 	if err != nil {
@@ -391,6 +428,32 @@ func (s interactiveSession) printGenerationProviders(cfg *project.Config) {
 	if cfg != nil {
 		for _, provider := range cfg.AgentProviders {
 			if err := agent.ValidateProviderDefinition(provider); err == nil && provider.Supports("generation") {
+				providers = append(providers, provider)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for _, provider := range providers {
+		if seen[provider.Name] {
+			continue
+		}
+		seen[provider.Name] = true
+		fmt.Fprintf(s.stdout, "- %s (%s)\n", provider.Name, provider.Kind)
+	}
+}
+
+func (s interactiveSession) printDiscoveryProviders(cfg *project.Config) {
+	fmt.Fprintln(s.stdout, "Discovery-capable agents:")
+	var providers []agent.ProviderDefinition
+	for _, name := range agent.ProviderNames() {
+		provider, _ := agent.Provider(name)
+		if provider.Supports("discovery") {
+			providers = append(providers, provider)
+		}
+	}
+	if cfg != nil {
+		for _, provider := range cfg.AgentProviders {
+			if err := agent.ValidateProviderDefinition(provider); err == nil && provider.Supports("discovery") {
 				providers = append(providers, provider)
 			}
 		}
