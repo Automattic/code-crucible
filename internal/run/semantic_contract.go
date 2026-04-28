@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -19,40 +20,53 @@ func semanticContractErrors(runDir, baselineSrc, candidateSrc string, baselineEx
 	if !baselineExts[".go"] || !candidateExts[".go"] {
 		return nil
 	}
-	plan, err := discovery.LoadAgentPlan(filepath.Join(runDir, "docs", "agent-discovery.json"))
-	if err != nil {
-		return nil
-	}
-	functionName := dropInFunctionName(plan.DropInInterface)
-	if functionName == "" {
-		return nil
-	}
 
-	baselineSigs, err := goFunctionSignatures(baselineSrc)
+	baselineSigs, err := goCallableSignatures(baselineSrc)
 	if err != nil {
 		return []string{"candidate contract failed: baseline Go source could not be parsed: " + err.Error()}
 	}
-	baselineSig, ok := baselineSigs[functionName]
-	if !ok {
-		return nil
-	}
-
-	candidateSigs, err := goFunctionSignatures(candidateSrc)
+	candidateSigs, err := goCallableSignatures(candidateSrc)
 	if err != nil {
 		return []string{"candidate contract failed: candidate Go source could not be parsed: " + err.Error()}
 	}
-	candidateSig, ok := candidateSigs[functionName]
-	if !ok {
-		return []string{fmt.Sprintf("candidate contract failed: Go drop-in function %s is missing", functionName)}
+
+	var errors []string
+	checked := map[string]bool{}
+	if plan, err := discovery.LoadAgentPlan(filepath.Join(runDir, "docs", "agent-discovery.json")); err == nil {
+		functionName := dropInFunctionName(plan.DropInInterface)
+		if functionName != "" {
+			if key, baselineSig, ok := findGoCallableSignature(baselineSigs, functionName); ok {
+				checked[key] = true
+				if candidateSig, ok := candidateSigs[key]; !ok {
+					errors = append(errors, fmt.Sprintf("candidate contract failed: Go drop-in callable %s is missing", key))
+				} else if candidateSig.Signature != baselineSig.Signature {
+					errors = append(errors, fmt.Sprintf("candidate contract failed: Go drop-in callable %s signature changed: got %s, want %s", key, candidateSig.Signature, baselineSig.Signature))
+				}
+			}
+		}
 	}
-	if candidateSig != baselineSig {
-		return []string{fmt.Sprintf("candidate contract failed: Go drop-in function %s signature changed: got %s, want %s", functionName, candidateSig, baselineSig)}
+
+	for key, baselineSig := range baselineSigs {
+		if checked[key] || !baselineSig.Exported {
+			continue
+		}
+		if candidateSig, ok := candidateSigs[key]; !ok {
+			errors = append(errors, fmt.Sprintf("candidate contract failed: exported Go callable %s is missing", key))
+		} else if candidateSig.Signature != baselineSig.Signature {
+			errors = append(errors, fmt.Sprintf("candidate contract failed: exported Go callable %s signature changed: got %s, want %s", key, candidateSig.Signature, baselineSig.Signature))
+		}
 	}
-	return nil
+	sort.Strings(errors)
+	return errors
 }
 
-func goFunctionSignatures(root string) (map[string]string, error) {
-	signatures := map[string]string{}
+type goSignature struct {
+	Signature string
+	Exported  bool
+}
+
+func goCallableSignatures(root string) (map[string]goSignature, error) {
+	signatures := map[string]goSignature{}
 	fset := token.NewFileSet()
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -75,18 +89,51 @@ func goFunctionSignatures(root string) (map[string]string, error) {
 		}
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil {
+			if !ok {
 				continue
 			}
 			signature, err := goFuncTypeSignature(fset, fn.Type)
 			if err != nil {
 				return err
 			}
-			signatures[fn.Name.Name] = signature
+			if fn.Recv == nil {
+				signatures[fn.Name.Name] = goSignature{
+					Signature: signature,
+					Exported:  ast.IsExported(fn.Name.Name),
+				}
+				continue
+			}
+			receiverType, receiverBase, err := goReceiverType(fset, fn.Recv)
+			if err != nil {
+				return err
+			}
+			if receiverBase == "" {
+				continue
+			}
+			signatures[receiverBase+"."+fn.Name.Name] = goSignature{
+				Signature: "method " + receiverType + " " + signature,
+				Exported:  ast.IsExported(receiverBase) && ast.IsExported(fn.Name.Name),
+			}
 		}
 		return nil
 	})
 	return signatures, err
+}
+
+func findGoCallableSignature(signatures map[string]goSignature, name string) (string, goSignature, bool) {
+	if signature, ok := signatures[name]; ok {
+		return name, signature, true
+	}
+	var matches []string
+	for key := range signatures {
+		if strings.HasSuffix(key, "."+name) {
+			matches = append(matches, key)
+		}
+	}
+	if len(matches) != 1 {
+		return "", goSignature{}, false
+	}
+	return matches[0], signatures[matches[0]], true
 }
 
 func goFuncTypeSignature(fset *token.FileSet, fn *ast.FuncType) (string, error) {
@@ -105,6 +152,29 @@ func goFuncTypeSignature(fset *token.FileSet, fn *ast.FuncType) (string, error) 
 		signature += " (" + strings.Join(results, ", ") + ")"
 	}
 	return signature, nil
+}
+
+func goReceiverType(fset *token.FileSet, fields *ast.FieldList) (string, string, error) {
+	if fields == nil || len(fields.List) == 0 {
+		return "", "", nil
+	}
+	var buf bytes.Buffer
+	if err := format.Node(&buf, fset, fields.List[0].Type); err != nil {
+		return "", "", err
+	}
+	receiverType := buf.String()
+	return receiverType, receiverBaseName(receiverType), nil
+}
+
+func receiverBaseName(receiverType string) string {
+	receiverType = strings.TrimSpace(strings.TrimPrefix(receiverType, "*"))
+	if idx := strings.LastIndex(receiverType, "."); idx >= 0 {
+		receiverType = receiverType[idx+1:]
+	}
+	if idx := strings.Index(receiverType, "["); idx >= 0 {
+		receiverType = receiverType[:idx]
+	}
+	return trimIdentifier(receiverType)
 }
 
 func goFieldTypeList(fset *token.FileSet, fields *ast.FieldList) ([]string, error) {
