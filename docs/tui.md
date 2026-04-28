@@ -1,6 +1,6 @@
 # TUI Framework Selection
 
-Code Crucible will use Bubble Tea for the planned terminal UI.
+Code Crucible uses Bubble Tea for the terminal UI.
 
 ## Decision
 

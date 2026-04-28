@@ -216,7 +216,7 @@ Those positional paths are absolute runtime paths. Evaluator environments also i
 
 The evaluator must write `metrics.json` and `verdict.json`. Code Crucible reads both files, merges resource metrics, updates `leaderboard.json`, computes a relative log-scaled score, and marks candidates as `passed` only when correctness, benchmark, and external policy verdicts all pass. Missing or malformed verdicts fail closed.
 
-The planned evaluator layer will add:
+Potential future evaluator work includes:
 
 - Additional protocol-specific adapters beyond HTTP and HTTPS gateway routing
 
