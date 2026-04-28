@@ -206,6 +206,13 @@ if [[ -n "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" ]]; then
   gateway_port="${gateway_addr##*:}"
   rm -f "$gateway_log"
   gateway_args=("$CRUCIBLE_MOCK_GATEWAY_SOURCE" -fixtures "$CRUCIBLE_HTTP_FIXTURES" -addr "$gateway_addr")
+  if [[ "${CRUCIBLE_EXTERNAL_MODE:-}" == "allowlist" ]]; then
+    if [[ -z "${CRUCIBLE_ALLOWED_HOSTS:-}" ]]; then
+      echo "CRUCIBLE_ALLOWED_HOSTS is required in allowlist mode" >&2
+      exit 126
+    fi
+    gateway_args+=(-allow-hosts "$CRUCIBLE_ALLOWED_HOSTS" -passthrough)
+  fi
   if [[ -n "${CRUCIBLE_MOCK_CA_CERT:-}" && -n "${CRUCIBLE_MOCK_CA_KEY:-}" ]]; then
     gateway_args+=(-ca-cert "$CRUCIBLE_MOCK_CA_CERT" -ca-key "$CRUCIBLE_MOCK_CA_KEY")
   fi

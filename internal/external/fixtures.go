@@ -200,7 +200,8 @@ func WriteMockCA(certPath, keyPath string) error {
 }
 
 func needsHTTPFixtures(mode model.ExternalMode) bool {
-	return mode == model.ExternalModeMock ||
+	return mode == model.ExternalModeAllowlist ||
+		mode == model.ExternalModeMock ||
 		mode == model.ExternalModeReplay ||
 		mode == model.ExternalModeRecord
 }

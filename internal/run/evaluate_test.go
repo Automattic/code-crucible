@@ -291,6 +291,41 @@ func TestExternalEvaluationEnvAddsFixtureGatewayDefaults(t *testing.T) {
 	}
 }
 
+func TestExternalEvaluationEnvAddsAllowlistGatewayDefaults(t *testing.T) {
+	runDir := t.TempDir()
+	externalDir := filepath.Join(runDir, "external")
+	if err := os.MkdirAll(externalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gatewaySource := filepath.Join(externalDir, externalfixtures.MockGatewayName)
+	if err := externalfixtures.WriteMockGateway(gatewaySource); err != nil {
+		t.Fatal(err)
+	}
+	fixturesPath := filepath.Join(externalDir, externalfixtures.HTTPFixturesName)
+	if err := externalfixtures.SaveHTTPFixtureSet(fixturesPath, externalfixtures.EmptyHTTPFixtureSet()); err != nil {
+		t.Fatal(err)
+	}
+
+	env := externalEvaluationEnv(model.ExternalPolicy{
+		Mode:      model.ExternalModeAllowlist,
+		Allowlist: []string{"api.example.com", "auth.example.com", "api.example.com"},
+		Fixtures:  fixturesPath,
+	}, runDir, nil)
+
+	for _, want := range []string{
+		"CRUCIBLE_EXTERNAL_MODE=allowlist",
+		"CRUCIBLE_HTTP_FIXTURES=" + filepath.ToSlash(fixturesPath),
+		"CRUCIBLE_MOCK_GATEWAY_SOURCE=" + filepath.ToSlash(gatewaySource),
+		"CRUCIBLE_ALLOWED_HOSTS=api.example.com,auth.example.com",
+		"HTTP_PROXY=http://127.0.0.1:18080",
+		"HTTPS_PROXY=http://127.0.0.1:18080",
+	} {
+		if !containsArg(env, want) {
+			t.Fatalf("env missing %q: %#v", want, env)
+		}
+	}
+}
+
 func TestWrapTasksetCommand(t *testing.T) {
 	name, args := wrapTasksetCommand("bash", []string{"evaluator.sh"}, 2)
 	if name != "taskset" {
@@ -453,7 +488,10 @@ func TestSandboxResourceWrapperStartsMockGateway(t *testing.T) {
 	for _, want := range []string{
 		"CRUCIBLE_MOCK_GATEWAY_SOURCE",
 		"CRUCIBLE_HTTP_FIXTURES",
+		"CRUCIBLE_ALLOWED_HOSTS",
 		"gateway_args=(\"$CRUCIBLE_MOCK_GATEWAY_SOURCE\"",
+		"-allow-hosts",
+		"-passthrough",
 		"-ca-cert",
 		"-ca-key",
 		"go run \"${gateway_args[@]}\"",
@@ -483,6 +521,21 @@ func TestStartLocalMockGatewayRejectsUsedAddress(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already in use") {
 		t.Fatalf("error = %v, want address in use", err)
+	}
+}
+
+func TestStartLocalMockGatewayRequiresAllowlistHosts(t *testing.T) {
+	cleanup, err := startLocalMockGateway(context.Background(), []string{
+		"CRUCIBLE_EXTERNAL_MODE=allowlist",
+		"CRUCIBLE_MOCK_GATEWAY_SOURCE=/tmp/mock-gateway.go",
+		"CRUCIBLE_HTTP_FIXTURES=/tmp/http-fixtures.json",
+	}, filepath.Join(t.TempDir(), "gateway.log"))
+	cleanup()
+	if err == nil {
+		t.Fatal("expected missing allowlist hosts error")
+	}
+	if !strings.Contains(err.Error(), "CRUCIBLE_ALLOWED_HOSTS") {
+		t.Fatalf("error = %v, want missing allowed hosts", err)
 	}
 }
 
@@ -532,6 +585,19 @@ func TestExternalPolicyEnforcement(t *testing.T) {
 	})
 	if enforcement.Status != "partial" || len(enforcement.Warnings) == 0 {
 		t.Fatalf("replay container enforcement = %#v, want partial with warning", enforcement)
+	}
+
+	enforcement = externalPolicyEnforcement(model.ExternalPolicy{Mode: model.ExternalModeAllowlist}, SandboxOptions{})
+	if enforcement.Status != "failed" || len(enforcement.Errors) == 0 {
+		t.Fatalf("empty allowlist enforcement = %#v, want failed with error", enforcement)
+	}
+
+	enforcement = externalPolicyEnforcement(model.ExternalPolicy{
+		Mode:      model.ExternalModeAllowlist,
+		Allowlist: []string{"api.example.com"},
+	}, SandboxOptions{})
+	if enforcement.Status != "partial" || enforcement.Mechanism != "proxy-allowlist" || len(enforcement.Warnings) == 0 {
+		t.Fatalf("allowlist enforcement = %#v, want partial proxy warning", enforcement)
 	}
 }
 

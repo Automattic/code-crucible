@@ -142,7 +142,17 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 		}
 		enforcement.Warnings = append(enforcement.Warnings, "fixture gateway and proxy environment are available when fixtures are archived, but network isolation requires a container sandbox with --sandbox-network none")
 	case model.ExternalModeAllowlist:
-		enforcement.Warnings = append(enforcement.Warnings, "framework-level allowlist enforcement is not implemented yet")
+		if len(normalizedAllowlist(policy.Allowlist)) == 0 {
+			enforcement.Status = "failed"
+			enforcement.Errors = append(enforcement.Errors, "external policy allowlist requires at least one --allow-hosts entry")
+			return enforcement
+		}
+		enforcement.Status = "partial"
+		enforcement.Mechanism = "proxy-allowlist"
+		enforcement.Warnings = append(enforcement.Warnings, "allowlist policy is enforced for HTTP and HTTPS clients that honor proxy environment variables; clients that ignore proxy variables still require evaluator-specific isolation")
+		if sandboxEnabled(sandbox) && sandbox.Network == "none" {
+			enforcement.Warnings = append(enforcement.Warnings, "allowlisted live hosts may be unreachable when the container sandbox network is none")
+		}
 	case model.ExternalModeRecord:
 		enforcement.Warnings = append(enforcement.Warnings, "framework-level external recording is not implemented yet")
 	default:
@@ -156,7 +166,7 @@ func externalEvaluationEnv(policy model.ExternalPolicy, runDir string, env []str
 	out := append([]string(nil), env...)
 	out = appendEnvDefault(out, "CRUCIBLE_EXTERNAL_MODE", string(policy.Mode))
 
-	if !fixtureBackedMode(policy.Mode) {
+	if !fixtureBackedMode(policy.Mode) && !gatewayBackedMode(policy.Mode) {
 		return out
 	}
 
@@ -174,6 +184,9 @@ func externalEvaluationEnv(policy model.ExternalPolicy, runDir string, env []str
 		return out
 	}
 
+	if policy.Mode == model.ExternalModeAllowlist {
+		out = appendEnvDefault(out, "CRUCIBLE_ALLOWED_HOSTS", strings.Join(normalizedAllowlist(policy.Allowlist), ","))
+	}
 	gatewaySource := filepath.Join(runDir, "external", externalfixtures.MockGatewayName)
 	if fileExists(gatewaySource) {
 		out = appendEnvDefault(out, "CRUCIBLE_MOCK_GATEWAY_SOURCE", filepath.ToSlash(gatewaySource))
@@ -218,8 +231,23 @@ func fixtureBackedMode(mode model.ExternalMode) bool {
 }
 
 func gatewayBackedMode(mode model.ExternalMode) bool {
-	return mode == model.ExternalModeMock ||
+	return mode == model.ExternalModeAllowlist ||
+		mode == model.ExternalModeMock ||
 		mode == model.ExternalModeReplay
+}
+
+func normalizedAllowlist(hosts []string) []string {
+	out := make([]string, 0, len(hosts))
+	seen := map[string]bool{}
+	for _, host := range hosts {
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" || seen[host] {
+			continue
+		}
+		seen[host] = true
+		out = append(out, host)
+	}
+	return out
 }
 
 func appendEnvDefault(env []string, key, value string) []string {
@@ -254,6 +282,13 @@ func startLocalMockGateway(ctx context.Context, env []string, logPath string) (f
 	}
 
 	args := []string{"run", source, "-fixtures", fixtures, "-addr", addr}
+	if envValue(env, "CRUCIBLE_EXTERNAL_MODE") == string(model.ExternalModeAllowlist) {
+		allowedHosts := envValue(env, "CRUCIBLE_ALLOWED_HOSTS")
+		if allowedHosts == "" {
+			return func() {}, fmt.Errorf("CRUCIBLE_ALLOWED_HOSTS is required in allowlist mode")
+		}
+		args = append(args, "-allow-hosts", allowedHosts, "-passthrough")
+	}
 	caCert := envValue(env, "CRUCIBLE_MOCK_CA_CERT")
 	caKey := envValue(env, "CRUCIBLE_MOCK_CA_KEY")
 	if caCert != "" || caKey != "" {

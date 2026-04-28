@@ -51,8 +51,11 @@ type response struct {
 }
 
 type gateway struct {
-	fixtures map[string]fixture
-	signer   *certSigner
+	fixtures    map[string]fixture
+	signer      *certSigner
+	allowlist  []string
+	passthrough bool
+	transport   http.RoundTripper
 }
 
 func main() {
@@ -60,6 +63,8 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:0", "listen address")
 	caCertPath := flag.String("ca-cert", "", "CA certificate PEM for HTTPS CONNECT replay")
 	caKeyPath := flag.String("ca-key", "", "CA private key PEM for HTTPS CONNECT replay")
+	allowHosts := flag.String("allow-hosts", "", "comma-separated host allowlist for passthrough proxy mode")
+	passthrough := flag.Bool("passthrough", false, "forward allowlisted proxy traffic to live upstream hosts")
 	flag.Parse()
 
 	fixtures, err := loadFixtures(*fixturesPath)
@@ -74,7 +79,18 @@ func main() {
 		}
 	}
 
-	gateway := gateway{fixtures: fixtures, signer: signer}
+	allowlist := parseAllowlist(*allowHosts)
+	if *passthrough && len(allowlist) == 0 {
+		log.Fatal("-allow-hosts is required with -passthrough")
+	}
+
+	gateway := gateway{
+		fixtures:    fixtures,
+		signer:      signer,
+		allowlist:  allowlist,
+		passthrough: *passthrough,
+		transport:   http.DefaultTransport,
+	}
 	server := &http.Server{Addr: *addr, Handler: http.HandlerFunc(gateway.handle)}
 	log.Printf("serving %d HTTP fixtures on %s", len(fixtures), *addr)
 	log.Fatal(server.ListenAndServe())
@@ -89,6 +105,10 @@ func (g gateway) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g gateway) handleConnect(w http.ResponseWriter, r *http.Request) {
+	if g.passthrough {
+		g.proxyConnect(w, r)
+		return
+	}
 	if g.signer == nil {
 		http.Error(w, "HTTPS CONNECT replay requires -ca-cert and -ca-key", http.StatusNotImplemented)
 		return
@@ -143,6 +163,10 @@ func (g gateway) serveFixture(w http.ResponseWriter, r *http.Request) {
 	key := strings.ToUpper(r.Method) + " " + requestURL(r)
 	fixture, ok := g.fixtures[key]
 	if !ok {
+		if g.passthrough {
+			g.proxyHTTP(w, r)
+			return
+		}
 		http.Error(w, "no fixture for "+key, http.StatusNotFound)
 		return
 	}
@@ -155,6 +179,81 @@ func (g gateway) serveFixture(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(fixture.Response.Status)
 	_, _ = w.Write([]byte(fixture.Response.Body))
+}
+
+func (g gateway) proxyHTTP(w http.ResponseWriter, r *http.Request) {
+	host := requestHost(r)
+	if !g.hostAllowed(host) {
+		http.Error(w, "host not in allowlist: "+host, http.StatusForbidden)
+		return
+	}
+	out := r.Clone(r.Context())
+	out.RequestURI = ""
+	if out.URL != nil && !out.URL.IsAbs() {
+		out.URL.Scheme = "http"
+		out.URL.Host = r.Host
+	}
+	out.Header = cloneHeader(r.Header)
+	out.Header.Del("Proxy-Connection")
+	resp, err := g.transport.RoundTrip(out)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	copyHeader(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (g gateway) proxyConnect(w http.ResponseWriter, r *http.Request) {
+	host := connectHost(r.Host)
+	if !g.hostAllowed(host) {
+		http.Error(w, "host not in allowlist: "+host, http.StatusForbidden)
+		return
+	}
+	target := r.Host
+	if _, _, err := net.SplitHostPort(target); err != nil {
+		target = net.JoinHostPort(host, "443")
+	}
+	upstream, err := net.DialTimeout("tcp", target, 30*time.Second)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		_ = upstream.Close()
+		http.Error(w, "response writer does not support hijacking", http.StatusInternalServerError)
+		return
+	}
+	conn, _, err := hijacker.Hijack()
+	if err != nil {
+		_ = upstream.Close()
+		log.Printf("hijack CONNECT %s: %v", r.Host, err)
+		return
+	}
+	if _, err := conn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
+		_ = conn.Close()
+		_ = upstream.Close()
+		log.Printf("ack CONNECT %s: %v", r.Host, err)
+		return
+	}
+	go copyAndClose(upstream, conn)
+	go copyAndClose(conn, upstream)
+}
+
+func (g gateway) hostAllowed(host string) bool {
+	host = normalizeHost(host)
+	for _, allowed := range g.allowlist {
+		if allowed == host {
+			return true
+		}
+		if strings.HasPrefix(allowed, "*.") && strings.HasSuffix(host, strings.TrimPrefix(allowed, "*")) {
+			return true
+		}
+	}
+	return false
 }
 
 func loadFixtures(path string) (map[string]fixture, error) {
@@ -171,6 +270,21 @@ func loadFixtures(path string) (map[string]fixture, error) {
 		out[strings.ToUpper(fixture.Request.Method)+" "+fixture.Request.URL] = fixture
 	}
 	return out, nil
+}
+
+func parseAllowlist(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]bool{}
+	for _, part := range parts {
+		host := normalizeHost(part)
+		if host == "" || seen[host] {
+			continue
+		}
+		seen[host] = true
+		out = append(out, host)
+	}
+	return out
 }
 
 type certSigner struct {
@@ -285,9 +399,51 @@ func (l *singleConnListener) Addr() net.Addr {
 
 func connectHost(authority string) string {
 	if host, _, err := net.SplitHostPort(authority); err == nil {
-		return host
+		return normalizeHost(host)
 	}
-	return strings.Trim(authority, "[]")
+	return normalizeHost(authority)
+}
+
+func requestHost(r *http.Request) string {
+	if r.URL != nil && r.URL.Host != "" {
+		return normalizeHost(r.URL.Host)
+	}
+	return normalizeHost(r.Host)
+}
+
+func normalizeHost(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.TrimPrefix(value, "http://")
+	value = strings.TrimPrefix(value, "https://")
+	if slash := strings.Index(value, "/"); slash >= 0 {
+		value = value[:slash]
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	}
+	return strings.Trim(value, "[]")
+}
+
+func cloneHeader(header http.Header) http.Header {
+	out := make(http.Header, len(header))
+	for key, values := range header {
+		out[key] = append([]string(nil), values...)
+	}
+	return out
+}
+
+func copyHeader(dst, src http.Header) {
+	for key, values := range src {
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
+}
+
+func copyAndClose(dst, src net.Conn) {
+	_, _ = io.Copy(dst, src)
+	_ = dst.Close()
+	_ = src.Close()
 }
 
 func validateRequest(r *http.Request, fixture fixture) error {

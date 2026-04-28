@@ -14,6 +14,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
@@ -182,11 +183,96 @@ func TestMockGatewaySourceIncludesProxyRouting(t *testing.T) {
 		"tls.Server",
 		"loadCertSigner",
 		"singleConnListener",
+		"allow-hosts",
+		"proxyConnect",
 		"BodySHA256",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("mock gateway source missing %q", want)
 		}
+	}
+}
+
+func TestGeneratedMockGatewayAllowlistProxyForHTTP(t *testing.T) {
+	dir := t.TempDir()
+	gatewayPath := filepath.Join(dir, MockGatewayName)
+	if err := WriteMockGateway(gatewayPath); err != nil {
+		t.Fatal(err)
+	}
+	fixturesPath := filepath.Join(dir, HTTPFixturesName)
+	if err := SaveHTTPFixtureSet(fixturesPath, EmptyHTTPFixtureSet()); err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/allowed" {
+			t.Fatalf("path = %q, want /allowed", r.URL.Path)
+		}
+		w.Header().Set("content-type", "text/plain")
+		_, _ = w.Write([]byte("allowed"))
+	}))
+	t.Cleanup(upstream.Close)
+	upstreamURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addr := freeLocalAddress(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "run", gatewayPath, "-fixtures", fixturesPath, "-addr", addr, "-allow-hosts", upstreamURL.Hostname(), "-passthrough")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+		}
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+		}
+	})
+	waitForTCP(t, addr, &stderr)
+
+	proxyURL, err := url.Parse("http://" + addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		},
+	}
+	resp, err := client.Get(upstream.URL + "/allowed")
+	if err != nil {
+		t.Fatalf("allowed GET through proxy failed: %v\nstderr:\n%s", err, stderr.String())
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 || string(body) != "allowed" {
+		t.Fatalf("allowed response = %d %q, want 200 allowed\nstderr:\n%s", resp.StatusCode, body, stderr.String())
+	}
+
+	resp, err = client.Get("http://blocked.example.test/")
+	if err != nil {
+		t.Fatalf("blocked GET through proxy failed unexpectedly: %v\nstderr:\n%s", err, stderr.String())
+	}
+	body, err = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), "host not in allowlist") {
+		t.Fatalf("blocked response = %d %q, want allowlist denial", resp.StatusCode, body)
 	}
 }
 
