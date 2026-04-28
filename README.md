@@ -487,7 +487,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 ## Roadmap
 
-Cleanup before more feature work:
+Completed cleanup and infrastructure:
 
 - [x] Start fixture gateways for local `mock` and `replay` evaluation, or stop exporting local proxy variables that point to no running gateway
 - [x] Decide archive path portability: keep absolute runtime paths in `run.json`, or store relative archive paths and resolve absolutes at execution time
@@ -496,20 +496,69 @@ Cleanup before more feature work:
 - [x] Add SQLite schema-version handling for derivative index rebuilds
 - [x] Add a cleanup command or Make target for ignored build, cache, and smoke-test artifacts
 
-Feature roadmap:
+Completed feature work:
 
 - [x] Add HTML reports
 - [x] Add richer SQLite queries for reports and automation
 - [x] Expand sandbox profiles and limits
 - [x] Add CI regression tournament jobs
+- [x] Add guided `crucible` interactive startup flow
+- [x] Add `crucible discover` archives with local source-path suggestions
+- [x] Add Codex discovery prompts and structured `agent-plan.json` handoffs
+- [x] Use Codex discovery handoffs in the interactive run wizard
+- [x] Package the fixture gateway for sandbox images without Go
 
-Evaluator roadmap:
+Base functionality roadmap:
+
+- [ ] Convert `agent-plan.json` into stronger generated `docs/interfaces.md` sections and evaluator TODOs/scaffolds
+- [ ] Automatically generate a runnable evaluator scaffold from discovery handoff data when enough contract detail is available
+- [ ] Validate that competitors satisfy drop-in replacement contracts before benchmarking
+- [ ] Improve no-source-path generation so the agent extracts and archives the baseline before creating competitors
+- [ ] Add repeated evaluation controls: warmups, repetitions, outlier handling, confidence summaries, and configurable statistical score inputs
+- [ ] Add run selection helpers so commands and interactive flows do not always imply the latest run
+
+Model-agnostic agent roadmap:
+
+- [ ] Define a stable provider contract for discovery, generation, and evolution agents
+- [ ] Add a project-level default agent setting in `.crucible/config.json`
+- [ ] Add per-run and per-command agent selection flags consistently across `discover`, `run`, `generate`, and `evolve`
+- [ ] Archive selected agent name, model, provider command, environment policy, prompt path, stdout/stderr, final response, and exit status for reproducibility
+- [ ] Support configurable local command providers in addition to the built-in Codex provider
+- [ ] Add provider capability metadata, such as supports-discovery, supports-generation, supports-json-output, and requires-git-repo
+- [ ] Add validation and dry-run output for provider command construction
+- [ ] Add interactive agent selection and project default-agent management
+- [ ] Keep Codex as the first concrete provider while avoiding Codex-specific assumptions in shared prompt, archive, and tournament code
+
+Interactive interface roadmap:
+
+- [ ] Add interactive run selection for all actions that currently default to latest run
+- [ ] Add standalone interactive discovery flow, including local-only and Codex discovery modes
+- [ ] Add interactive `adopt`
+- [ ] Add interactive `next-round`
+- [ ] Add interactive `query runs` and `query candidates`
+- [ ] Add interactive controls for advanced `run` options: evaluator command/script, external mode, fixtures, allow-hosts, rounds, and exploration
+- [ ] Add interactive controls for advanced `generate` options: model, profile, sandbox, approval mode, dry-run, and output path
+- [ ] Add interactive controls for advanced `evaluate` options: candidate, jobs, timeout, nice, CPU limit, sandbox engine/image/profile/network, memory limit, and PID limit
+- [ ] Add interactive controls for report/index JSON and output-path options
+- [ ] Add review/edit prompts for generated interface docs, evaluator scaffold, and discovery handoff before generation
+
+Evaluator and external policy roadmap:
 
 - [x] Enforce `allowlist` mode for proxied HTTP and HTTPS traffic
 - [x] Add external trace collection and `record` mode capture
 - [x] Add direct-routed gateway URLs for clients that ignore proxy environment variables
-- [ ] Add transparent routing for raw socket clients
 - [x] Package the fixture gateway for sandbox images without Go
+- [ ] Design and implement transparent routing for raw socket clients with an explicit sandbox/network strategy
+- [ ] Decide how raw socket routing should behave for local mode versus Docker/Podman mode
+- [ ] Extend external trace capture for transparent routing once raw socket interception exists
+
+TUI roadmap:
+
+- [ ] Select and document a Go TUI framework; current recommendation is Bubble Tea from Charmbracelet
+- [ ] Extract interactive workflow actions into reusable controller functions shared by prompt mode and TUI mode
+- [ ] Build a TUI run dashboard with latest run status, leaderboard, candidate details, and common next actions
+- [ ] Build TUI forms for run creation, discovery, generation, evaluation, reports, and queries
+- [ ] Add TUI tests around navigation state and command construction
 
 ## License
 
