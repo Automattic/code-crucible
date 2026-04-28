@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -213,6 +214,54 @@ func TestEvaluateCommandUpdatesLeaderboard(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "passed") {
 		t.Fatalf("stdout did not include passed status:\n%s", stdout.String())
+	}
+}
+
+func TestIndexCommandRebuildsSQLiteIndex(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--optimize", "make ranking faster",
+		"--target-path", "internal/search/rank.go",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"index",
+		"--project", projectDir,
+		"--json",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("index returned %d, stderr: %s", code, stderr.String())
+	}
+
+	var report struct {
+		IndexPath  string `json:"index_path"`
+		Runs       int    `json:"runs"`
+		Candidates int    `json:"candidates"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("index output was not JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Runs != 1 || report.Candidates != 1 {
+		t.Fatalf("report counts = runs %d candidates %d, want 1 and 1", report.Runs, report.Candidates)
+	}
+	if _, err := os.Stat(report.IndexPath); err != nil {
+		t.Fatalf("index file missing: %v", err)
 	}
 }
 

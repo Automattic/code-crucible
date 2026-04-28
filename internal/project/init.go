@@ -142,6 +142,7 @@ Important paths:
 - evaluators/ stores reusable test and benchmark harnesses.
 - fixtures/ stores mock and replay data for external calls.
 - runs/ stores immutable run archives, candidates, metrics, logs, prompts, and verdicts.
+- index.sqlite is a rebuildable summary created by crucible index.
 
 The contents of runs/ are intended to be reproducible artifacts. Avoid editing completed run output by hand.
 `, name)

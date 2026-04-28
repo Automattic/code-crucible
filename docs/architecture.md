@@ -18,7 +18,7 @@ optimization request
   -> next generation prompt
 ```
 
-The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP/HTTPS proxy env routing, next-round prompt preparation, automated multi-round execution loops, leaderboard scoring, and resource metric archival. SQLite indexing and richer reporting are the next major archive-layer gaps.
+The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP/HTTPS proxy env routing, next-round prompt preparation, automated multi-round execution loops, leaderboard scoring, resource metric archival, and a rebuildable SQLite index. Richer reporting is the next major archive-layer gap.
 
 ## Project Mode
 
@@ -45,26 +45,28 @@ Each run is stored under:
 The current layout is:
 
 ```text
-run.json
-README.md
-docs/interfaces.md
-evaluator/evaluator.sh
-external/policy.json
-external/http-fixtures.json
-external/mock-gateway.go
-external/mock-ca.pem
-external/mock-ca-key.pem
-prompts/generation-round-0001.md
-round-0001/
-  candidate-0000-baseline/
-    candidate.json
-    design.md
-    src/
-  candidate-0001/
-    candidate.json
-    design.md
-    src/
-leaderboard.json
+.crucible/index.sqlite
+.crucible/runs/<timestamp>-<slug>/
+  run.json
+  README.md
+  docs/interfaces.md
+  evaluator/evaluator.sh
+  external/policy.json
+  external/http-fixtures.json
+  external/mock-gateway.go
+  external/mock-ca.pem
+  external/mock-ca-key.pem
+  prompts/generation-round-0001.md
+  round-0001/
+    candidate-0000-baseline/
+      candidate.json
+      design.md
+      src/
+    candidate-0001/
+      candidate.json
+      design.md
+      src/
+  leaderboard.json
 ```
 
 Future rounds will add `round-0002`, `round-0003`, and so on.
@@ -205,6 +207,6 @@ The Go data model currently includes:
 - `CandidateResult`
 - `Leaderboard`
 
-The filesystem archive is the source of truth for now. SQLite indexing is planned once the artifact format stabilizes.
+The filesystem archive remains the source of truth. `crucible index` rebuilds `.crucible/index.sqlite` from `run.json` and `leaderboard.json`, replacing stale rows with summaries of runs and candidates. The database currently contains `runs`, `candidates`, and `index_meta` tables, plus indexes that support leaderboard-style report queries. It is derivative local metadata; if it is missing, stale, or corrupted, rebuild it from the archive instead of editing it by hand.
 
 The human-readable leaderboard view sorts passed candidates by score, then p95 latency. Scores are relative to the best passed candidate in the run, with each latency doubling costing points so large performance gaps remain visible. The table shows score-driving metrics, including baseline-relative speedup, memory usage, memory usage relative to the baseline, and evaluator CPU time; evaluator CPU time is labeled separately because it includes harness overhead and is not the same as per-operation cost. External call counts are shown as `Ext Calls` only when at least one candidate reports external communication. The JSON output preserves the archived result data for automation and includes `score_explanation` penalty components for each evaluated candidate.

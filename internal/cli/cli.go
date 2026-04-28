@@ -15,6 +15,7 @@ import (
 
 	"github.com/Automattic/code-crucible/internal/agent"
 	"github.com/Automattic/code-crucible/internal/archive"
+	"github.com/Automattic/code-crucible/internal/indexer"
 	"github.com/Automattic/code-crucible/internal/model"
 	"github.com/Automattic/code-crucible/internal/project"
 	"github.com/Automattic/code-crucible/internal/run"
@@ -67,6 +68,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runEvolve(args[1:], stdout, stderr)
 	case "leaderboard":
 		return runLeaderboard(args[1:], stdout, stderr)
+	case "index":
+		return runIndex(args[1:], stdout, stderr)
 	case "inspect":
 		return runInspect(args[1:], stdout, stderr)
 	default:
@@ -234,6 +237,42 @@ func runLeaderboard(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "Run: %s\n", board.RunID)
 	fmt.Fprintf(stdout, "Optimize: %s\n\n", board.Optimize)
 	printLeaderboardTable(stdout, rankedResults(board.Results))
+	return 0
+}
+
+func runIndex(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("index", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	projectDir := fs.String("project", ".", "project directory containing or receiving .crucible")
+	runID := fs.String("run", "", "optional run ID to rebuild in the index")
+	jsonOut := fs.Bool("json", false, "print raw index rebuild report JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	report, err := indexer.Rebuild(indexer.Options{
+		ProjectDir: *projectDir,
+		RunID:      *runID,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "index failed: %v\n", err)
+		return 1
+	}
+
+	if *jsonOut {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "index failed: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%s\n", data)
+		return 0
+	}
+
+	fmt.Fprintf(stdout, "Rebuilt SQLite index\n")
+	fmt.Fprintf(stdout, "Index: %s\n", report.IndexPath)
+	fmt.Fprintf(stdout, "Runs: %d\n", report.Runs)
+	fmt.Fprintf(stdout, "Candidates: %d\n", report.Candidates)
 	return 0
 }
 
@@ -1103,6 +1142,7 @@ Usage:
   crucible next-round [--project DIR] [--run RUN_ID] [--parents N]
   crucible evolve [--project DIR] [--run RUN_ID] [--rounds N] [--parents N]
   crucible leaderboard [--project DIR] [--run RUN_ID] [--json]
+  crucible index [--project DIR] [--run RUN_ID] [--json]
   crucible inspect [--project DIR] [--run RUN_ID] [candidate-id]
   crucible version
 
@@ -1114,6 +1154,7 @@ Core workflow:
   5. Run "crucible evaluate" to execute the run evaluator and update leaderboard results.
   6. Run "crucible next-round" to prepare the next generation prompt from passed candidates.
   7. Run "crucible evolve --rounds N" to automate generate/evaluate/next-round cycles.
+  8. Run "crucible index" to rebuild the SQLite summary from filesystem artifacts.
 
 `)
 }

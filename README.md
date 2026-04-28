@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, route standard HTTP and HTTPS proxy traffic to fixtures, prepare and automate follow-up rounds, and archive leaderboard metrics. Reporting and indexing are still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, route standard HTTP and HTTPS proxy traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, and rebuild a SQLite index from filesystem artifacts. Reporting is still under active development.
 
 ## Why
 
@@ -36,6 +36,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Ranked human-readable leaderboard output for passed candidates
 - Machine-readable score explanations in `leaderboard.json`
 - File-backed leaderboard and candidate metadata
+- Rebuildable `.crucible/index.sqlite` summary for runs and candidates
 - Core Go interfaces and types for agents, evaluation, scoring, metrics, and archive data
 
 ## Install From Source
@@ -53,8 +54,9 @@ go build -o bin/crucible ./cmd/crucible
 - `taskset` when using `crucible evaluate --cpu-limit` in local mode
 - Codex CLI when using `crucible generate --agent codex`
 - Docker or Podman when using containerized evaluator sandboxes
+- A pure-Go SQLite driver is included for `crucible index`
 
-Core run creation, adoption, inspection, and filesystem archive workflows use only the Go standard library.
+Run creation, adoption, inspection, and filesystem archive workflows keep JSON files as the source of truth. The SQLite index is derivative and can be rebuilt at any time.
 
 ## Quick Start
 
@@ -122,6 +124,14 @@ crucible leaderboard
 ```
 
 The human-readable leaderboard ranks passed candidates by score, then p95 latency. It includes the score-driving metrics such as p95 latency, `ns/op`, speedup versus the baseline, memory, memory usage relative to the baseline, and evaluator CPU time. If any candidate reports external communication, the table also shows `Ext Calls`; no-network runs omit that column. Numeric columns use adaptive precision so close results remain distinguishable and very wide ranges stay readable. Use `--json` when you need archive order, raw result data, and each candidate's machine-readable `score_explanation`.
+
+Rebuild the project-wide SQLite summary from archived JSON artifacts:
+
+```bash
+crucible index
+```
+
+The index lives at `.crucible/index.sqlite` and contains run and candidate summary tables suitable for reports, ad hoc queries, and future UI work. It is not authoritative; delete it or rebuild it whenever the filesystem archive changes.
 
 Inspect a candidate:
 
@@ -365,7 +375,7 @@ Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Pro
   README.md
 ```
 
-The work area is intended to be local project metadata. Completed run directories should be reproducible archives containing source, prompts, metrics, external traces, and verdicts.
+The work area is intended to be local project metadata. Completed run directories should be reproducible archives containing source, prompts, metrics, external traces, and verdicts. `crucible index` adds `index.sqlite` as a rebuildable summary of those archives.
 
 Do not commit `.crucible/` run archives from private projects unless you have reviewed them. They may contain source code, prompts, logs, generated competitors, hostnames, fixtures, or project-specific context.
 
@@ -381,6 +391,7 @@ Core packages:
 - `internal/agent`: agent prompt construction and Codex CLI provider
 - `internal/evaluator`: evaluator scaffold generation
 - `internal/archive`: JSON archive helpers and baseline copying
+- `internal/indexer`: rebuildable SQLite summary index
 - `internal/model`: shared data model
 - `internal/scoring`: starter scoring logic
 
@@ -406,8 +417,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 ## Roadmap
 
-- Add SQLite index alongside filesystem artifacts
 - Add HTML reports
+- Add richer SQLite queries for reports and automation
 - Expand sandbox profiles and limits
 - Add CI regression tournament jobs
 
