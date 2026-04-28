@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = "1"
+const schemaVersion = 1
 
 type Options struct {
 	ProjectDir string
@@ -32,6 +33,7 @@ type Report struct {
 	Candidates  int    `json:"candidates"`
 	Schema      int    `json:"schema"`
 	RebuildMode string `json:"rebuild_mode"`
+	SchemaReset bool   `json:"schema_reset,omitempty"`
 }
 
 func IndexPath(projectDir string) string {
@@ -55,21 +57,30 @@ func Rebuild(opts Options) (*Report, error) {
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite", indexPath)
+	ctx := context.Background()
+	requestedRunID := strings.TrimSpace(opts.RunID)
+	if requestedRunID != "" {
+		if _, err := collectRunDirs(absProject, requestedRunID); err != nil {
+			return nil, err
+		}
+	}
+
+	db, schemaReset, err := openIndex(ctx, indexPath)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	ctx := context.Background()
-	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
-		return nil, fmt.Errorf("enable SQLite foreign keys: %w", err)
+	collectionRunID := requestedRunID
+	rebuildMode := "all"
+	if collectionRunID != "" {
+		rebuildMode = "run"
 	}
-	if err := applySchema(ctx, db); err != nil {
-		return nil, err
+	if schemaReset {
+		collectionRunID = ""
+		rebuildMode = "schema-reset"
 	}
-
-	runDirs, err := collectRunDirs(absProject, opts.RunID)
+	runDirs, err := collectRunDirs(absProject, collectionRunID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +91,7 @@ func Rebuild(opts Options) (*Report, error) {
 	}
 	defer tx.Rollback()
 
-	if err := clearIndexedRows(ctx, tx, opts.RunID); err != nil {
+	if err := clearIndexedRows(ctx, tx, collectionRunID); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -89,19 +100,17 @@ INSERT INTO index_meta(key, value) VALUES
   ('project_dir', ?),
   ('rebuilt_at', ?)
 ON CONFLICT(key) DO UPDATE SET value = excluded.value
-`, schemaVersion, absProject, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+`, strconv.Itoa(schemaVersion), absProject, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		return nil, fmt.Errorf("update index metadata: %w", err)
 	}
 
 	report := &Report{
 		ProjectDir:  absProject,
 		IndexPath:   indexPath,
-		RunID:       strings.TrimSpace(opts.RunID),
-		Schema:      1,
-		RebuildMode: "all",
-	}
-	if report.RunID != "" {
-		report.RebuildMode = "run"
+		RunID:       requestedRunID,
+		Schema:      schemaVersion,
+		RebuildMode: rebuildMode,
+		SchemaReset: schemaReset,
 	}
 
 	for _, runDir := range runDirs {
@@ -151,6 +160,96 @@ func collectRunDirs(projectDir, runID string) ([]string, error) {
 		runDirs = append(runDirs, filepath.Join(runsDir, name))
 	}
 	return runDirs, nil
+}
+
+func openIndex(ctx context.Context, indexPath string) (*sql.DB, bool, error) {
+	db, err := sql.Open("sqlite", indexPath)
+	if err != nil {
+		return nil, false, err
+	}
+
+	schemaReset, err := schemaResetRequired(ctx, db)
+	if err != nil {
+		_ = db.Close()
+		return nil, false, err
+	}
+	if schemaReset {
+		_ = db.Close()
+		if err := removeIndexFiles(indexPath); err != nil {
+			return nil, false, err
+		}
+		db, err = sql.Open("sqlite", indexPath)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+		_ = db.Close()
+		return nil, false, fmt.Errorf("enable SQLite foreign keys: %w", err)
+	}
+	if err := applySchema(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, false, err
+	}
+	return db, schemaReset, nil
+}
+
+func schemaResetRequired(ctx context.Context, db *sql.DB) (bool, error) {
+	tables, err := userTables(ctx, db)
+	if err != nil {
+		return true, nil
+	}
+	if len(tables) == 0 {
+		return false, nil
+	}
+	if !tables["index_meta"] {
+		return true, nil
+	}
+
+	var version string
+	err = db.QueryRowContext(ctx, "SELECT value FROM index_meta WHERE key = 'schema_version'").Scan(&version)
+	if err == sql.ErrNoRows {
+		return true, nil
+	}
+	if err != nil {
+		return true, nil
+	}
+	return strings.TrimSpace(version) != strconv.Itoa(schemaVersion), nil
+}
+
+func userTables(ctx context.Context, db *sql.DB) (map[string]bool, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT name
+FROM sqlite_master
+WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tables := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		tables[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tables, nil
+}
+
+func removeIndexFiles(indexPath string) error {
+	for _, path := range []string{indexPath, indexPath + "-wal", indexPath + "-shm"} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove stale SQLite index %s: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func applySchema(ctx context.Context, db *sql.DB) error {

@@ -131,7 +131,7 @@ Rebuild the project-wide SQLite summary from archived JSON artifacts:
 crucible index
 ```
 
-The index lives at `.crucible/index.sqlite` and contains run and candidate summary tables suitable for reports, ad hoc queries, and future UI work. It is not authoritative; delete it or rebuild it whenever the filesystem archive changes.
+The index lives at `.crucible/index.sqlite` and contains run and candidate summary tables suitable for reports, ad hoc queries, and future UI work. It is not authoritative; delete it or rebuild it whenever the filesystem archive changes. `crucible index` tracks the index schema version and resets the derivative database automatically when the stored schema is stale or missing.
 
 Inspect a candidate:
 
@@ -431,7 +431,7 @@ Cleanup before more feature work:
 - [x] Decide archive path portability: keep absolute runtime paths in `run.json`, or store relative archive paths and resolve absolutes at execution time
 - [x] Refresh stale security and external-policy docs so they match current Docker/Podman and proxy behavior
 - [x] Split large implementation files before adding reporting: CLI commands, evaluator sandbox/resource handling, and generated gateway source
-- [ ] Add SQLite schema-version handling for derivative index rebuilds
+- [x] Add SQLite schema-version handling for derivative index rebuilds
 - [x] Add a cleanup command or Make target for ignored build, cache, and smoke-test artifacts
 
 Feature roadmap:

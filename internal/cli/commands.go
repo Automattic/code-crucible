@@ -172,6 +172,11 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "Rebuilt SQLite index\n")
 	fmt.Fprintf(stdout, "Index: %s\n", report.IndexPath)
+	fmt.Fprintf(stdout, "Schema: %d\n", report.Schema)
+	fmt.Fprintf(stdout, "Rebuild mode: %s\n", report.RebuildMode)
+	if report.SchemaReset {
+		fmt.Fprintf(stdout, "Schema reset: yes\n")
+	}
 	fmt.Fprintf(stdout, "Runs: %d\n", report.Runs)
 	fmt.Fprintf(stdout, "Candidates: %d\n", report.Candidates)
 	return 0

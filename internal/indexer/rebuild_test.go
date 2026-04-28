@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -104,6 +105,9 @@ func TestRebuildCreatesSQLiteIndexFromRunArchive(t *testing.T) {
 	if report.IndexPath != filepath.Join(projectDir, ".crucible", "index.sqlite") {
 		t.Fatalf("index path = %q", report.IndexPath)
 	}
+	if report.Schema != schemaVersion || report.SchemaReset {
+		t.Fatalf("schema report = version %d reset %v, want version %d without reset", report.Schema, report.SchemaReset, schemaVersion)
+	}
 
 	db, err := sql.Open("sqlite", report.IndexPath)
 	if err != nil {
@@ -134,5 +138,85 @@ WHERE run_id = ? AND id = 'candidate-0001'
 	}
 	if status != "passed" || score != 1000 || p95 != 4 || externalCalls != 2 || policyStatus != "passed" {
 		t.Fatalf("indexed candidate = status %q score %f p95 %f calls %d policy %q", status, score, p95, externalCalls, policyStatus)
+	}
+
+	var schema string
+	if err := db.QueryRow("SELECT value FROM index_meta WHERE key = 'schema_version'").Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema != strconv.Itoa(schemaVersion) {
+		t.Fatalf("schema_version = %q, want %d", schema, schemaVersion)
+	}
+}
+
+func TestRebuildResetsStaleSQLiteSchema(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "ranking")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package ranking\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		TargetPath:   "ranking/rank.go",
+		Variants:     1,
+		ExternalMode: "deny",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	indexPath := IndexPath(projectDir)
+	db, err := sql.Open("sqlite", indexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TABLE index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+INSERT INTO index_meta(key, value) VALUES ('schema_version', '0');
+CREATE TABLE runs (id TEXT PRIMARY KEY);
+INSERT INTO runs(id) VALUES ('stale-run');
+`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := Rebuild(Options{ProjectDir: projectDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.SchemaReset || report.RebuildMode != "schema-reset" {
+		t.Fatalf("schema reset report = reset %v mode %q", report.SchemaReset, report.RebuildMode)
+	}
+	if report.Schema != schemaVersion || report.Runs != 1 || report.Candidates != 1 {
+		t.Fatalf("report = schema %d runs %d candidates %d", report.Schema, report.Runs, report.Candidates)
+	}
+
+	db, err = sql.Open("sqlite", indexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	var schema string
+	if err := db.QueryRow("SELECT value FROM index_meta WHERE key = 'schema_version'").Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	if schema != strconv.Itoa(schemaVersion) {
+		t.Fatalf("schema_version = %q, want %d", schema, schemaVersion)
+	}
+
+	var optimize string
+	if err := db.QueryRow("SELECT optimize FROM runs WHERE id = ?", created.ID).Scan(&optimize); err != nil {
+		t.Fatal(err)
+	}
+	if optimize != "make ranking faster" {
+		t.Fatalf("indexed optimize = %q", optimize)
 	}
 }
