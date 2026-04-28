@@ -544,6 +544,69 @@ func TestRunTaskFileCreatesRun(t *testing.T) {
 	}
 }
 
+func TestRunAgentPlanSeedsSourcePathAndDocs(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "checkout")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "pricing.go"), []byte("package checkout\n\nfunc PriceCheckout() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	planPath := filepath.Join(projectDir, "agent-plan.json")
+	planJSON := `{
+  "source_path": "internal/checkout/pricing.go",
+  "source_path_confidence": "high",
+  "drop_in_interface": "PriceCheckout(cart) Money",
+  "inputs": ["cart fixture"],
+  "outputs": ["priced total"],
+  "evaluator_strategy": ["golden fixture comparison"],
+  "metrics": ["p95 latency"],
+  "external_mode": "deny"
+}
+`
+	if err := os.WriteFile(planPath, []byte(planJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"reduce checkout pricing latency",
+		"--project-dir", projectDir,
+		"--agent-plan", filepath.Base(planPath),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one run config, found %d", len(matches))
+	}
+	cfg, err := archive.LoadRunConfig(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SourcePath != "internal/checkout/pricing.go" {
+		t.Fatalf("SourcePath = %q", cfg.SourcePath)
+	}
+	runDir := filepath.Dir(matches[0])
+	interfaceDoc, err := os.ReadFile(filepath.Join(runDir, "docs", "interfaces.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(interfaceDoc), "PriceCheckout(cart) Money") {
+		t.Fatalf("interfaces.md did not include agent plan:\n%s", string(interfaceDoc))
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "docs", "agent-discovery.json")); err != nil {
+		t.Fatalf("agent-discovery.json missing: %v", err)
+	}
+}
+
 func TestRunRejectsOptimizeAndTaskFileTogether(t *testing.T) {
 	projectDir := t.TempDir()
 	taskPath := filepath.Join(projectDir, "task.md")

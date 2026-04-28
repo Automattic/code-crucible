@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
@@ -775,6 +776,99 @@ exit 7
 	}
 	if result.Verdict.BenchmarkPassed {
 		t.Fatalf("benchmark_passed = true, want evaluator process failure to fail closed")
+	}
+}
+
+func TestEvaluateCandidatesFailsContractBeforeBenchmarking(t *testing.T) {
+	projectDir, created := createEvaluationFixture(t)
+	candidateDir := filepath.Join(created.RunDir, "round-0001", "candidate-0001")
+	if err := os.MkdirAll(filepath.Join(candidateDir, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateDir, "src", "notes.txt"), []byte("not a Go replacement\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateDir, "design.md"), []byte("# Candidate\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	candidate := model.Candidate{
+		ID:         "candidate-0001",
+		Name:       "wrong language",
+		Round:      1,
+		ParentIDs:  []string{"candidate-0000-baseline"},
+		Agent:      "codex",
+		SourcePath: "src",
+	}
+	data, err := json.MarshalIndent(candidate, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateDir, "candidate.json"), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AdoptCandidates(AdoptionOptions{ProjectDir: projectDir, RunID: created.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluator := `#!/usr/bin/env bash
+set -euo pipefail
+touch "$1/evaluator-ran"
+metrics_out="$3"
+verdict_out="$4"
+cat > "$metrics_out" <<'JSON'
+{
+  "runtime_mean_ms": 1
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+`
+	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluator), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCandidates(EvaluationOptions{
+		ProjectDir:  projectDir,
+		RunID:       created.ID,
+		CandidateID: "candidate-0001",
+		Adopt:       false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("evaluated results = %d, want one", len(report.Results))
+	}
+	if _, err := os.Stat(filepath.Join(candidateDir, "evaluator-ran")); !os.IsNotExist(err) {
+		t.Fatalf("evaluator should not have run, stat err: %v", err)
+	}
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result model.CandidateResult
+	for _, candidateResult := range board.Results {
+		if candidateResult.Candidate.ID == "candidate-0001" {
+			result = candidateResult
+			break
+		}
+	}
+	if result.Candidate.ID == "" {
+		t.Fatal("candidate-0001 missing from leaderboard")
+	}
+	if result.Status != "failed" {
+		t.Fatalf("status = %q, want failed", result.Status)
+	}
+	if len(result.Verdict.Errors) == 0 || !strings.Contains(result.Verdict.Errors[0], "candidate contract failed") {
+		t.Fatalf("verdict errors = %#v, want contract failure", result.Verdict.Errors)
+	}
+	if !result.Verdict.ExternalPolicyPassed {
+		t.Fatalf("external_policy_passed = false, want contract failure to preserve passed policy state")
 	}
 }
 

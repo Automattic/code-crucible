@@ -68,3 +68,31 @@ func TestBuildGenerationPromptIncludesScoreExplanation(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildGenerationPromptRequiresBaselineDiscoveryWhenSourcePathMissing(t *testing.T) {
+	prompt := BuildGenerationPrompt(GenerationPromptRequest{
+		RunConfig: model.RunConfig{
+			Optimize: "reduce checkout latency",
+			Variants: 2,
+			External: model.ExternalPolicy{
+				Mode: "deny",
+			},
+		},
+		InterfaceDocPath:  ".crucible/runs/run/docs/interfaces.md",
+		RunDir:            ".crucible/runs/run",
+		RoundDir:          ".crucible/runs/run/round-0001",
+		BaselineSourceDir: ".crucible/runs/run/round-0001/candidate-0000-baseline/src",
+	})
+
+	for _, want := range []string{
+		"## Baseline Discovery Required",
+		"No baseline source path was selected",
+		"Copy the original drop-in baseline implementation into `.crucible/runs/run/round-0001/candidate-0000-baseline/src`",
+		"Do not create candidate-NNNN competitors until candidate-0000-baseline/src contains the original baseline source.",
+		"The only allowed baseline change is populating candidate-0000-baseline/src with original host-project source",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("generation prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}

@@ -89,6 +89,14 @@ crucible discover "reduce p95 latency of the search ranking function"
 
 `discover` writes a local plan under `.crucible/discoveries/<discovery-id>/` with source-path suggestions, an agent discovery prompt, and a review checklist. Use `--agent codex --dry-run` to preview Codex discovery, or remove `--dry-run` to let Codex write `agent-plan.md`; Code Crucible extracts the structured handoff into `agent-plan.json` when the final response includes the requested JSON block.
 
+Use a structured discovery handoff when creating the run to seed interface docs, evaluator scaffold guidance, and the baseline source path:
+
+```bash
+crucible run \
+  "reduce p95 latency of the search ranking function" \
+  --agent-plan .crucible/discoveries/<discovery-id>/agent-plan.json
+```
+
 When you already know the source file or directory involved, pass it as the initial baseline source:
 
 ```bash
@@ -510,10 +518,12 @@ Completed feature work:
 
 Base functionality roadmap:
 
-- [ ] Convert `agent-plan.json` into stronger generated `docs/interfaces.md` sections and evaluator TODOs/scaffolds
-- [ ] Automatically generate a runnable evaluator scaffold from discovery handoff data when enough contract detail is available
-- [ ] Validate that competitors satisfy drop-in replacement contracts before benchmarking
-- [ ] Improve no-source-path generation so the agent extracts and archives the baseline before creating competitors
+- [x] Convert `agent-plan.json` into stronger generated `docs/interfaces.md` sections and evaluator TODOs/scaffolds
+- [x] Add `crucible run --agent-plan` to seed run archives from structured discovery handoffs
+- [ ] Automatically generate deterministic evaluator checks from discovery handoff data when enough contract detail is available
+- [x] Add pre-evaluation source-shape contract checks before benchmarking
+- [ ] Validate semantic drop-in replacement contracts before benchmarking
+- [x] Improve no-source-path generation so the agent extracts and archives the baseline before creating competitors
 - [ ] Add repeated evaluation controls: warmups, repetitions, outlier handling, confidence summaries, and configurable statistical score inputs
 - [ ] Add run selection helpers so commands and interactive flows do not always imply the latest run
 

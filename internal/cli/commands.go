@@ -12,6 +12,7 @@ import (
 
 	"github.com/Automattic/code-crucible/internal/agent"
 	"github.com/Automattic/code-crucible/internal/archive"
+	"github.com/Automattic/code-crucible/internal/discovery"
 	"github.com/Automattic/code-crucible/internal/indexer"
 	"github.com/Automattic/code-crucible/internal/project"
 	"github.com/Automattic/code-crucible/internal/report"
@@ -48,6 +49,7 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	optimize := fs.String("optimize", "", "feature, function, or behavior to optimize")
 	taskFile := fs.String("task-file", "", "path to a file containing the optimization task, relative to project directory")
 	sourcePath := fs.String("source-path", "", "optional file or directory to use as the initial baseline source")
+	agentPlanPath := fs.String("agent-plan", "", "optional structured discovery handoff JSON to seed interface and evaluator scaffolds")
 	agentName := fs.String("agent", "", "agent provider name")
 	variants := fs.Int("variants", defaultVariantCount, "number of new competitors to request per round")
 	rounds := fs.Int("rounds", 1, "number of tournament rounds to prepare")
@@ -75,6 +77,19 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 
+	var agentPlan *discovery.AgentPlan
+	if strings.TrimSpace(*agentPlanPath) != "" {
+		loaded, err := loadAgentPlanForProject(*projectDir, *agentPlanPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "read agent plan failed: %v\n", err)
+			return 1
+		}
+		agentPlan = loaded
+		if strings.TrimSpace(*sourcePath) == "" && strings.TrimSpace(agentPlan.SourcePath) != "" {
+			*sourcePath = strings.TrimSpace(agentPlan.SourcePath)
+		}
+	}
+
 	runAgent := *agentName
 	if *generateNow {
 		if runAgent == "" {
@@ -99,6 +114,7 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 		ExternalMode:    *externalMode,
 		Fixtures:        *fixtures,
 		AllowHosts:      splitCSV(*allowHosts),
+		AgentPlan:       agentPlan,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "run setup failed: %v\n", err)
@@ -129,6 +145,14 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	}
 
 	return 0
+}
+
+func loadAgentPlanForProject(projectDir, path string) (*discovery.AgentPlan, error) {
+	planPath := path
+	if !filepath.IsAbs(planPath) {
+		planPath = archive.ProjectPath(projectDir, planPath)
+	}
+	return discovery.LoadAgentPlan(planPath)
 }
 
 func optimizationRequest(projectDir, optimize, taskFile, positional string, stderr io.Writer) (string, int) {

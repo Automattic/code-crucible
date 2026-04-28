@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -291,9 +292,14 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 		evaluation.Warnings = append(evaluation.Warnings, err.Error())
 	}
 	policyFailed := len(policyEnforcement.Errors) > 0
+	contractErrors := validateCandidateContract(runDir, candidateDir, result.Candidate)
+	contractFailed := len(contractErrors) > 0
+	if contractFailed {
+		evaluation.Errors = append(evaluation.Errors, contractErrors...)
+	}
 	var evaluatorErrors []string
 	var resourceMetrics model.Metrics
-	if !policyFailed {
+	if !policyFailed && !contractFailed {
 		var runErr error
 		resourceMetrics, runErr = runEvaluatorScript(evaluatorPath, candidateDir, runDir, metricsPath, resourcePath, verdictPath, stdoutPath, stderrPath, candidateExecOpts)
 		if runErr != nil {
@@ -307,11 +313,14 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 
 	var metrics model.Metrics
 	var verdict model.Verdict
-	if policyFailed {
+	if policyFailed || contractFailed {
 		verdict = model.Verdict{
-			CorrectnessPassed:    true,
-			BenchmarkPassed:      true,
-			ExternalPolicyPassed: false,
+			CorrectnessPassed:    !contractFailed,
+			BenchmarkPassed:      !contractFailed,
+			ExternalPolicyPassed: !policyFailed,
+		}
+		if contractFailed {
+			verdict.Errors = append(verdict.Errors, contractErrors...)
 		}
 	} else {
 		var err error
@@ -379,6 +388,75 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	evaluation.Status = result.Status
 	evaluation.Score = result.Score
 	return evaluation, result
+}
+
+func validateCandidateContract(runDir, candidateDir string, candidate model.Candidate) []string {
+	srcDir := filepath.Join(candidateDir, "src")
+	info, err := os.Stat(srcDir)
+	if err != nil || !info.IsDir() {
+		return []string{"candidate contract failed: src directory is missing"}
+	}
+	candidateExts, candidateFiles, err := contractSourceExtensions(srcDir)
+	if err != nil {
+		return []string{"candidate contract failed: " + err.Error()}
+	}
+	if candidateFiles == 0 {
+		return []string{"candidate contract failed: src directory contains no source files"}
+	}
+	if candidate.Baseline {
+		return nil
+	}
+
+	baselineSrc := filepath.Join(runDir, "round-0001", "candidate-0000-baseline", "src")
+	baselineExts, baselineFiles, err := contractSourceExtensions(baselineSrc)
+	if err != nil || baselineFiles == 0 || len(baselineExts) == 0 {
+		return nil
+	}
+	var missing []string
+	for ext := range baselineExts {
+		if !candidateExts[ext] {
+			missing = append(missing, ext)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return []string{fmt.Sprintf("candidate contract failed: src does not contain baseline language extensions %s", strings.Join(missing, ", "))}
+	}
+	return nil
+}
+
+func contractSourceExtensions(root string) (map[string]bool, int, error) {
+	exts := map[string]bool{}
+	files := 0
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "node_modules", "vendor", "target", "dist", "build":
+				return filepath.SkipDir
+			default:
+				return nil
+			}
+		}
+		files++
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if contractSourceExt(ext) {
+			exts[ext] = true
+		}
+		return nil
+	})
+	return exts, files, err
+}
+
+func contractSourceExt(ext string) bool {
+	switch ext {
+	case ".go", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".php", ".rb", ".rs", ".java", ".kt", ".kts", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs", ".swift", ".scala", ".sh", ".sql":
+		return true
+	default:
+		return false
+	}
 }
 
 func removeEvaluationOutputs(paths ...string) error {

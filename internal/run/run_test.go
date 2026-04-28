@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Automattic/code-crucible/internal/archive"
+	"github.com/Automattic/code-crucible/internal/discovery"
 	"github.com/Automattic/code-crucible/internal/external"
 	"github.com/Automattic/code-crucible/internal/model"
 )
@@ -128,6 +129,9 @@ func TestCreateRunWithoutSourcePathCreatesDiscoveryPrompt(t *testing.T) {
 	if !strings.Contains(string(prompt), "Generate 3 competitor implementations") {
 		t.Fatalf("generation prompt did not include requested variant count")
 	}
+	if !strings.Contains(string(prompt), "Baseline Discovery Required") {
+		t.Fatalf("generation prompt did not require baseline discovery")
+	}
 }
 
 func TestCreateRunCopiesEvaluatorScript(t *testing.T) {
@@ -180,6 +184,69 @@ func TestCreateRunCopiesEvaluatorScript(t *testing.T) {
 	}
 	if cfg.EvaluatorScript != "custom-evaluator.sh" {
 		t.Fatalf("EvaluatorScript = %q, want custom-evaluator.sh", cfg.EvaluatorScript)
+	}
+}
+
+func TestCreateRunUsesAgentPlanForInterfaceAndEvaluatorScaffold(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "checkout")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "pricing.go"), []byte("package checkout\n\nfunc PriceCheckout() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := &discovery.AgentPlan{
+		SourcePath:           "internal/checkout/pricing.go",
+		SourcePathConfidence: "high",
+		DropInInterface:      "PriceCheckout(cart) Money",
+		Inputs:               []string{"cart fixture"},
+		Outputs:              []string{"priced total"},
+		EvaluatorStrategy:    []string{"golden fixture comparison", "benchmark PriceCheckout"},
+		Metrics:              []string{"p95 latency", "cpu user seconds"},
+		ExternalMode:         "deny",
+		Notes:                []string{"keep behavior identical for discounts"},
+	}
+	created, err := Create(Options{
+		ProjectDir:   projectDir,
+		Optimize:     "reduce checkout pricing latency",
+		SourcePath:   plan.SourcePath,
+		Variants:     2,
+		ExternalMode: "deny",
+		AgentPlan:    plan,
+		Clarifications: []discovery.Clarification{
+			{Question: "Which percentile?", Answer: "p95"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	interfaceDoc, err := os.ReadFile(filepath.Join(created.RunDir, "docs", "interfaces.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Agent Discovery Handoff", "PriceCheckout(cart) Money", "golden fixture comparison", "Which percentile? p95"} {
+		if !strings.Contains(string(interfaceDoc), want) {
+			t.Fatalf("interfaces.md missing %q:\n%s", want, string(interfaceDoc))
+		}
+	}
+	if _, err := os.Stat(filepath.Join(created.RunDir, "docs", "agent-discovery.json")); err != nil {
+		t.Fatalf("agent-discovery.json missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(created.RunDir, "docs", "agent-discovery.md")); err != nil {
+		t.Fatalf("agent-discovery.md missing: %v", err)
+	}
+
+	evaluatorScript, err := os.ReadFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Discovery-derived evaluator guidance", "PriceCheckout(cart) Money", "Metric: p95 latency"} {
+		if !strings.Contains(string(evaluatorScript), want) {
+			t.Fatalf("evaluator scaffold missing %q:\n%s", want, string(evaluatorScript))
+		}
 	}
 }
 

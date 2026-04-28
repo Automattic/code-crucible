@@ -23,6 +23,7 @@ type GenerationPromptRequest struct {
 func BuildGenerationPrompt(req GenerationPromptRequest) string {
 	var b strings.Builder
 	cfg := req.RunConfig
+	baselinePending := strings.TrimSpace(cfg.SourcePath) == ""
 	round := req.Round
 	if round <= 0 {
 		round = 1
@@ -53,6 +54,15 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 
 	fmt.Fprintf(&b, "## Required Contract\n\n")
 	fmt.Fprintf(&b, "Read and follow `%s`. Every generated competitor must be a drop-in replacement for the documented baseline interface.\n\n", req.InterfaceDocPath)
+	if baselinePending {
+		fmt.Fprintf(&b, "## Baseline Discovery Required\n\n")
+		fmt.Fprintf(&b, "No baseline source path was selected when this run was created. Before creating competitor implementations:\n\n")
+		fmt.Fprintf(&b, "1. Inspect the host project and identify the source files involved in the optimization request.\n")
+		fmt.Fprintf(&b, "2. Copy the original drop-in baseline implementation into `%s`.\n", req.BaselineSourceDir)
+		fmt.Fprintf(&b, "3. Preserve the relative filenames and layout required by the documented interface.\n")
+		fmt.Fprintf(&b, "4. Update `%s` only if the discovered interface differs from the current notes or needs more detail.\n", req.InterfaceDocPath)
+		fmt.Fprintf(&b, "5. Do not create candidate-NNNN competitors until candidate-0000-baseline/src contains the original baseline source.\n\n")
+	}
 
 	fmt.Fprintf(&b, "## External Policy\n\n")
 	fmt.Fprintf(&b, "- Mode: `%s`\n", cfg.External.Mode)
@@ -130,14 +140,21 @@ For each competitor:
      "created_at": "RFC3339 UTC timestamp"
    }
 
-5. Do not modify baseline source, evaluator files, run metadata, leaderboard.json, or completed candidate artifacts.
+5. %s
 6. Do not introduce external services or protocols that violate the external policy.
 7. Avoid destructive cleanup commands such as rm -rf. Create fresh temporary paths under the scratch directory instead and leave scratch artifacts for archive inspection.
 
 Favor measurable changes. If a competitor is experimental, make the experiment explicit in design.md.
-`, nextCandidateID, round, jsonStringArray(parentIDs))
+`, nextCandidateID, round, jsonStringArray(parentIDs), baselineModificationRule(baselinePending))
 
 	return b.String()
+}
+
+func baselineModificationRule(baselinePending bool) string {
+	if baselinePending {
+		return "The only allowed baseline change is populating candidate-0000-baseline/src with original host-project source; otherwise do not modify evaluator files, run metadata, leaderboard.json, or completed candidate artifacts."
+	}
+	return "Do not modify baseline source, evaluator files, run metadata, leaderboard.json, or completed candidate artifacts."
 }
 
 func jsonStringArray(values []string) string {

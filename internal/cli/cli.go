@@ -67,8 +67,8 @@ Usage:
   crucible
   crucible init [--project-dir DIR] [--name NAME]
   crucible discover "OPTIMIZATION REQUEST" [--project-dir DIR] [--agent local|codex]
-  crucible run "OPTIMIZATION REQUEST" [--project-dir DIR] [--source-path PATH] [--variants N] [--generate]
-  crucible run (--optimize TEXT | --task-file PATH) [--project-dir DIR] [--source-path PATH] [--variants N] [--generate]
+  crucible run "OPTIMIZATION REQUEST" [--project-dir DIR] [--source-path PATH] [--agent-plan PATH] [--variants N] [--generate]
+  crucible run (--optimize TEXT | --task-file PATH) [--project-dir DIR] [--source-path PATH] [--agent-plan PATH] [--variants N] [--generate]
   crucible generate [--project-dir DIR] [--run RUN_ID] [--agent codex]
   crucible adopt [--project-dir DIR] [--run RUN_ID]
   crucible evaluate [--project-dir DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--nice N] [--cpu-limit N] [--sandbox-profile PROFILE] [--sandbox-engine docker|podman --sandbox-image IMAGE]

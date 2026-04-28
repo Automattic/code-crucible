@@ -29,6 +29,8 @@ type Options struct {
 	ExternalMode    string
 	Fixtures        string
 	AllowHosts      []string
+	AgentPlan       *discovery.AgentPlan
+	Clarifications  []discovery.Clarification
 }
 
 type CreatedRun struct {
@@ -114,8 +116,17 @@ func Create(opts Options) (*CreatedRun, error) {
 	}
 
 	interfacePath := filepath.Join(runDir, "docs", "interfaces.md")
-	if err := os.WriteFile(interfacePath, []byte(discovered.InterfaceMarkdown()), 0o644); err != nil {
+	interfaceMarkdown := discovered.InterfaceMarkdown()
+	if opts.AgentPlan != nil {
+		interfaceMarkdown += "\n" + discovery.AgentPlanMarkdown(opts.AgentPlan, opts.Clarifications)
+	}
+	if err := os.WriteFile(interfacePath, []byte(interfaceMarkdown), 0o644); err != nil {
 		return nil, err
+	}
+	if opts.AgentPlan != nil {
+		if err := writeAgentDiscoveryDocs(filepath.Join(runDir, "docs"), opts.AgentPlan, opts.Clarifications); err != nil {
+			return nil, err
+		}
 	}
 
 	external := model.ExternalPolicy{
@@ -211,7 +222,7 @@ func Create(opts Options) (*CreatedRun, error) {
 			return nil, err
 		}
 	} else {
-		evaluatorScript := evaluator.DefaultScript(opts.Evaluator)
+		evaluatorScript := evaluator.DefaultScriptWithAgentPlan(opts.Evaluator, opts.AgentPlan)
 		if err := os.WriteFile(evaluatorPath, []byte(evaluatorScript), 0o755); err != nil {
 			return nil, err
 		}
@@ -241,6 +252,16 @@ func Create(opts Options) (*CreatedRun, error) {
 		PromptPath:        promptPath,
 		BaselineSourceDir: baselineSrc,
 	}, nil
+}
+
+func writeAgentDiscoveryDocs(docsDir string, plan *discovery.AgentPlan, clarifications []discovery.Clarification) error {
+	if plan == nil {
+		return nil
+	}
+	if err := discovery.SaveAgentPlan(filepath.Join(docsDir, "agent-discovery.json"), plan); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(docsDir, "agent-discovery.md"), []byte(discovery.AgentPlanMarkdown(plan, clarifications)), 0o644)
 }
 
 func writeBaseline(projectDir, sourcePath, dest string) error {

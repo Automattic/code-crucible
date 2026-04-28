@@ -35,6 +35,11 @@ type ExternalCommunication struct {
 	Mode     string `json:"mode,omitempty"`
 }
 
+type Clarification struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+}
+
 func (p AgentPlan) HasContent() bool {
 	return strings.TrimSpace(p.SourcePath) != "" ||
 		strings.TrimSpace(p.DropInInterface) != "" ||
@@ -149,4 +154,92 @@ func fencedJSONBlocks(markdown string) [][]byte {
 
 func AgentPlanPath(planDir string) string {
 	return filepath.Join(planDir, AgentPlanFilename)
+}
+
+func AgentPlanMarkdown(plan *AgentPlan, clarifications []Clarification) string {
+	if plan == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Agent Discovery Handoff\n\n")
+	if strings.TrimSpace(plan.SourcePath) != "" {
+		fmt.Fprintf(&b, "- Recommended source path: `%s`", plan.SourcePath)
+		if strings.TrimSpace(plan.SourcePathConfidence) != "" {
+			fmt.Fprintf(&b, " (%s confidence)", plan.SourcePathConfidence)
+		}
+		b.WriteString("\n")
+	}
+	if strings.TrimSpace(plan.DropInInterface) != "" {
+		fmt.Fprintf(&b, "- Drop-in interface: %s\n", plan.DropInInterface)
+	}
+	if strings.TrimSpace(plan.ExternalMode) != "" {
+		fmt.Fprintf(&b, "- Recommended external mode: `%s`\n", plan.ExternalMode)
+	}
+	writeMarkdownList(&b, "Inputs", plan.Inputs)
+	writeMarkdownList(&b, "Outputs", plan.Outputs)
+	writeMarkdownList(&b, "Evaluator Strategy", plan.EvaluatorStrategy)
+	writeMarkdownList(&b, "Metrics", plan.Metrics)
+	if len(plan.ExternalCommunications) > 0 {
+		b.WriteString("\n### External Communications\n\n")
+		for _, external := range plan.ExternalCommunications {
+			label := strings.TrimSpace(external.Service)
+			if label == "" {
+				label = strings.TrimSpace(external.Protocol)
+			}
+			if label == "" {
+				label = "external dependency"
+			}
+			fmt.Fprintf(&b, "- %s", label)
+			details := externalCommunicationDetails(external)
+			if details != "" {
+				fmt.Fprintf(&b, ": %s", details)
+			}
+			b.WriteString("\n")
+		}
+	}
+	if len(clarifications) > 0 {
+		b.WriteString("\n### Clarifications\n\n")
+		for _, clarification := range clarifications {
+			if strings.TrimSpace(clarification.Question) == "" && strings.TrimSpace(clarification.Answer) == "" {
+				continue
+			}
+			fmt.Fprintf(&b, "- %s %s\n", strings.TrimSpace(clarification.Question), strings.TrimSpace(clarification.Answer))
+		}
+	}
+	writeMarkdownList(&b, "Notes", plan.Notes)
+	return b.String()
+}
+
+func writeMarkdownList(b *strings.Builder, heading string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n### %s\n\n", heading)
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		fmt.Fprintf(b, "- %s\n", value)
+	}
+}
+
+func externalCommunicationDetails(external ExternalCommunication) string {
+	details := make([]string, 0, 5)
+	if strings.TrimSpace(external.Protocol) != "" {
+		details = append(details, "protocol "+external.Protocol)
+	}
+	if strings.TrimSpace(external.Request) != "" {
+		details = append(details, "request "+external.Request)
+	}
+	if strings.TrimSpace(external.Response) != "" {
+		details = append(details, "response "+external.Response)
+	}
+	if strings.TrimSpace(external.Auth) != "" {
+		details = append(details, "auth "+external.Auth)
+	}
+	if strings.TrimSpace(external.Mode) != "" {
+		details = append(details, "mode "+external.Mode)
+	}
+	return strings.Join(details, "; ")
 }

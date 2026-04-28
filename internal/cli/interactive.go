@@ -231,15 +231,21 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 		SourcePath:   sourcePath,
 		Variants:     variants,
 		ExternalMode: externalMode,
+		AgentPlan:    agentPlan,
+		Clarifications: func() []discovery.Clarification {
+			out := make([]discovery.Clarification, 0, len(clarifications))
+			for _, clarification := range clarifications {
+				out = append(out, discovery.Clarification{
+					Question: clarification.Question,
+					Answer:   clarification.Answer,
+				})
+			}
+			return out
+		}(),
 	})
 	if err != nil {
 		fmt.Fprintf(s.stderr, "run setup failed: %v\n", err)
 		return 1
-	}
-	if agentPlan != nil {
-		if err := writeInteractiveDiscoveryHandoff(created, agentPlan, clarifications); err != nil {
-			fmt.Fprintf(s.stderr, "discovery handoff warning: %v\n", err)
-		}
 	}
 
 	fmt.Fprintf(s.stdout, "\nCreated run %s\n", created.ID)
@@ -380,114 +386,6 @@ func sourcePathExists(projectDir, sourcePath string) bool {
 	}
 	_, err := os.Stat(archive.ProjectPath(projectDir, sourcePath))
 	return err == nil
-}
-
-func writeInteractiveDiscoveryHandoff(created *run.CreatedRun, plan *discovery.AgentPlan, clarifications []clarificationAnswer) error {
-	if created == nil || plan == nil {
-		return nil
-	}
-	docsDir := filepath.Join(created.RunDir, "docs")
-	structuredPath := filepath.Join(docsDir, "agent-discovery.json")
-	if err := discovery.SaveAgentPlan(structuredPath, plan); err != nil {
-		return err
-	}
-	markdownPath := filepath.Join(docsDir, "agent-discovery.md")
-	if err := os.WriteFile(markdownPath, []byte(agentDiscoveryMarkdown(plan, clarifications)), 0o644); err != nil {
-		return err
-	}
-	return appendAgentDiscoveryToInterfaceDoc(created.InterfaceDocPath, plan, clarifications)
-}
-
-func appendAgentDiscoveryToInterfaceDoc(path string, plan *discovery.AgentPlan, clarifications []clarificationAnswer) error {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.WriteString("\n" + agentDiscoveryMarkdown(plan, clarifications))
-	return err
-}
-
-func agentDiscoveryMarkdown(plan *discovery.AgentPlan, clarifications []clarificationAnswer) string {
-	var b strings.Builder
-	b.WriteString("## Agent Discovery Handoff\n\n")
-	if strings.TrimSpace(plan.SourcePath) != "" {
-		fmt.Fprintf(&b, "- Recommended source path: `%s`", plan.SourcePath)
-		if strings.TrimSpace(plan.SourcePathConfidence) != "" {
-			fmt.Fprintf(&b, " (%s confidence)", plan.SourcePathConfidence)
-		}
-		b.WriteString("\n")
-	}
-	if strings.TrimSpace(plan.DropInInterface) != "" {
-		fmt.Fprintf(&b, "- Drop-in interface: %s\n", plan.DropInInterface)
-	}
-	if strings.TrimSpace(plan.ExternalMode) != "" {
-		fmt.Fprintf(&b, "- Recommended external mode: `%s`\n", plan.ExternalMode)
-	}
-	writeMarkdownList(&b, "Inputs", plan.Inputs)
-	writeMarkdownList(&b, "Outputs", plan.Outputs)
-	writeMarkdownList(&b, "Evaluator Strategy", plan.EvaluatorStrategy)
-	writeMarkdownList(&b, "Metrics", plan.Metrics)
-	if len(plan.ExternalCommunications) > 0 {
-		b.WriteString("\n### External Communications\n\n")
-		for _, external := range plan.ExternalCommunications {
-			label := strings.TrimSpace(external.Service)
-			if label == "" {
-				label = strings.TrimSpace(external.Protocol)
-			}
-			if label == "" {
-				label = "external dependency"
-			}
-			fmt.Fprintf(&b, "- %s", label)
-			details := externalCommunicationDetails(external)
-			if details != "" {
-				fmt.Fprintf(&b, ": %s", details)
-			}
-			b.WriteString("\n")
-		}
-	}
-	if len(clarifications) > 0 {
-		b.WriteString("\n### Clarifications\n\n")
-		for _, clarification := range clarifications {
-			fmt.Fprintf(&b, "- %s %s\n", clarification.Question, clarification.Answer)
-		}
-	}
-	writeMarkdownList(&b, "Notes", plan.Notes)
-	return b.String()
-}
-
-func writeMarkdownList(b *strings.Builder, heading string, values []string) {
-	if len(values) == 0 {
-		return
-	}
-	fmt.Fprintf(b, "\n### %s\n\n", heading)
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		fmt.Fprintf(b, "- %s\n", value)
-	}
-}
-
-func externalCommunicationDetails(external discovery.ExternalCommunication) string {
-	details := make([]string, 0, 5)
-	if strings.TrimSpace(external.Protocol) != "" {
-		details = append(details, "protocol "+external.Protocol)
-	}
-	if strings.TrimSpace(external.Request) != "" {
-		details = append(details, "request "+external.Request)
-	}
-	if strings.TrimSpace(external.Response) != "" {
-		details = append(details, "response "+external.Response)
-	}
-	if strings.TrimSpace(external.Auth) != "" {
-		details = append(details, "auth "+external.Auth)
-	}
-	if strings.TrimSpace(external.Mode) != "" {
-		details = append(details, "mode "+external.Mode)
-	}
-	return strings.Join(details, "; ")
 }
 
 func candidateStatusCounts(results []model.CandidateResult) (int, int, int) {
