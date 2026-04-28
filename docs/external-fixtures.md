@@ -58,6 +58,8 @@ Runs with fixture-backed modes also archive:
 
 ```text
 external/mock-gateway.go
+external/mock-ca.pem
+external/mock-ca-key.pem
 ```
 
 This is the first generated gateway artifact. During sandboxed `mock` and `replay` evaluation, Code Crucible exports:
@@ -67,9 +69,16 @@ This is the first generated gateway artifact. During sandboxed `mock` and `repla
 - `CRUCIBLE_MOCK_GATEWAY_SOURCE`
 - `CRUCIBLE_MOCK_GATEWAY_ADDR`
 - `CRUCIBLE_MOCK_GATEWAY_URL`
+- `CRUCIBLE_MOCK_CA_CERT`
+- `CRUCIBLE_MOCK_CA_KEY`
 - `HTTP_PROXY` / `http_proxy`
 - `HTTPS_PROXY` / `https_proxy`
 - `NO_PROXY` / `no_proxy`
+- `SSL_CERT_FILE`
+- `REQUESTS_CA_BUNDLE`
+- `CURL_CA_BUNDLE`
+- `NODE_EXTRA_CA_CERTS`
+- `GIT_SSL_CAINFO`
 
 The container resource wrapper starts the gateway on `CRUCIBLE_MOCK_GATEWAY_ADDR` before invoking `evaluator.sh`, and stops it after the evaluator exits. The default URL is:
 
@@ -77,10 +86,12 @@ The container resource wrapper starts the gateway on `CRUCIBLE_MOCK_GATEWAY_ADDR
 http://127.0.0.1:18080
 ```
 
-HTTP clients that honor standard proxy environment variables can call the original `http://...` URL from the fixture, and the request will route through the mock gateway. Evaluators can also configure candidates to call `CRUCIBLE_MOCK_GATEWAY_URL` directly when that is easier. The current gateway is generated Go source, so sandbox images must include `go` until Code Crucible ships a packaged gateway binary.
+HTTP clients that honor standard proxy environment variables can call the original `http://...` URL from the fixture, and the request will route through the mock gateway. HTTPS clients that honor `HTTPS_PROXY` and the exported trust variables can call the original `https://...` URL; the gateway handles `CONNECT`, terminates TLS with a run-local test CA, and serves the matching fixture. Evaluators can also configure candidates to call `CRUCIBLE_MOCK_GATEWAY_URL` directly when that is easier. The current gateway is generated Go source, so sandbox images must include `go` until Code Crucible ships a packaged gateway binary.
+
+`mock-ca-key.pem` is a generated test-only private key scoped to the run archive. Do not install this CA globally or reuse it outside the evaluation sandbox.
 
 Current limits:
 
 - Only clients that honor proxy environment variables are routed automatically; raw sockets and custom transports must be configured by the evaluator.
-- HTTPS clients are routed to the gateway, but `CONNECT` replay is not implemented yet and currently returns HTTP 501.
+- HTTPS replay depends on the client trusting the exported mock CA variables; some runtimes may require evaluator-specific trust configuration.
 - Local evaluation receives the same environment variables, but Code Crucible does not auto-start the gateway outside the container wrapper yet.

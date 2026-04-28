@@ -238,6 +238,11 @@ func TestExternalEvaluationEnvAddsFixtureGatewayDefaults(t *testing.T) {
 	if err := externalfixtures.WriteMockGateway(gatewaySource); err != nil {
 		t.Fatal(err)
 	}
+	caCertPath := filepath.Join(externalDir, externalfixtures.MockCACertName)
+	caKeyPath := filepath.Join(externalDir, externalfixtures.MockCAKeyName)
+	if err := externalfixtures.WriteMockCA(caCertPath, caKeyPath); err != nil {
+		t.Fatal(err)
+	}
 	fixturesPath := filepath.Join(externalDir, externalfixtures.HTTPFixturesName)
 
 	env := externalEvaluationEnv(model.ExternalPolicy{
@@ -249,6 +254,13 @@ func TestExternalEvaluationEnvAddsFixtureGatewayDefaults(t *testing.T) {
 		"CRUCIBLE_EXTERNAL_MODE=mock",
 		"CRUCIBLE_HTTP_FIXTURES=" + filepath.ToSlash(fixturesPath),
 		"CRUCIBLE_MOCK_GATEWAY_SOURCE=" + filepath.ToSlash(gatewaySource),
+		"CRUCIBLE_MOCK_CA_CERT=" + filepath.ToSlash(caCertPath),
+		"CRUCIBLE_MOCK_CA_KEY=" + filepath.ToSlash(caKeyPath),
+		"SSL_CERT_FILE=" + filepath.ToSlash(caCertPath),
+		"REQUESTS_CA_BUNDLE=" + filepath.ToSlash(caCertPath),
+		"CURL_CA_BUNDLE=" + filepath.ToSlash(caCertPath),
+		"NODE_EXTRA_CA_CERTS=" + filepath.ToSlash(caCertPath),
+		"GIT_SSL_CAINFO=" + filepath.ToSlash(caCertPath),
 		"CRUCIBLE_MOCK_GATEWAY_ADDR=127.0.0.1:19090",
 		"CRUCIBLE_MOCK_GATEWAY_URL=http://127.0.0.1:19090",
 		"HTTP_PROXY=http://127.0.0.1:19090",
@@ -366,7 +378,10 @@ func TestSandboxResourceWrapperStartsMockGateway(t *testing.T) {
 	for _, want := range []string{
 		"CRUCIBLE_MOCK_GATEWAY_SOURCE",
 		"CRUCIBLE_HTTP_FIXTURES",
-		"go run \"$CRUCIBLE_MOCK_GATEWAY_SOURCE\"",
+		"gateway_args=(\"$CRUCIBLE_MOCK_GATEWAY_SOURCE\"",
+		"-ca-cert",
+		"-ca-key",
+		"go run \"${gateway_args[@]}\"",
 		"/dev/tcp/${gateway_host}/${gateway_port}",
 	} {
 		if !strings.Contains(script, want) {

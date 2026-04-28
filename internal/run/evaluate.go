@@ -411,10 +411,10 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 	case model.ExternalModeMock, model.ExternalModeReplay:
 		if sandboxEnabled(sandbox) && sandbox.Network == "none" {
 			enforcement.Status = "partial"
-			enforcement.Warnings = append(enforcement.Warnings, "live network is blocked and the fixture gateway is available inside the sandbox; HTTPS CONNECT replay and protocol-specific routing are not implemented yet")
+			enforcement.Warnings = append(enforcement.Warnings, "live network is blocked and proxy-based fixture replay is available inside the sandbox; clients that ignore proxy or trust environment variables still require evaluator configuration")
 			return enforcement
 		}
-		enforcement.Warnings = append(enforcement.Warnings, "fixture gateway and HTTP proxy environment are available when fixtures are archived, but network isolation requires a container sandbox with --sandbox-network none")
+		enforcement.Warnings = append(enforcement.Warnings, "fixture gateway and proxy environment are available when fixtures are archived, but network isolation requires a container sandbox with --sandbox-network none")
 	case model.ExternalModeAllowlist:
 		enforcement.Warnings = append(enforcement.Warnings, "framework-level allowlist enforcement is not implemented yet")
 	case model.ExternalModeRecord:
@@ -451,6 +451,19 @@ func externalEvaluationEnv(policy model.ExternalPolicy, runDir string, env []str
 	gatewaySource := filepath.Join(runDir, "external", externalfixtures.MockGatewayName)
 	if fileExists(gatewaySource) {
 		out = appendEnvDefault(out, "CRUCIBLE_MOCK_GATEWAY_SOURCE", filepath.ToSlash(gatewaySource))
+	}
+	caCertPath := filepath.Join(runDir, "external", externalfixtures.MockCACertName)
+	caKeyPath := filepath.Join(runDir, "external", externalfixtures.MockCAKeyName)
+	if fileExists(caCertPath) && fileExists(caKeyPath) {
+		caCertPath = filepath.ToSlash(caCertPath)
+		caKeyPath = filepath.ToSlash(caKeyPath)
+		out = appendEnvDefault(out, "CRUCIBLE_MOCK_CA_CERT", caCertPath)
+		out = appendEnvDefault(out, "CRUCIBLE_MOCK_CA_KEY", caKeyPath)
+		out = appendEnvDefault(out, "SSL_CERT_FILE", caCertPath)
+		out = appendEnvDefault(out, "REQUESTS_CA_BUNDLE", caCertPath)
+		out = appendEnvDefault(out, "CURL_CA_BUNDLE", caCertPath)
+		out = appendEnvDefault(out, "NODE_EXTRA_CA_CERTS", caCertPath)
+		out = appendEnvDefault(out, "GIT_SSL_CAINFO", caCertPath)
 	}
 
 	gatewayAddr := envValue(out, "CRUCIBLE_MOCK_GATEWAY_ADDR")
@@ -692,7 +705,11 @@ if [[ -n "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" ]]; then
   gateway_host="${gateway_addr%:*}"
   gateway_port="${gateway_addr##*:}"
   rm -f "$gateway_log"
-  go run "$CRUCIBLE_MOCK_GATEWAY_SOURCE" -fixtures "$CRUCIBLE_HTTP_FIXTURES" -addr "$gateway_addr" >"$gateway_log" 2>&1 &
+  gateway_args=("$CRUCIBLE_MOCK_GATEWAY_SOURCE" -fixtures "$CRUCIBLE_HTTP_FIXTURES" -addr "$gateway_addr")
+  if [[ -n "${CRUCIBLE_MOCK_CA_CERT:-}" && -n "${CRUCIBLE_MOCK_CA_KEY:-}" ]]; then
+    gateway_args+=(-ca-cert "$CRUCIBLE_MOCK_CA_CERT" -ca-key "$CRUCIBLE_MOCK_CA_KEY")
+  fi
+  go run "${gateway_args[@]}" >"$gateway_log" 2>&1 &
   gateway_pid=$!
   gateway_ready=0
   for _ in {1..100}; do
