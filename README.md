@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, package gateway binaries for container sandboxes, route standard HTTP and HTTPS proxy traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, rebuild a SQLite index from filesystem artifacts, and write static HTML run reports. Reporting is still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, package gateway binaries for container sandboxes, route standard HTTP and HTTPS proxy traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, rebuild a SQLite index from filesystem artifacts, write static HTML run reports, and open a read-only TUI dashboard for run review. Reporting and the TUI are still under active development.
 
 ## Why
 
@@ -20,6 +20,7 @@ The goal is not just "does it work", but which implementation works best under m
 
 - Local git-friendly Go CLI
 - Bare `crucible` interactive workflow for creating runs and acting on existing project data
+- Explicit `crucible tui` dashboard for reviewing run status, candidates, leaderboard data, and common next commands
 - `crucible discover` for reviewable source-path, interface, evaluator, and external-policy discovery plans
 - Automatic `.crucible/` work area setup when `crucible run` is used in an existing project
 - `crucible run "..."`, `--optimize ...`, or `--task-file ...` for creating a tournament archive
@@ -71,6 +72,15 @@ crucible
 ```
 
 The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run discovery through a configured agent before creating the run. When the agent returns clarifying questions, the wizard records the answers in the run request. When the agent recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the generation agent to discover the involved code. The wizard then shows the current leaderboard and offers actions such as new run, standalone discovery, leaderboard, generate, adopt, evaluate, next round, evolve, query, report, inspect, index rebuild, and agent settings. Interactive run creation can opt into advanced evaluator/external/round/exploration options, run actions prompt for a run selector, generate/evolve actions can select a generation agent, generate can review or edit run artifacts with `$VISUAL`/`$EDITOR` before invocation, generate can opt into advanced model/output/dry-run and Codex profile/sandbox/approval options, evaluate can opt into candidate/resource/sandbox options, reports can choose output/JSON options, index rebuilds can scope to one run or print JSON, discovery can run locally or through an agent, and agent settings can update the project `default_agent`.
+
+For a run-review dashboard, use the explicit TUI command:
+
+```bash
+crucible tui
+crucible tui --run previous
+```
+
+The first TUI slice is read-only. It loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and the shell commands for common next actions.
 
 Create a tournament run from inside an existing project:
 
@@ -532,7 +542,7 @@ Core packages:
 - `internal/model`: shared data model
 - `internal/scoring`: starter scoring logic
 
-See [docs/architecture.md](docs/architecture.md) for the current design, [docs/container-raw-socket-routing.md](docs/container-raw-socket-routing.md) for the planned container-only raw socket routing design, and [docs/tui.md](docs/tui.md) for the planned TUI framework selection.
+See [docs/architecture.md](docs/architecture.md) for the current design, [docs/container-raw-socket-routing.md](docs/container-raw-socket-routing.md) for the planned container-only raw socket routing design, and [docs/tui.md](docs/tui.md) for the TUI framework and implementation notes.
 
 ## Development
 
@@ -642,9 +652,9 @@ TUI roadmap:
 - [x] Select and document a Go TUI framework; selected Bubble Tea from Charmbracelet
 - [x] Decide TUI launch mode: add explicit `crucible tui` first and keep bare `crucible` prompt-based
 - [x] Extract interactive workflow actions into reusable controller functions shared by prompt mode and TUI mode
-- [ ] Build a TUI run dashboard with latest run status, leaderboard, candidate details, and common next actions
+- [x] Build a TUI run dashboard with latest run status, leaderboard, candidate details, and common next actions
 - [ ] Build TUI forms for run creation, discovery, generation, evaluation, reports, and queries
-- [ ] Add TUI tests around navigation state and command construction
+- [x] Add TUI tests around navigation state and command construction
 
 ## License
 

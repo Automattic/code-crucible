@@ -6,7 +6,7 @@ Code Crucible will use Bubble Tea for the planned terminal UI.
 
 Use Charmbracelet's Bubble Tea as the primary TUI framework, with Bubbles for reusable widgets when the interface needs lists, tables, text inputs, viewports, progress displays, file pickers, or help views.
 
-Do not add the dependency until the first TUI implementation slice starts. The current prompt-based interactive mode should remain dependency-light and continue to work without Bubble Tea. The first TUI entrypoint should be explicit, such as `crucible tui`, rather than replacing the bare `crucible` workflow.
+Code Crucible uses Bubble Tea v1.2.x for the first TUI slice because it supports the project's Go 1.22 baseline. Newer Bubble Tea releases currently require a newer Go toolchain. The prompt-based interactive mode remains available through bare `crucible`, and the TUI entrypoint is explicit: `crucible tui`.
 
 ## Rationale
 
@@ -17,13 +17,13 @@ Do not add the dependency until the first TUI implementation slice starts. The c
 
 ## Implementation Notes
 
-- Add a new `crucible tui` command instead of replacing bare `crucible`.
+- Keep `crucible tui` as the explicit entrypoint instead of replacing bare `crucible`.
 - Use the existing `internal/cli.WorkflowController` from prompt mode and the future TUI so both interfaces share command construction and execution.
-- Start with a read-mostly run dashboard: latest run status, leaderboard, candidate detail, and common next actions.
+- The first implementation is a read-only run dashboard: latest or selected run status, leaderboard rows, selected candidate detail, and common next action commands.
 - Add forms after the dashboard for run creation, discovery, generation, evaluation, reports, and queries.
 - Keep tests focused on state transitions and command construction. Avoid terminal snapshot tests until the UI stabilizes.
 
 ## Deferred
 
 - Exact screen layout and keybindings.
-- Whether the first TUI slice should import only Bubble Tea or include Bubbles/Lip Gloss immediately.
+- Whether the forms slice should add Bubbles widgets immediately or continue with plain Bubble Tea state until the interaction model stabilizes.

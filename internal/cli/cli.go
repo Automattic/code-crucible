@@ -29,6 +29,8 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	case "init":
 		return runInit(args[1:], stdout, stderr)
+	case "tui":
+		return runTUI(args[1:], stdin, stdout, stderr)
 	case "run":
 		return runTournament(args[1:], stdout, stderr)
 	case "discover":
@@ -65,6 +67,7 @@ func printHelp(w io.Writer) {
 
 Usage:
   crucible
+  crucible tui [--project-dir DIR] [--run RUN_ID]
   crucible init [--project-dir DIR] [--name NAME] [--default-agent AGENT]
   crucible discover "OPTIMIZATION REQUEST" [--project-dir DIR] [--agent local|codex]
   crucible run "OPTIMIZATION REQUEST" [--project-dir DIR] [--source-path PATH] [--agent AGENT] [--agent-plan PATH] [--variants N] [--generate]
