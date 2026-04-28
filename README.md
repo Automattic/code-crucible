@@ -134,6 +134,15 @@ crucible index
 
 The index lives at `.crucible/index.sqlite` and contains run and candidate summary tables suitable for reports, ad hoc queries, and future UI work. It is not authoritative; delete it or rebuild it whenever the filesystem archive changes. `crucible index` tracks the index schema version and resets the derivative database automatically when the stored schema is stale or missing.
 
+Query indexed runs or candidates for reporting and automation:
+
+```bash
+crucible query runs --json
+crucible query candidates --status passed --limit 10 --json
+```
+
+`query` reads `.crucible/index.sqlite`; run `crucible index` first when archive data changes.
+
 Write a static HTML report for the latest run:
 
 ```bash
@@ -446,7 +455,7 @@ Cleanup before more feature work:
 Feature roadmap:
 
 - [x] Add HTML reports
-- [ ] Add richer SQLite queries for reports and automation
+- [x] Add richer SQLite queries for reports and automation
 - [ ] Expand sandbox profiles and limits
 - [ ] Add CI regression tournament jobs
 

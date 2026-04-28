@@ -318,6 +318,53 @@ func TestReportCommandWritesHTMLReport(t *testing.T) {
 	}
 }
 
+func TestQueryCommandReadsSQLiteIndex(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--optimize", "make ranking faster",
+		"--target-path", "internal/search/rank.go",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"index", "--project", projectDir}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("index returned %d, stderr: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"query", "candidates", "--project", projectDir, "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("query returned %d, stderr: %s", code, stderr.String())
+	}
+
+	var candidates []struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &candidates); err != nil {
+		t.Fatalf("query output was not JSON: %v\n%s", err, stdout.String())
+	}
+	if len(candidates) != 1 || candidates[0].ID != "candidate-0000-baseline" {
+		t.Fatalf("candidates = %#v", candidates)
+	}
+}
+
 func TestNextRoundCommandPreparesActiveRound(t *testing.T) {
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "search")
