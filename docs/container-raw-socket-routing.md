@@ -1,6 +1,6 @@
 # Container Raw Socket Routing Design
 
-Code Crucible will support raw socket routing only inside Docker or Podman evaluator sandboxes. Local mode remains advisory because the framework should not mutate host firewall, DNS, or routing state.
+Code Crucible supports raw socket routing only inside Docker or Podman evaluator sandboxes. Local mode remains advisory because the framework should not mutate host firewall, DNS, or routing state.
 
 ## Goals
 
@@ -16,9 +16,9 @@ Code Crucible will support raw socket routing only inside Docker or Podman evalu
 - Cross-host or cluster networking.
 - Silent routing for arbitrary external hosts not declared in the run policy, fixtures, or discovery handoff.
 
-## Proposed Mode
+## Mode
 
-Add an explicit container routing mode, such as:
+Use the explicit container routing mode:
 
 ```bash
 crucible evaluate \
@@ -39,19 +39,19 @@ For each candidate evaluation:
 4. Route declared external hostnames to the gateway sidecar.
 5. Tear down both containers and the network after evaluation.
 
-The evaluator container should not join the default bridge network. For Docker, use a user-defined bridge network rather than the default bridge. For Podman, use an equivalent per-evaluation bridge network with external access restricted when the selected external mode requires it.
+The evaluator container does not join the default bridge network. For Docker, Code Crucible uses a user-defined bridge network rather than the default bridge. For Podman, it uses an equivalent per-evaluation bridge network. `mock` and `replay` networks are created with `--internal`; `allowlist` and `record` networks allow upstream access for gateway passthrough.
 
 ## Routing Rules
 
-The first implementation should route only declared hosts:
+The implementation routes only declared hosts:
 
 - `--allow-hosts`
 - hosts present in archived HTTP fixtures
 - hosts named in structured discovery handoffs
 
-Hostnames should be mapped to the gateway sidecar inside the evaluator network. Requests to undeclared hosts should fail closed in `deny`, `mock`, and `replay` modes. `allowlist` and `record` modes can pass through only when policy allows live upstream access.
+Hostnames are mapped to the gateway sidecar inside the evaluator network with container host entries. Requests to undeclared hosts fail closed in `mock` and `replay` because those networks are internal. `allowlist` and `record` route declared hosts through the sidecar, but undeclared live hosts may remain reachable when upstream network access is required.
 
-The gateway sidecar should listen on standard HTTP and HTTPS ports inside the evaluator network when possible. If binding privileged ports is not viable for the selected engine/rootless mode, the implementation should fail with a clear setup error rather than silently falling back to partial proxy-only routing.
+The gateway sidecar listens on standard HTTP and HTTPS ports inside the evaluator network. If binding privileged ports is not viable for the selected engine/rootless mode, the candidate evaluation fails with a setup error rather than silently falling back to partial proxy-only routing.
 
 ## Archived Metadata
 

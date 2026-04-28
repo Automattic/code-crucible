@@ -493,6 +493,7 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 				{Name: "run", Label: "Run", Value: runID, Required: true},
 				{Name: "candidate", Label: "Candidate filter"},
 				{Name: "jobs", Label: "Jobs", Value: "1"},
+				{Name: "external_routing", Label: "External routing"},
 			},
 		}
 	case tuiActionReport:
@@ -549,6 +550,9 @@ func runTUIFormAction(controller WorkflowController, form tuiForm) int {
 		}
 		if jobs := parsePositiveInt(form.value("jobs"), 0); jobs > 0 {
 			extraArgs = append(extraArgs, "--jobs", strconv.Itoa(jobs))
+		}
+		if routing := strings.TrimSpace(form.value("external_routing")); routing != "" {
+			extraArgs = append(extraArgs, "--external-routing", routing)
 		}
 		return controller.Evaluate(EvaluateWorkflowOptions{
 			RunSelector: form.value("run"),
@@ -639,6 +643,9 @@ func (f tuiForm) commandPreview(projectDir, runID string) string {
 		}
 		if jobs := strings.TrimSpace(f.value("jobs")); jobs != "" {
 			args = append(args, "--jobs", shellQuote(jobs))
+		}
+		if routing := strings.TrimSpace(f.value("external_routing")); routing != "" {
+			args = append(args, "--external-routing", shellQuote(routing))
 		}
 		return strings.Join(args, " ")
 	case tuiActionReport:

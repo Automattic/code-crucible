@@ -184,6 +184,7 @@ func TestMockGatewaySourceIncludesProxyRouting(t *testing.T) {
 		"tls.Server",
 		"loadCertSigner",
 		"singleConnListener",
+		"tls-addr",
 		"allow-hosts",
 		"proxyConnect",
 		"traceSummary",

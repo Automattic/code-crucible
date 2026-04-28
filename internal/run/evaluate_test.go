@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -621,6 +622,23 @@ func TestNormalizeSandboxOptions(t *testing.T) {
 	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "docker", Image: "golang:1.25", Profile: "strict", Network: "bridge"}); err == nil {
 		t.Fatal("expected strict bridge network error")
 	}
+	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "local", ExternalRouting: ExternalRoutingGatewayNetwork}); err == nil {
+		t.Fatal("expected local external routing error")
+	}
+	if _, err := NormalizeSandboxOptions(SandboxOptions{Engine: "docker", Image: "golang:1.25", Profile: "strict", ExternalRouting: ExternalRoutingGatewayNetwork}); err == nil {
+		t.Fatal("expected strict external routing error")
+	}
+	routedSandbox, err := NormalizeSandboxOptions(SandboxOptions{
+		Engine:          "docker",
+		Image:           "golang:1.25",
+		ExternalRouting: ExternalRoutingGatewayNetwork,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if routedSandbox.ExternalRouting != ExternalRoutingGatewayNetwork {
+		t.Fatalf("external routing = %q, want gateway-network", routedSandbox.ExternalRouting)
+	}
 }
 
 func TestBuildContainerEvaluatorCommand(t *testing.T) {
@@ -636,6 +654,7 @@ func TestBuildContainerEvaluatorCommand(t *testing.T) {
 		ProjectDir: projectDir,
 		CPULimit:   2,
 		Env:        []string{"GOMAXPROCS=1"},
+		AddHosts:   []string{"api.example.com:10.88.0.9"},
 		Sandbox: SandboxOptions{
 			Engine:      "podman",
 			Image:       "golang:1.25",
@@ -666,6 +685,8 @@ func TestBuildContainerEvaluatorCommand(t *testing.T) {
 		"1g",
 		"--pids-limit",
 		"256",
+		"--add-host",
+		"api.example.com:10.88.0.9",
 		"--userns",
 		"keep-id",
 		"--workdir",
@@ -687,6 +708,74 @@ func TestBuildContainerEvaluatorCommand(t *testing.T) {
 		if !containsArg(args, want) {
 			t.Fatalf("args missing %q: %#v", want, args)
 		}
+	}
+}
+
+func TestBuildGatewaySidecarCommand(t *testing.T) {
+	runDir := filepath.Join(t.TempDir(), ".crucible", "runs", "run")
+	env := []string{
+		"CRUCIBLE_MOCK_GATEWAY_BIN=" + filepath.Join(runDir, "external", "mock-gateway-linux-amd64"),
+		"CRUCIBLE_HTTP_FIXTURES=" + filepath.Join(runDir, "external", "http-fixtures.json"),
+		"CRUCIBLE_EXTERNAL_MODE=mock",
+		"CRUCIBLE_EXTERNAL_TRACE=" + filepath.Join(runDir, "round-0001", "candidate-0001", "external-trace.json"),
+		"CRUCIBLE_MOCK_CA_CERT=" + filepath.Join(runDir, "external", "mock-ca.pem"),
+		"CRUCIBLE_MOCK_CA_KEY=" + filepath.Join(runDir, "external", "mock-ca-key.pem"),
+	}
+	args := buildGatewaySidecarCommand(SandboxOptions{
+		Engine: "docker",
+		Image:  "golang:1.25",
+	}, "crucible-net", "crucible-gateway", runDir, env)
+	for _, want := range []string{
+		"run",
+		"-d",
+		"--name",
+		"crucible-gateway",
+		"--network",
+		"crucible-net",
+		"--cap-add",
+		"NET_BIND_SERVICE",
+		"golang:1.25",
+		envValue(env, "CRUCIBLE_MOCK_GATEWAY_BIN"),
+		"-addr",
+		"0.0.0.0:80",
+		"-tls-addr",
+		"0.0.0.0:443",
+		"-trace",
+		envValue(env, "CRUCIBLE_EXTERNAL_TRACE"),
+	} {
+		if !containsArg(args, want) {
+			t.Fatalf("gateway args missing %q: %#v", want, args)
+		}
+	}
+}
+
+func TestDeclaredExternalHostsFromPolicyAndFixtures(t *testing.T) {
+	fixturesPath := filepath.Join(t.TempDir(), externalfixtures.HTTPFixturesName)
+	if err := externalfixtures.SaveHTTPFixtureSet(fixturesPath, externalfixtures.HTTPFixtureSet{
+		Version: externalfixtures.HTTPFixtureVersion,
+		Fixtures: []externalfixtures.HTTPFixture{
+			{
+				ID: "api",
+				Request: externalfixtures.HTTPFixtureRequest{
+					Method: "GET",
+					URL:    "https://api.example.com/v1/search",
+				},
+				Response: externalfixtures.HTTPFixtureResponse{Status: 200},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	hosts, err := declaredExternalHosts(model.ExternalPolicy{
+		Mode:      model.ExternalModeMock,
+		Allowlist: []string{"cache.example.com:443"},
+	}, []string{"CRUCIBLE_HTTP_FIXTURES=" + fixturesPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"cache.example.com", "api.example.com"}
+	if !reflect.DeepEqual(hosts, want) {
+		t.Fatalf("hosts = %#v, want %#v", hosts, want)
 	}
 }
 

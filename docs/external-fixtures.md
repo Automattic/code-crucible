@@ -104,7 +104,7 @@ The gateway maps those paths back to `http://api.example.com/users` or `https://
 
 Current limits:
 
-- Clients that honor proxy environment variables are routed automatically. Clients that ignore proxy variables must either be configured to use direct-routed gateway URLs or handled by evaluator-specific routing.
+- Clients that honor proxy environment variables are routed automatically. Clients that ignore proxy variables can use direct-routed gateway URLs, or Docker/Podman `--external-routing gateway-network` when their target hostnames are declared by `--allow-hosts` or archived HTTP fixtures.
 - HTTPS replay depends on the client trusting the exported mock CA variables; some runtimes may require evaluator-specific trust configuration.
 - Record mode captures HTTP response bodies from proxied HTTP requests; HTTPS CONNECT tunnels are traced as tunnel events but their encrypted payloads are not converted into replay fixtures yet.
-- Local gateway-backed evaluation still cannot block unrelated host-network access or transparently intercept raw sockets. Evaluation reports warn when local mode cannot enforce this boundary; use Docker/Podman sandbox routing when clients cannot use proxy variables or direct-routed gateway URLs.
+- Local gateway-backed evaluation still cannot block unrelated host-network access or transparently intercept raw sockets. Evaluation reports warn when local mode cannot enforce this boundary; use Docker/Podman `--external-routing gateway-network` when clients cannot use proxy variables or direct-routed gateway URLs.

@@ -460,6 +460,7 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 	sandboxEngine := fs.String("sandbox-engine", "local", "evaluator sandbox engine: local, docker, or podman")
 	sandboxImage := fs.String("sandbox-image", "", "container image for docker or podman evaluator sandboxes")
 	sandboxNetwork := fs.String("sandbox-network", "", "container network mode for docker or podman evaluator sandboxes")
+	externalRouting := fs.String("external-routing", "", "container external routing mode: gateway-network")
 	memoryLimit := fs.String("memory-limit", "", "container memory limit for evaluator sandboxes, such as 1g or 512m")
 	pidsLimit := fs.Int("pids-limit", 0, "container process limit for evaluator sandboxes; 0 uses the profile default")
 	var env repeatedStrings
@@ -509,12 +510,13 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	evaluatorSandbox, err := run.NormalizeSandboxOptions(run.SandboxOptions{
-		Profile:     *sandboxProfile,
-		Engine:      *sandboxEngine,
-		Image:       *sandboxImage,
-		Network:     *sandboxNetwork,
-		MemoryLimit: *memoryLimit,
-		PIDsLimit:   *pidsLimit,
+		Profile:         *sandboxProfile,
+		Engine:          *sandboxEngine,
+		Image:           *sandboxImage,
+		Network:         *sandboxNetwork,
+		ExternalRouting: *externalRouting,
+		MemoryLimit:     *memoryLimit,
+		PIDsLimit:       *pidsLimit,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "evolve failed: %v\n", err)
@@ -642,6 +644,7 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	sandboxEngine := fs.String("sandbox-engine", "local", "evaluator sandbox engine: local, docker, or podman")
 	sandboxImage := fs.String("sandbox-image", "", "container image for docker or podman evaluator sandboxes")
 	sandboxNetwork := fs.String("sandbox-network", "", "container network mode for docker or podman evaluator sandboxes")
+	externalRouting := fs.String("external-routing", "", "container external routing mode: gateway-network")
 	memoryLimit := fs.String("memory-limit", "", "container memory limit for evaluator sandboxes, such as 1g or 512m")
 	pidsLimit := fs.Int("pids-limit", 0, "container process limit for evaluator sandboxes; 0 uses the profile default")
 	var env repeatedStrings
@@ -685,12 +688,13 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	sandbox, err := run.NormalizeSandboxOptions(run.SandboxOptions{
-		Profile:     *sandboxProfile,
-		Engine:      *sandboxEngine,
-		Image:       *sandboxImage,
-		Network:     *sandboxNetwork,
-		MemoryLimit: *memoryLimit,
-		PIDsLimit:   *pidsLimit,
+		Profile:         *sandboxProfile,
+		Engine:          *sandboxEngine,
+		Image:           *sandboxImage,
+		Network:         *sandboxNetwork,
+		ExternalRouting: *externalRouting,
+		MemoryLimit:     *memoryLimit,
+		PIDsLimit:       *pidsLimit,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "evaluate failed: %v\n", err)

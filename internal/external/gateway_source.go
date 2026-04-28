@@ -101,6 +101,7 @@ func main() {
 	recordFixturesPath := flag.String("record-fixtures", "", "recorded HTTP fixtures output path")
 	caCertPath := flag.String("ca-cert", "", "CA certificate PEM for HTTPS CONNECT replay")
 	caKeyPath := flag.String("ca-key", "", "CA private key PEM for HTTPS CONNECT replay")
+	tlsAddr := flag.String("tls-addr", "", "HTTPS listen address for transparent container routing")
 	allowHosts := flag.String("allow-hosts", "", "comma-separated host allowlist for passthrough proxy mode")
 	passthrough := flag.Bool("passthrough", false, "forward allowlisted proxy traffic to live upstream hosts")
 	flag.Parse()
@@ -128,6 +129,29 @@ func main() {
 		recordPath:  strings.TrimSpace(*recordFixturesPath),
 	}
 	server := &http.Server{Addr: *addr, Handler: http.HandlerFunc(gateway.handle)}
+	if *tlsAddr != "" {
+		if signer == nil {
+			log.Fatal("-tls-addr requires -ca-cert and -ca-key")
+		}
+		tlsServer := &http.Server{
+			Addr:    *tlsAddr,
+			Handler: http.HandlerFunc(gateway.serveFixture),
+			TLSConfig: &tls.Config{
+				GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+					host := hello.ServerName
+					if host == "" {
+						host = "localhost"
+					}
+					return signer.certificate(host)
+				},
+				MinVersion: tls.VersionTLS12,
+			},
+		}
+		go func() {
+			log.Printf("serving HTTPS fixtures on %s", *tlsAddr)
+			log.Fatal(tlsServer.ListenAndServeTLS("", ""))
+		}()
+	}
 	log.Printf("serving %d HTTP fixtures on %s", len(fixtures), *addr)
 	log.Fatal(server.ListenAndServe())
 }

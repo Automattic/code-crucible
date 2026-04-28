@@ -32,12 +32,27 @@ type EvaluationOptions struct {
 }
 
 type SandboxOptions struct {
-	Profile     string `json:"profile,omitempty"`
-	Engine      string `json:"engine,omitempty"`
-	Image       string `json:"image,omitempty"`
-	Network     string `json:"network,omitempty"`
-	MemoryLimit string `json:"memory_limit,omitempty"`
-	PIDsLimit   int    `json:"pids_limit,omitempty"`
+	Profile         string `json:"profile,omitempty"`
+	Engine          string `json:"engine,omitempty"`
+	Image           string `json:"image,omitempty"`
+	Network         string `json:"network,omitempty"`
+	ExternalRouting string `json:"external_routing,omitempty"`
+	MemoryLimit     string `json:"memory_limit,omitempty"`
+	PIDsLimit       int    `json:"pids_limit,omitempty"`
+}
+
+type ContainerExternalRoutingReport struct {
+	Mode                string   `json:"mode"`
+	Engine              string   `json:"engine"`
+	Image               string   `json:"image"`
+	NetworkName         string   `json:"network_name,omitempty"`
+	GatewayName         string   `json:"gateway_name,omitempty"`
+	GatewayIP           string   `json:"gateway_ip,omitempty"`
+	Hosts               []string `json:"hosts,omitempty"`
+	GatewayCommand      []string `json:"gateway_command,omitempty"`
+	EvaluatorHostConfig []string `json:"evaluator_host_config,omitempty"`
+	Teardown            []string `json:"teardown,omitempty"`
+	Warnings            []string `json:"warnings,omitempty"`
 }
 
 type CandidateEvaluation struct {
@@ -51,11 +66,13 @@ type CandidateEvaluation struct {
 	SemanticResultsPath string                           `json:"semantic_contract_results_path,omitempty"`
 	ExternalTracePath   string                           `json:"external_trace_path,omitempty"`
 	RecordFixturesPath  string                           `json:"record_fixtures_path,omitempty"`
+	ExternalRoutingPath string                           `json:"external_routing_path,omitempty"`
 	VerdictPath         string                           `json:"verdict_path"`
 	StdoutPath          string                           `json:"stdout_path"`
 	StderrPath          string                           `json:"stderr_path"`
 	Sandbox             *SandboxOptions                  `json:"sandbox,omitempty"`
 	ExternalPolicy      *model.ExternalPolicyEnforcement `json:"external_policy,omitempty"`
+	ExternalRouting     *ContainerExternalRoutingReport  `json:"external_routing,omitempty"`
 	Errors              []string                         `json:"errors,omitempty"`
 	Warnings            []string                         `json:"warnings,omitempty"`
 }
@@ -197,6 +214,7 @@ type evaluatorExecutionOptions struct {
 	Env         []string
 	ProjectDir  string
 	Sandbox     SandboxOptions
+	AddHosts    []string
 }
 
 type evaluationResult struct {
@@ -280,6 +298,7 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	verdictPath := filepath.Join(candidateDir, "verdict.json")
 	stdoutPath := filepath.Join(candidateDir, "evaluation.stdout.log")
 	stderrPath := filepath.Join(candidateDir, "evaluation.stderr.log")
+	externalRoutingPath := filepath.Join(candidateDir, "external-routing.json")
 
 	candidateEnv, tracePath, recordFixturesPath := externalCandidateEnv(cfg.External, execOpts.Sandbox, candidateDir, execOpts.Env)
 	candidateExecOpts := execOpts
@@ -292,6 +311,9 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 		VerdictPath:  filepath.ToSlash(verdictPath),
 		StdoutPath:   filepath.ToSlash(stdoutPath),
 		StderrPath:   filepath.ToSlash(stderrPath),
+	}
+	if execOpts.Sandbox.ExternalRouting != "" {
+		evaluation.ExternalRoutingPath = filepath.ToSlash(externalRoutingPath)
 	}
 	if tracePath != "" {
 		evaluation.ExternalTracePath = filepath.ToSlash(tracePath)
@@ -308,10 +330,28 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	evaluation.Warnings = append(evaluation.Warnings, policyEnforcement.Warnings...)
 	evaluation.Errors = append(evaluation.Errors, policyEnforcement.Errors...)
 
-	if err := removeEvaluationOutputs(metricsPath, resourcePath, samplesPath, semanticResultsPath, tracePath, recordFixturesPath, verdictPath); err != nil {
+	if err := removeEvaluationOutputs(metricsPath, resourcePath, samplesPath, semanticResultsPath, tracePath, recordFixturesPath, verdictPath, externalRoutingPath); err != nil {
 		evaluation.Warnings = append(evaluation.Warnings, err.Error())
 	}
 	policyFailed := len(policyEnforcement.Errors) > 0
+	routing, err := setupContainerExternalRouting(cfg.External, execOpts.Sandbox, runDir, candidateDir, candidateEnv)
+	if err != nil {
+		evaluation.Errors = append(evaluation.Errors, "external routing setup failed: "+err.Error())
+		evaluation.ExternalRouting = &ContainerExternalRoutingReport{
+			Mode:     execOpts.Sandbox.ExternalRouting,
+			Engine:   execOpts.Sandbox.Engine,
+			Image:    execOpts.Sandbox.Image,
+			Warnings: []string{err.Error()},
+		}
+		policyFailed = true
+	} else if routing != nil {
+		candidateExecOpts.Env = routing.Env
+		candidateExecOpts.Sandbox = routing.Sandbox
+		candidateExecOpts.AddHosts = routing.AddHosts
+		evaluation.ExternalRouting = routing.Report
+		sandbox := routing.Sandbox
+		evaluation.Sandbox = &sandbox
+	}
 	contractResult := validateCandidateContract(runDir, candidateDir, result.Candidate, candidateExecOpts, semanticResultsPath)
 	contractErrors := contractResult.Errors
 	contractFailed := len(contractErrors) > 0
@@ -381,6 +421,23 @@ func evaluateOne(cfg *model.RunConfig, evaluatorPath, runDir string, result mode
 	}
 	if len(evaluation.Warnings) > 0 {
 		verdict.Warnings = append(verdict.Warnings, evaluation.Warnings...)
+	}
+	if routing != nil && routing.cleanup != nil {
+		teardown := routing.cleanup()
+		evaluation.ExternalRouting.Teardown = append(evaluation.ExternalRouting.Teardown, teardown...)
+		for _, note := range teardown {
+			if strings.Contains(note, "failed") {
+				evaluation.ExternalRouting.Warnings = append(evaluation.ExternalRouting.Warnings, note)
+				evaluation.Warnings = append(evaluation.Warnings, note)
+				verdict.Warnings = appendMissingStrings(verdict.Warnings, []string{note})
+			}
+		}
+	}
+	if evaluation.ExternalRouting != nil {
+		if err := archive.SaveJSON(externalRoutingPath, evaluation.ExternalRouting); err != nil {
+			evaluation.Warnings = append(evaluation.Warnings, fmt.Sprintf("save external routing: %v", err))
+			verdict.Warnings = appendMissingStrings(verdict.Warnings, []string{fmt.Sprintf("save external routing: %v", err)})
+		}
 	}
 
 	result.Metrics = metrics

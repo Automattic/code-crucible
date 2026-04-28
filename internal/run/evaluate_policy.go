@@ -20,6 +20,9 @@ const (
 	sandboxProfileStrict    = "strict"
 	sandboxProfileNetworked = "networked"
 
+	externalRoutingNone           = ""
+	ExternalRoutingGatewayNetwork = "gateway-network"
+
 	defaultSandboxMemoryLimit = "1g"
 	defaultSandboxPIDsLimit   = 256
 )
@@ -29,6 +32,7 @@ func NormalizeSandboxOptions(opts SandboxOptions) (SandboxOptions, error) {
 	opts.Engine = strings.TrimSpace(opts.Engine)
 	opts.Image = strings.TrimSpace(opts.Image)
 	opts.Network = strings.TrimSpace(opts.Network)
+	opts.ExternalRouting = strings.TrimSpace(opts.ExternalRouting)
 	opts.MemoryLimit = strings.TrimSpace(opts.MemoryLimit)
 
 	if opts.Profile == "" {
@@ -49,9 +53,17 @@ func NormalizeSandboxOptions(opts SandboxOptions) (SandboxOptions, error) {
 	if strings.IndexFunc(opts.MemoryLimit, unicode.IsSpace) >= 0 {
 		return SandboxOptions{}, fmt.Errorf("--memory-limit cannot contain whitespace")
 	}
+	switch opts.ExternalRouting {
+	case externalRoutingNone, ExternalRoutingGatewayNetwork:
+	default:
+		return SandboxOptions{}, fmt.Errorf("--external-routing must be gateway-network when set")
+	}
 
 	switch opts.Engine {
 	case "local":
+		if opts.ExternalRouting != "" {
+			return SandboxOptions{}, fmt.Errorf("--external-routing requires --sandbox-engine docker or podman")
+		}
 		if opts.Image != "" {
 			return SandboxOptions{}, fmt.Errorf("--sandbox-image requires --sandbox-engine docker or podman")
 		}
@@ -73,6 +85,9 @@ func NormalizeSandboxOptions(opts SandboxOptions) (SandboxOptions, error) {
 			return SandboxOptions{}, fmt.Errorf("--sandbox-image is required when --sandbox-engine is %s", opts.Engine)
 		}
 		applySandboxProfileDefaults(&opts)
+		if opts.ExternalRouting == ExternalRoutingGatewayNetwork && opts.Profile == sandboxProfileStrict {
+			return SandboxOptions{}, fmt.Errorf("--external-routing gateway-network requires a non-strict sandbox profile")
+		}
 		if opts.Profile == sandboxProfileStrict && opts.Network != "none" {
 			return SandboxOptions{}, fmt.Errorf("--sandbox-profile strict requires --sandbox-network none")
 		}
@@ -116,7 +131,9 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 		Status: "advisory",
 	}
 
-	if sandboxEnabled(sandbox) {
+	if sandboxEnabled(sandbox) && sandbox.ExternalRouting == ExternalRoutingGatewayNetwork {
+		enforcement.Mechanism = sandbox.Engine + "-gateway-network"
+	} else if sandboxEnabled(sandbox) {
 		enforcement.Mechanism = sandbox.Engine + "-network-" + sandbox.Network
 	} else {
 		enforcement.Mechanism = "evaluator-contract"
@@ -136,6 +153,10 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 		enforcement.Warnings = append(enforcement.Warnings, "external policy deny is advisory in local mode; use --sandbox-engine docker or podman with --sandbox-network none to enforce network isolation")
 		appendLocalRawSocketWarning(&enforcement, sandbox)
 	case model.ExternalModeMock, model.ExternalModeReplay:
+		if sandboxEnabled(sandbox) && sandbox.ExternalRouting == ExternalRoutingGatewayNetwork {
+			enforcement.Status = "enforced"
+			return enforcement
+		}
 		if sandboxEnabled(sandbox) && sandbox.Network == "none" {
 			enforcement.Status = "partial"
 			enforcement.Warnings = append(enforcement.Warnings, "live network is blocked and proxy-based fixture replay is available inside the sandbox; clients that ignore proxy or trust environment variables still require evaluator configuration")
@@ -150,16 +171,26 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 			return enforcement
 		}
 		enforcement.Status = "partial"
-		enforcement.Mechanism = "proxy-allowlist"
-		enforcement.Warnings = append(enforcement.Warnings, "allowlist policy is enforced for HTTP and HTTPS clients that honor proxy environment variables; clients that ignore proxy variables still require evaluator-specific isolation")
+		if sandboxEnabled(sandbox) && sandbox.ExternalRouting == ExternalRoutingGatewayNetwork {
+			enforcement.Mechanism = sandbox.Engine + "-gateway-network"
+			enforcement.Warnings = append(enforcement.Warnings, "allowlist policy routes declared hosts through the gateway sidecar, but undeclared live hosts may remain reachable when the evaluator network allows upstream access")
+		} else {
+			enforcement.Mechanism = "proxy-allowlist"
+			enforcement.Warnings = append(enforcement.Warnings, "allowlist policy is enforced for HTTP and HTTPS clients that honor proxy environment variables; clients that ignore proxy variables still require evaluator-specific isolation")
+		}
 		appendLocalRawSocketWarning(&enforcement, sandbox)
 		if sandboxEnabled(sandbox) && sandbox.Network == "none" {
 			enforcement.Warnings = append(enforcement.Warnings, "allowlisted live hosts may be unreachable when the container sandbox network is none")
 		}
 	case model.ExternalModeRecord:
 		enforcement.Status = "partial"
-		enforcement.Mechanism = "proxy-record"
-		enforcement.Warnings = append(enforcement.Warnings, "record mode captures HTTP proxy traffic and CONNECT metadata; clients that ignore proxy variables or opaque HTTPS tunnels still require evaluator-specific recording support")
+		if sandboxEnabled(sandbox) && sandbox.ExternalRouting == ExternalRoutingGatewayNetwork {
+			enforcement.Mechanism = sandbox.Engine + "-gateway-network"
+			enforcement.Warnings = append(enforcement.Warnings, "record mode routes declared hosts through the gateway sidecar, but undeclared live hosts may remain reachable when the evaluator network allows upstream access")
+		} else {
+			enforcement.Mechanism = "proxy-record"
+			enforcement.Warnings = append(enforcement.Warnings, "record mode captures HTTP proxy traffic and CONNECT metadata; clients that ignore proxy variables or opaque HTTPS tunnels still require evaluator-specific recording support")
+		}
 		appendLocalRawSocketWarning(&enforcement, sandbox)
 	default:
 		enforcement.Warnings = append(enforcement.Warnings, "external policy mode is not recognized by the enforcement layer")

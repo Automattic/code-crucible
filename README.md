@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, package gateway binaries for container sandboxes, route standard HTTP and HTTPS proxy traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, rebuild a SQLite index from filesystem artifacts, write static HTML run reports, and open a TUI dashboard with basic action forms. Reporting and the TUI are still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, package gateway binaries for container sandboxes, route standard HTTP/HTTPS proxy and declared raw socket traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, rebuild a SQLite index from filesystem artifacts, write static HTML run reports, and open a TUI dashboard with basic action forms. Reporting and the TUI are still under active development.
 
 ## Why
 
@@ -33,7 +33,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Candidate adoption from generated `candidate-NNNN` artifacts into `leaderboard.json`
 - Local evaluator execution through `crucible evaluate`
 - Docker and Podman evaluator sandboxing with in-container resource metrics
-- Gateway startup, proxy wiring, direct-routed URLs, allowlist checks, replay, and record capture for external-call policies
+- Gateway startup, proxy wiring, direct-routed URLs, container gateway-network routing, allowlist checks, replay, and record capture for external-call policies
 - `crucible next-round` for preparing follow-up generation prompts from passed candidates
 - `crucible evolve` for chaining generation, evaluation, and next-round preparation
 - Ranked human-readable leaderboard output for passed candidates
@@ -445,6 +445,17 @@ Evaluator sandbox profiles are:
 
 Use explicit `--sandbox-network`, `--memory-limit`, and `--pids-limit` flags when a profile default needs to be tuned. The `strict` profile always requires `--sandbox-network none`.
 
+For clients that ignore proxy environment variables, container evaluation can route declared external hostnames through a gateway sidecar:
+
+```bash
+crucible evaluate \
+  --sandbox-engine podman \
+  --sandbox-image golang:1.25 \
+  --external-routing gateway-network
+```
+
+`gateway-network` is valid only for Docker or Podman with a non-strict sandbox profile. Code Crucible creates a per-candidate bridge network, starts the archived mock gateway as a sidecar, maps declared hosts from `--allow-hosts` and HTTP fixtures into the evaluator container, captures gateway traces, and archives `external-routing.json` beside the candidate results. If the network, sidecar, privileged gateway ports, or host mappings cannot be established, the candidate fails closed.
+
 Keep all candidates in a tournament on the same sandbox engine. Docker and Podman timings should not be compared as equivalent results because storage drivers, rootless behavior, cache state, and runtime overhead can differ even when both use the same image and wrapper.
 
 ## Proof Of Concept Fixture
@@ -498,9 +509,9 @@ crucible run \
 
 For `deny` mode, container evaluation enforces network isolation with `--sandbox-network none`. A deny-mode container evaluation fails closed if a different sandbox network is requested. Local deny-mode runs are marked advisory because the framework cannot prevent host-network access around an arbitrary local evaluator.
 
-For `allowlist` mode, Code Crucible starts the archived gateway as an HTTP/HTTPS proxy and denies proxied requests to hosts outside `--allow-hosts`. This is partial enforcement: clients that ignore proxy environment variables can use direct-routed gateway URLs when their base URL is configurable, but raw sockets and fully transparent routing still require evaluator-specific isolation. Live allowlisted hosts may be unreachable when the container sandbox network is `none`.
+For `allowlist` mode, Code Crucible starts the archived gateway as an HTTP/HTTPS proxy and denies proxied requests to hosts outside `--allow-hosts`. This is partial enforcement unless container `--external-routing gateway-network` is used for declared hosts. Clients can also use direct-routed gateway URLs when their base URL is configurable. Live allowlisted hosts may be unreachable when the container sandbox network is `none`.
 
-Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock`, `replay`, and `record` evaluation, Code Crucible exports gateway and proxy environment variables, then starts the archived gateway before running the evaluator. For container evaluation, Code Crucible builds an archived Linux gateway binary on the host when needed so sandbox images do not need Go just to start the gateway. Record mode captures proxied HTTP responses into each candidate's `recorded-http-fixtures.json` and writes `external-trace.json`; transparent HTTPS tunnels are traced but not replay-captured yet. Container mode can combine this with `--sandbox-network none`; local mode still cannot block unrelated host-network access or transparently intercept raw sockets, and evaluation reports warn when this limitation applies. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
+Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock`, `replay`, and `record` evaluation, Code Crucible exports gateway and proxy environment variables, then starts the archived gateway before running the evaluator. For container evaluation, Code Crucible builds an archived Linux gateway binary on the host when needed so sandbox images do not need Go just to start the gateway. Record mode captures gateway-routed HTTP responses into each candidate's `recorded-http-fixtures.json` and writes `external-trace.json`. Container `gateway-network` mode also routes declared raw HTTP and HTTPS hostnames through the sidecar gateway and records those events in the same trace file. Local mode still cannot block unrelated host-network access or transparently intercept raw sockets, and evaluation reports warn when this limitation applies. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
 
 ## Project Work Area
 
@@ -542,7 +553,7 @@ Core packages:
 - `internal/model`: shared data model
 - `internal/scoring`: starter scoring logic
 
-See [docs/architecture.md](docs/architecture.md) for the current design, [docs/container-raw-socket-routing.md](docs/container-raw-socket-routing.md) for the planned container-only raw socket routing design, and [docs/tui.md](docs/tui.md) for the TUI framework and implementation notes.
+See [docs/architecture.md](docs/architecture.md) for the current design, [docs/container-raw-socket-routing.md](docs/container-raw-socket-routing.md) for the container-only raw socket routing design, and [docs/tui.md](docs/tui.md) for the TUI framework and implementation notes.
 
 ## Development
 
@@ -643,9 +654,9 @@ Evaluator and external policy roadmap:
 - [x] Package the fixture gateway for sandbox images without Go
 - [x] Decide raw socket routing scope: no local transparent interception; implement only inside Docker/Podman sandboxes
 - [x] Design container-only raw socket routing with explicit sandbox/network setup
-- [ ] Implement container-only raw socket routing through an isolated evaluator network and gateway sidecar
+- [x] Implement container-only raw socket routing through an isolated evaluator network and gateway sidecar
 - [x] Add local-mode warnings when raw socket/transparent routing would be required
-- [ ] Extend external trace capture for container-routed raw socket traffic once interception exists
+- [x] Extend external trace capture for container-routed raw socket traffic once interception exists
 
 TUI roadmap:
 

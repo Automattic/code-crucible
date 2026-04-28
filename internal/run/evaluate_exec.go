@@ -139,6 +139,9 @@ func buildContainerEvaluatorCommand(evaluatorPath, candidateDir, runDir, metrics
 	if opts.Sandbox.PIDsLimit > 0 {
 		args = append(args, "--pids-limit", strconv.Itoa(opts.Sandbox.PIDsLimit))
 	}
+	for _, host := range opts.AddHosts {
+		args = append(args, "--add-host", host)
+	}
 
 	if opts.Sandbox.Engine == "podman" {
 		args = append(args, "--userns", "keep-id")

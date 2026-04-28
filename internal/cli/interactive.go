@@ -797,6 +797,13 @@ func (s interactiveSession) askAdvancedEvaluateOptions() ([]string, bool) {
 	if strings.TrimSpace(sandboxNetwork) != "" {
 		args = append(args, "--sandbox-network", strings.TrimSpace(sandboxNetwork))
 	}
+	externalRouting, ok := s.ask("External routing [none/gateway-network]: ")
+	if !ok {
+		return nil, false
+	}
+	if strings.TrimSpace(externalRouting) != "" {
+		args = append(args, "--external-routing", strings.TrimSpace(externalRouting))
+	}
 	memoryLimit, ok := s.ask("Memory limit [profile default]: ")
 	if !ok {
 		return nil, false

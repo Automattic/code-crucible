@@ -485,7 +485,7 @@ func TestInteractiveGeneratePromptsForAdvancedOptions(t *testing.T) {
 func TestInteractiveAdvancedEvaluateOptionsBuildArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	session := interactiveSession{
-		in:     bufio.NewReader(strings.NewReader("y\ncandidate-0001\n30s\n2\n5\n1\nstrict\ndocker\ngolang:1.22\nnone\n512m\n128\n")),
+		in:     bufio.NewReader(strings.NewReader("y\ncandidate-0001\n30s\n2\n5\n1\nstrict\ndocker\ngolang:1.22\nnone\n\n512m\n128\n")),
 		stdout: &stdout,
 		stderr: &stderr,
 	}
