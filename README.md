@@ -532,7 +532,7 @@ Core packages:
 - `internal/model`: shared data model
 - `internal/scoring`: starter scoring logic
 
-See [docs/architecture.md](docs/architecture.md) for the current design.
+See [docs/architecture.md](docs/architecture.md) for the current design and [docs/tui.md](docs/tui.md) for the planned TUI framework selection.
 
 ## Development
 
@@ -637,7 +637,7 @@ Evaluator and external policy roadmap:
 
 TUI roadmap:
 
-- [ ] Select and document a Go TUI framework; current recommendation is Bubble Tea from Charmbracelet
+- [x] Select and document a Go TUI framework; selected Bubble Tea from Charmbracelet
 - [ ] Extract interactive workflow actions into reusable controller functions shared by prompt mode and TUI mode
 - [ ] Build a TUI run dashboard with latest run status, leaderboard, candidate details, and common next actions
 - [ ] Build TUI forms for run creation, discovery, generation, evaluation, reports, and queries
