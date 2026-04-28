@@ -100,6 +100,9 @@ func (s interactiveSession) menu(projectDir string) int {
 		fmt.Fprintln(s.stdout, "  8. Rebuild index")
 		fmt.Fprintln(s.stdout, "  9. Agent settings")
 		fmt.Fprintln(s.stdout, "  10. Discovery")
+		fmt.Fprintln(s.stdout, "  11. Adopt generated candidates")
+		fmt.Fprintln(s.stdout, "  12. Prepare next round")
+		fmt.Fprintln(s.stdout, "  13. Query archive")
 		fmt.Fprintln(s.stdout, "  q. Quit")
 		choice, ok := s.ask("Choose an action [q]: ")
 		if !ok {
@@ -202,6 +205,38 @@ func (s interactiveSession) menu(projectDir string) int {
 			}
 		case "10", "discover", "discovery":
 			if code := s.standaloneDiscovery(projectDir); code != 0 {
+				return code
+			}
+		case "11", "adopt":
+			runSelector, ok := s.askRunSelector(projectDir)
+			if !ok {
+				return 0
+			}
+			modelName, ok := s.ask("Model label [none]: ")
+			if !ok {
+				return 0
+			}
+			args := []string{"--project-dir", projectDir, "--run", runSelector}
+			if strings.TrimSpace(modelName) != "" {
+				args = append(args, "--model", strings.TrimSpace(modelName))
+			}
+			if code := runAdopt(args, s.stdout, s.stderr); code != 0 {
+				return code
+			}
+		case "12", "next-round", "next round":
+			runSelector, ok := s.askRunSelector(projectDir)
+			if !ok {
+				return 0
+			}
+			parents, ok := s.askInt("Parents", defaultVariantCount)
+			if !ok {
+				return 0
+			}
+			if code := runNextRound([]string{"--project-dir", projectDir, "--run", runSelector, "--parents", strconv.Itoa(parents)}, s.stdout, s.stderr); code != 0 {
+				return code
+			}
+		case "13", "query":
+			if code := s.queryArchive(projectDir); code != 0 {
 				return code
 			}
 		default:
@@ -365,6 +400,37 @@ func (s interactiveSession) standaloneDiscovery(projectDir string) int {
 	}
 	args := []string{"--project-dir", projectDir, "--agent", discoveryAgent, request}
 	return runDiscover(args, s.stdout, s.stderr)
+}
+
+func (s interactiveSession) queryArchive(projectDir string) int {
+	kind, ok := s.ask("Query runs or candidates [runs]: ")
+	if !ok {
+		return 0
+	}
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" {
+		kind = "runs"
+	}
+	limit, ok := s.askInt("Limit", 0)
+	if !ok {
+		return 0
+	}
+	args := []string{kind, "--project-dir", projectDir, "--limit", strconv.Itoa(limit)}
+	if kind == "candidates" {
+		runSelector, ok := s.askRunSelector(projectDir)
+		if !ok {
+			return 0
+		}
+		status, ok := s.ask("Status filter [all]: ")
+		if !ok {
+			return 0
+		}
+		args = append(args, "--run", runSelector)
+		if strings.TrimSpace(status) != "" {
+			args = append(args, "--status", strings.TrimSpace(status))
+		}
+	}
+	return runQuery(args, s.stdout, s.stderr)
 }
 
 func (s interactiveSession) askDiscoveryAgent(projectDir string) (string, bool) {

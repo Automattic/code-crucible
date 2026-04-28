@@ -70,7 +70,7 @@ cd /path/to/your/project
 crucible
 ```
 
-The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run Codex discovery before creating the run. When Codex returns clarifying questions, the wizard records the answers in the run request. When Codex recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the agent to discover the involved code. The wizard then shows the current leaderboard and offers actions such as new run, standalone discovery, leaderboard, generate, evaluate, evolve, report, inspect, index rebuild, and agent settings. Interactive run actions prompt for a run selector, generate/evolve actions can select a generation agent, discovery can run locally or through an agent, and agent settings can update the project `default_agent`.
+The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run Codex discovery before creating the run. When Codex returns clarifying questions, the wizard records the answers in the run request. When Codex recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the agent to discover the involved code. The wizard then shows the current leaderboard and offers actions such as new run, standalone discovery, leaderboard, generate, adopt, evaluate, next round, evolve, query, report, inspect, index rebuild, and agent settings. Interactive run actions prompt for a run selector, generate/evolve actions can select a generation agent, discovery can run locally or through an agent, and agent settings can update the project `default_agent`.
 
 Create a tournament run from inside an existing project:
 
@@ -616,9 +616,9 @@ Interactive interface roadmap:
 
 - [x] Add interactive run selection for all actions that currently default to latest run
 - [x] Add standalone interactive discovery flow, including local-only and Codex discovery modes
-- [ ] Add interactive `adopt`
-- [ ] Add interactive `next-round`
-- [ ] Add interactive `query runs` and `query candidates`
+- [x] Add interactive `adopt`
+- [x] Add interactive `next-round`
+- [x] Add interactive `query runs` and `query candidates`
 - [ ] Add interactive controls for advanced `run` options: evaluator command/script, external mode, fixtures, allow-hosts, rounds, and exploration
 - [ ] Add interactive controls for advanced `generate` options: model, profile, sandbox, approval mode, dry-run, and output path
 - [ ] Add interactive controls for advanced `evaluate` options: candidate, jobs, timeout, nice, CPU limit, sandbox engine/image/profile/network, memory limit, and PID limit

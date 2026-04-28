@@ -308,6 +308,88 @@ func TestInteractiveStandaloneDiscoveryCreatesPlan(t *testing.T) {
 	}
 }
 
+func TestInteractiveAdoptGeneratedCandidate(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	created, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		SourcePath:   "internal/search/rank.go",
+		Variants:     1,
+		ExternalMode: "deny",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateDir := filepath.Join(created.RunDir, "round-0001", "candidate-0001")
+	if err := os.MkdirAll(filepath.Join(candidateDir, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateDir, "src", "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateDir, "design.md"), []byte("# Candidate\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	candidate := model.Candidate{
+		ID:         "candidate-0001",
+		Name:       "generated candidate",
+		Round:      1,
+		ParentIDs:  []string{"candidate-0000-baseline"},
+		Agent:      "codex",
+		SourcePath: "src",
+	}
+	candidateRaw, err := json.MarshalIndent(candidate, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateDir, "candidate.json"), append(candidateRaw, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader("\n11\n\n\nq\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Added: candidate-0001") {
+		t.Fatalf("stdout did not include adoption:\n%s", stdout.String())
+	}
+}
+
+func TestInteractiveQueryRuns(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	if _, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		Variants:     1,
+		ExternalMode: "deny",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"index", "--project", projectDir}, &stdout, &stderr); code != 0 {
+		t.Fatalf("index returned %d, stderr: %s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := RunWithIO(nil, strings.NewReader("\n13\n\n\nq\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "make ranking faster") {
+		t.Fatalf("stdout did not include query result:\n%s", stdout.String())
+	}
+}
+
 func TestDiscoverCreatesPlan(t *testing.T) {
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "checkout")
