@@ -210,6 +210,15 @@ func Create(opts Options) (*CreatedRun, error) {
 	}
 
 	evaluatorPath := filepath.Join(runDir, "evaluator", "evaluator.sh")
+	if checks := evaluator.BuildContractChecks(opts.AgentPlan); checks != nil {
+		data, err := evaluator.MarshalContractChecks(checks)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(runDir, "evaluator", evaluator.ContractChecksFilename), data, 0o644); err != nil {
+			return nil, err
+		}
+	}
 	if opts.EvaluatorScript != "" {
 		source := opts.EvaluatorScript
 		if !filepath.IsAbs(source) {
@@ -310,6 +319,7 @@ func runReadme(cfg model.RunConfig) string {
 	fmt.Fprintf(&b, "- `docs/interfaces.md` stores the drop-in replacement contract.\n")
 	fmt.Fprintf(&b, "- `round-0001/candidate-0000-baseline/` stores the extracted baseline.\n")
 	fmt.Fprintf(&b, "- `evaluator/evaluator.sh` stores the generated evaluator scaffold.\n")
+	fmt.Fprintf(&b, "- `evaluator/contract-checks.json` stores generated deterministic contract checks when discovery data is detailed enough.\n")
 	fmt.Fprintf(&b, "- `external/policy.json` stores external call policy.\n")
 	fmt.Fprintf(&b, "- `prompts/generation-round-0001.md` stores the prompt package for the selected agent.\n")
 	fmt.Fprintf(&b, "- `agents/` stores Codex invocation logs and final messages.\n")

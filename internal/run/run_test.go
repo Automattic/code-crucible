@@ -9,6 +9,7 @@ import (
 
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/discovery"
+	"github.com/Automattic/code-crucible/internal/evaluator"
 	"github.com/Automattic/code-crucible/internal/external"
 	"github.com/Automattic/code-crucible/internal/model"
 )
@@ -238,12 +239,26 @@ func TestCreateRunUsesAgentPlanForInterfaceAndEvaluatorScaffold(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(created.RunDir, "docs", "agent-discovery.md")); err != nil {
 		t.Fatalf("agent-discovery.md missing: %v", err)
 	}
+	checksRaw, err := os.ReadFile(filepath.Join(created.RunDir, "evaluator", evaluator.ContractChecksFilename))
+	if err != nil {
+		t.Fatalf("contract checks missing: %v", err)
+	}
+	var checks evaluator.ContractChecks
+	if err := json.Unmarshal(checksRaw, &checks); err != nil {
+		t.Fatalf("decode contract checks: %v\n%s", err, checksRaw)
+	}
+	if checks.DropInInterface != "PriceCheckout(cart) Money" {
+		t.Fatalf("DropInInterface = %q", checks.DropInInterface)
+	}
+	if len(checks.RequiredSourceExtensions) != 1 || checks.RequiredSourceExtensions[0] != ".go" {
+		t.Fatalf("RequiredSourceExtensions = %#v, want .go", checks.RequiredSourceExtensions)
+	}
 
 	evaluatorScript, err := os.ReadFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Discovery-derived evaluator guidance", "PriceCheckout(cart) Money", "Metric: p95 latency"} {
+	for _, want := range []string{"Discovery-derived evaluator guidance", "PriceCheckout(cart) Money", "contract-checks.json", "Metric: p95 latency"} {
 		if !strings.Contains(string(evaluatorScript), want) {
 			t.Fatalf("evaluator scaffold missing %q:\n%s", want, string(evaluatorScript))
 		}

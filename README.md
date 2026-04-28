@@ -318,6 +318,8 @@ The generated prompt explicitly tells Codex to avoid modifying host project sour
 
 Every run includes `evaluator/evaluator.sh`. `crucible evaluate` executes that script once per candidate currently listed in `leaderboard.json`.
 
+Runs seeded from a structured discovery handoff can also include `evaluator/contract-checks.json`. The generated evaluator scaffold uses that file to run deterministic artifact and source-shape checks before benchmarking; semantic correctness and performance comparisons still require a real evaluator command or script.
+
 The evaluator script receives:
 
 ```text
@@ -520,7 +522,7 @@ Base functionality roadmap:
 
 - [x] Convert `agent-plan.json` into stronger generated `docs/interfaces.md` sections and evaluator TODOs/scaffolds
 - [x] Add `crucible run --agent-plan` to seed run archives from structured discovery handoffs
-- [ ] Automatically generate deterministic evaluator checks from discovery handoff data when enough contract detail is available
+- [x] Automatically generate deterministic evaluator checks from discovery handoff data when enough contract detail is available
 - [x] Add pre-evaluation source-shape contract checks before benchmarking
 - [ ] Validate semantic drop-in replacement contracts before benchmarking
 - [x] Improve no-source-path generation so the agent extracts and archives the baseline before creating competitors
