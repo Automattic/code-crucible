@@ -18,7 +18,7 @@ optimization request
   -> next generation prompt
 ```
 
-The current implementation creates the archive, prompt package, Codex generation path, candidate adoption path, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP/HTTPS proxy env routing, next-round prompt preparation, automated multi-round execution loops, leaderboard scoring, resource metric archival, a rebuildable SQLite index, and static HTML run reports. Richer query and reporting workflows remain active work.
+The current implementation creates discovery plan archives, run archives, prompt packages, Codex discovery and generation paths, candidate adoption paths, local evaluator execution, container evaluator execution, fixture-backed mock gateway startup, HTTP/HTTPS proxy env routing, next-round prompt preparation, automated multi-round execution loops, leaderboard scoring, resource metric archival, a rebuildable SQLite index, and static HTML run reports. Richer query and reporting workflows remain active work.
 
 ## Project Mode
 
@@ -26,13 +26,26 @@ Code Crucible is meant to run from inside an existing project:
 
 ```bash
 cd existing-project
-crucible init
-crucible run --optimize "make this feature faster"
+crucible
+# or
+crucible discover "make this feature faster"
+# or
+crucible run "make this feature faster"
 # or
 crucible run --task-file crucible-task.md
 ```
 
-The project receives a `.crucible/` directory. This keeps optimization artifacts close to the code being evaluated without requiring the host project to adopt Code Crucible as a dependency.
+The bare `crucible` command starts a guided workflow. It confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan for new optimization requests, creates runs, and offers common follow-up actions for existing run data. The project receives a `.crucible/` directory automatically when the first run or discovery plan is created. This keeps optimization artifacts close to the code being evaluated without requiring the host project to adopt Code Crucible as a dependency. `crucible init` remains available for explicit preflight setup or a custom project name.
+
+## Discovery Archive
+
+`crucible discover "..."` creates a reviewable archive under:
+
+```text
+.crucible/discoveries/<discovery-id>/
+```
+
+Each discovery archive contains the original request, a local plan with heuristic source-path suggestions, and a prompt that can be sent to Codex with `--agent codex`. Codex discovery writes agent artifacts under the discovery archive's `agents/` directory, stores the final agent response as `agent-plan.md`, and extracts the machine-readable handoff to `agent-plan.json` when the response includes the requested JSON block.
 
 Archive metadata stores project-local paths where possible, such as `.crucible/runs/<run-id>/...`, instead of absolute host paths. Runtime commands resolve those archive paths against the current project directory so the same archive can be inspected, indexed, or moved without hard-coding a private workstation path.
 

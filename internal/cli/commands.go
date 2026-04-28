@@ -18,10 +18,12 @@ import (
 	"github.com/Automattic/code-crucible/internal/run"
 )
 
+const defaultVariantCount = 3
+
 func runInit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory to initialize")
+	projectDir := projectDirFlag(fs, "project directory to initialize")
 	name := fs.String("name", "", "project name")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -42,12 +44,12 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 func runTournament(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing or receiving .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing or receiving .crucible")
 	optimize := fs.String("optimize", "", "feature, function, or behavior to optimize")
 	taskFile := fs.String("task-file", "", "path to a file containing the optimization task, relative to project directory")
 	sourcePath := fs.String("source-path", "", "optional file or directory to use as the initial baseline source")
 	agentName := fs.String("agent", "", "agent provider name")
-	variants := fs.Int("variants", 3, "number of new competitors to request per round")
+	variants := fs.Int("variants", defaultVariantCount, "number of new competitors to request per round")
 	rounds := fs.Int("rounds", 1, "number of tournament rounds to prepare")
 	exploration := fs.Float64("exploration", 0.35, "0..1 balance between iterative improvement and creative alternatives")
 	evaluator := fs.String("evaluator", "", "deterministic evaluator command to run from each candidate src directory")
@@ -64,26 +66,13 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	eventJSON := fs.Bool("event-json", true, "ask Codex to emit JSONL events when used with --generate")
 	skipGitRepoCheck := fs.Bool("skip-git-repo-check", true, "allow Codex to run when the host project is not a git repository")
 	outputLastMessage := fs.String("output-last-message", "", "path for Codex final response; defaults to a run artifact")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsAnywhere(args, fs)); err != nil {
 		return 2
 	}
 
-	task := strings.TrimSpace(*optimize)
-	if strings.TrimSpace(*taskFile) != "" {
-		if task != "" {
-			fmt.Fprintf(stderr, "--optimize and --task-file cannot be used together\n")
-			return 2
-		}
-		taskPath := *taskFile
-		if !filepath.IsAbs(taskPath) {
-			taskPath = filepath.Join(*projectDir, taskPath)
-		}
-		data, err := os.ReadFile(taskPath)
-		if err != nil {
-			fmt.Fprintf(stderr, "read task file failed: %v\n", err)
-			return 1
-		}
-		task = strings.TrimSpace(string(data))
+	task, code := optimizationRequest(*projectDir, strings.TrimSpace(*optimize), strings.TrimSpace(*taskFile), strings.TrimSpace(strings.Join(fs.Args(), " ")), stderr)
+	if code != 0 {
+		return code
 	}
 
 	runAgent := *agentName
@@ -142,10 +131,107 @@ func runTournament(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func optimizationRequest(projectDir, optimize, taskFile, positional string, stderr io.Writer) (string, int) {
+	taskSources := 0
+	if optimize != "" {
+		taskSources++
+	}
+	if taskFile != "" {
+		taskSources++
+	}
+	if positional != "" {
+		taskSources++
+	}
+	if taskSources > 1 {
+		fmt.Fprintf(stderr, "provide the optimization request only once: as a positional argument, --optimize, or --task-file\n")
+		return "", 2
+	}
+	if positional != "" {
+		return positional, 0
+	}
+	if taskFile == "" {
+		return optimize, 0
+	}
+	taskPath := taskFile
+	if !filepath.IsAbs(taskPath) {
+		taskPath = filepath.Join(projectDir, taskPath)
+	}
+	data, err := os.ReadFile(taskPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "read task file failed: %v\n", err)
+		return "", 1
+	}
+	return strings.TrimSpace(string(data)), 0
+}
+
+type boolFlag interface {
+	IsBoolFlag() bool
+}
+
+func flagsAnywhere(args []string, fs *flag.FlagSet) []string {
+	flagArgs := make([]string, 0, len(args))
+	positionalArgs := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			positionalArgs = append(positionalArgs, args[i+1:]...)
+			break
+		}
+		name, hasValue, isFlag := splitFlagName(arg)
+		if !isFlag {
+			positionalArgs = append(positionalArgs, arg)
+			continue
+		}
+		registered := fs.Lookup(name)
+		if registered == nil {
+			flagArgs = append(flagArgs, arg)
+			continue
+		}
+		flagArgs = append(flagArgs, arg)
+		if hasValue || flagAcceptsNoValue(registered) {
+			continue
+		}
+		if i+1 < len(args) {
+			flagArgs = append(flagArgs, args[i+1])
+			i++
+		}
+	}
+	return append(flagArgs, positionalArgs...)
+}
+
+func splitFlagName(arg string) (string, bool, bool) {
+	prefix := ""
+	switch {
+	case strings.HasPrefix(arg, "--"):
+		prefix = "--"
+	case strings.HasPrefix(arg, "-"):
+		prefix = "-"
+	default:
+		return "", false, false
+	}
+	if arg == prefix {
+		return "", false, false
+	}
+	withoutPrefix := strings.TrimPrefix(arg, prefix)
+	if withoutPrefix == "" {
+		return "", false, false
+	}
+	name, _, hasValue := strings.Cut(withoutPrefix, "=")
+	if name == "" {
+		return "", false, false
+	}
+	return name, hasValue, true
+}
+
+func flagAcceptsNoValue(f *flag.Flag) bool {
+	boolValue, ok := f.Value.(boolFlag)
+	return ok && boolValue.IsBoolFlag()
+}
+
 func runIndex(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("index", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing or receiving .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing or receiving .crucible")
 	runID := fs.String("run", "", "optional run ID to rebuild in the index")
 	jsonOut := fs.Bool("json", false, "print raw index rebuild report JSON")
 	if err := fs.Parse(args); err != nil {
@@ -186,7 +272,7 @@ func runIndex(args []string, stdout, stderr io.Writer) int {
 func runReport(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	runID := fs.String("run", "", "run ID; defaults to latest run")
 	outputPath := fs.String("output", "", "HTML output path; defaults to reports/leaderboard.html in the run archive")
 	jsonOut := fs.Bool("json", false, "print raw report metadata JSON")
@@ -227,9 +313,9 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 func runNextRound(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("next-round", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	runID := fs.String("run", "", "run ID; defaults to latest run")
-	parents := fs.Int("parents", 3, "number of passed candidates to seed the next round")
+	parents := fs.Int("parents", defaultVariantCount, "number of passed candidates to seed the next round")
 	jsonOut := fs.Bool("json", false, "print raw next-round report JSON")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -270,10 +356,10 @@ func runNextRound(args []string, stdout, stderr io.Writer) int {
 func runEvolve(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("evolve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	runID := fs.String("run", "", "run ID; defaults to latest run")
 	rounds := fs.Int("rounds", 1, "number of generate/evaluate cycles to run")
-	parents := fs.Int("parents", 3, "number of passed candidates to seed each follow-up round")
+	parents := fs.Int("parents", defaultVariantCount, "number of passed candidates to seed each follow-up round")
 	agentName := fs.String("agent", "codex", "agent provider to run")
 	codexBin := fs.String("codex-bin", agent.DefaultCodexBinary, "Codex CLI binary")
 	model := fs.String("model", "", "Codex model override")
@@ -403,7 +489,7 @@ func runEvolve(args []string, stdout, stderr io.Writer) int {
 func runAdopt(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("adopt", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	runID := fs.String("run", "", "run ID; defaults to latest run")
 	model := fs.String("model", "", "model name to fill into adopted candidates when missing")
 	jsonOut := fs.Bool("json", false, "print raw adoption report JSON")
@@ -438,7 +524,7 @@ func runAdopt(args []string, stdout, stderr io.Writer) int {
 func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("evaluate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	runID := fs.String("run", "", "run ID; defaults to latest run")
 	candidateID := fs.String("candidate", "", "candidate ID to evaluate; defaults to all leaderboard candidates")
 	timeoutValue := fs.String("timeout", "", "optional evaluator timeout, such as 30s or 2m")
@@ -535,7 +621,7 @@ func runEvaluate(args []string, stdout, stderr io.Writer) int {
 func runInspect(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	runID := fs.String("run", "", "run ID; defaults to latest run")
 	if err := fs.Parse(args); err != nil {
 		return 2

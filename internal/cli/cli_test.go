@@ -10,7 +10,242 @@ import (
 
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/run"
 )
+
+func TestInteractiveCreatesRun(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader("\n\nmake checkout pricing faster\n\nq\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one run config, found %d", len(matches))
+	}
+	cfg, err := archive.LoadRunConfig(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Optimize != "make checkout pricing faster" {
+		t.Fatalf("Optimize = %q, want interactive prompt", cfg.Optimize)
+	}
+	if !strings.Contains(stdout.String(), "Initialized Code Crucible work area") {
+		t.Fatalf("stdout did not include init message:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Source path: agent discovery pending") {
+		t.Fatalf("stdout did not describe source discovery:\n%s", stdout.String())
+	}
+}
+
+func TestInteractiveExistingProjectShowsLeaderboard(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+
+	created, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		Variants:     1,
+		ExternalMode: "deny",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(created.RunDir, "leaderboard.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader("\n2\nq\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Found Code Crucible work area") {
+		t.Fatalf("stdout did not detect existing setup:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Latest run:") {
+		t.Fatalf("stdout did not show latest run status:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "candidate-0000-baseline") {
+		t.Fatalf("stdout did not show leaderboard:\n%s", stdout.String())
+	}
+}
+
+func TestDiscoverCreatesPlan(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "checkout")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "pricing.go"), []byte("package checkout\n\nfunc PriceCheckout() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"discover",
+		"reduce checkout pricing latency",
+		"--project-dir", projectDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("discover returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Created discovery plan") {
+		t.Fatalf("stdout did not include discovery creation:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "internal/checkout/pricing.go") {
+		t.Fatalf("stdout did not include source suggestion:\n%s", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "discoveries", "*", "plan.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one discovery plan, found %d", len(matches))
+	}
+	raw, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "internal/checkout/pricing.go") {
+		t.Fatalf("plan did not include source suggestion:\n%s", string(raw))
+	}
+}
+
+func TestDiscoverCodexDryRunPrintsCommand(t *testing.T) {
+	projectDir := t.TempDir()
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"discover",
+		"reduce checkout pricing latency",
+		"--project-dir", projectDir,
+		"--agent", "codex",
+		"--dry-run",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("discover returned %d, stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"Created discovery plan", "Codex command:", "Discovery archive:", "Agent plan:"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not contain %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestDiscoverCodexCapturesStructuredAgentPlan(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "checkout")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "pricing.go"), []byte("package checkout\n\nfunc PriceCheckout() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeCodex := filepath.Join(t.TempDir(), "codex")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    out="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+cat >/dev/null
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'MD'
+# Discovery
+
+Use the checkout pricing source.
+
+` + "```json" + `
+{
+  "source_path": "internal/checkout/pricing.go",
+  "source_path_confidence": "high",
+  "drop_in_interface": "PriceCheckout",
+  "inputs": ["checkout cart fixture"],
+  "outputs": ["priced checkout"],
+  "external_communications": [],
+  "external_mode": "deny",
+  "evaluator_strategy": ["golden fixture test", "benchmark pricing"],
+  "metrics": ["p95 latency", "cpu user seconds"],
+  "clarifying_questions": [],
+  "suggested_next_command": "crucible run \"reduce checkout pricing latency\" --source-path internal/checkout/pricing.go",
+  "notes": ["fake plan"]
+}
+` + "```" + `
+MD
+`
+	if err := os.WriteFile(fakeCodex, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"discover",
+		"reduce checkout pricing latency",
+		"--project-dir", projectDir,
+		"--agent", "codex",
+		"--codex-bin", fakeCodex,
+		"--event-json=false",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("discover returned %d, stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"Codex discovery complete", "Structured plan:", "Recommended source path: internal/checkout/pricing.go"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not contain %q:\n%s", want, stdout.String())
+		}
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "discoveries", "*", "agent-plan.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one structured agent plan, found %d", len(matches))
+	}
+	raw, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan struct {
+		SourcePath string `json:"source_path"`
+	}
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	if plan.SourcePath != "internal/checkout/pricing.go" {
+		t.Fatalf("SourcePath = %q", plan.SourcePath)
+	}
+}
+
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	})
+}
 
 func TestRunGenerateShortcutInvokesCodex(t *testing.T) {
 	projectDir := t.TempDir()
@@ -109,6 +344,57 @@ func TestRunGenerateRejectsUnsupportedAgentBeforeCreatingRun(t *testing.T) {
 	}
 }
 
+func TestRunPositionalOptimizeCreatesRun(t *testing.T) {
+	projectDir := t.TempDir()
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"make checkout pricing faster",
+		"--project-dir", projectDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s", code, stderr.String())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one run config, found %d", len(matches))
+	}
+	cfg, err := archive.LoadRunConfig(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Optimize != "make checkout pricing faster" {
+		t.Fatalf("Optimize = %q, want positional prompt", cfg.Optimize)
+	}
+	if !strings.Contains(stdout.String(), "Created run") {
+		t.Fatalf("stdout did not include run creation:\n%s", stdout.String())
+	}
+}
+
+func TestRunRequiresOptimizationRequest(t *testing.T) {
+	projectDir := t.TempDir()
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("run returned %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "optimization request is required") {
+		t.Fatalf("stderr did not explain missing request:\n%s", stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".crucible")); !os.IsNotExist(err) {
+		t.Fatalf("expected no work area to be created, stat err: %v", err)
+	}
+}
+
 func TestRunTaskFileCreatesRun(t *testing.T) {
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "search")
@@ -169,7 +455,7 @@ func TestRunRejectsOptimizeAndTaskFileTogether(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("run returned %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "--optimize and --task-file cannot be used together") {
+	if !strings.Contains(stderr.String(), "provide the optimization request only once") {
 		t.Fatalf("stderr did not explain task conflict:\n%s", stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(projectDir, ".crucible", "runs")); !os.IsNotExist(err) {

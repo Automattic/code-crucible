@@ -175,7 +175,7 @@ Use this document as the contract for generated competitors. A competitor is onl
 
 func shouldSkipDir(name string) bool {
 	switch name {
-	case ".crucible", ".git", ".hg", ".svn", ".next", "build", "dist", "node_modules", "target", "vendor":
+	case ".cache", ".codex", ".crucible", ".git", ".hg", ".svn", ".next", "bin", "build", "dist", "node_modules", "target", "vendor":
 		return true
 	default:
 		return false

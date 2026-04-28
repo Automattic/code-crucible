@@ -59,6 +59,7 @@ func Init(projectDir, name string) (*Config, error) {
 		WorkDir(abs),
 		filepath.Join(WorkDir(abs), "agents"),
 		filepath.Join(WorkDir(abs), "competitors"),
+		filepath.Join(WorkDir(abs), "discoveries"),
 		filepath.Join(WorkDir(abs), "evaluators"),
 		filepath.Join(WorkDir(abs), "fixtures", "http"),
 		filepath.Join(WorkDir(abs), "interfaces"),
@@ -138,6 +139,7 @@ This directory stores optimization tournaments for %s.
 Important paths:
 
 - tasks/ stores reusable optimization task specs.
+- discoveries/ stores optimization discovery plans and agent discovery prompts.
 - interfaces/ stores discovered input, output, and external communication contracts.
 - evaluators/ stores reusable test and benchmark harnesses.
 - fixtures/ stores mock and replay data for external calls.

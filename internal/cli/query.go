@@ -32,7 +32,7 @@ func runQuery(args []string, stdout, stderr io.Writer) int {
 func runQueryRuns(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("query runs", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	limit := fs.Int("limit", 0, "maximum number of runs to return")
 	jsonOut := fs.Bool("json", false, "print run summaries as JSON")
 	if err := fs.Parse(args); err != nil {
@@ -80,7 +80,7 @@ func runQueryRuns(args []string, stdout, stderr io.Writer) int {
 func runQueryCandidates(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("query candidates", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	runID := fs.String("run", "", "run ID filter")
 	status := fs.String("status", "", "status filter, such as passed or failed")
 	limit := fs.Int("limit", 0, "maximum number of candidates to return")

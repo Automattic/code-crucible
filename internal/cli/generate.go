@@ -30,7 +30,7 @@ type generationOptions struct {
 func runGenerate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	runID := fs.String("run", "", "run ID; defaults to latest run")
 	agentName := fs.String("agent", "codex", "agent provider to run")
 	codexBin := fs.String("codex-bin", agent.DefaultCodexBinary, "Codex CLI binary")

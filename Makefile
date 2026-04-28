@@ -23,14 +23,14 @@ examples-test:
 check: test vet build examples-test
 
 smoke: build
-	./bin/crucible run --project examples/go-ranking-poc --task-file task.md --source-path ranking/rank.go --evaluator-script evaluator.sh --variants 1 --external-mode deny
-	./bin/crucible evaluate --project examples/go-ranking-poc --candidate candidate-0000-baseline --timeout 60s
-	./bin/crucible leaderboard --project examples/go-ranking-poc
+	./bin/crucible run --project-dir examples/go-ranking-poc --task-file task.md --source-path ranking/rank.go --evaluator-script evaluator.sh --variants 1 --external-mode deny
+	./bin/crucible evaluate --project-dir examples/go-ranking-poc --candidate candidate-0000-baseline --timeout 60s
+	./bin/crucible leaderboard --project-dir examples/go-ranking-poc
 
 regression-tournament: smoke
-	./bin/crucible index --project examples/go-ranking-poc
-	./bin/crucible query candidates --project examples/go-ranking-poc --status passed --limit 5
-	./bin/crucible report --project examples/go-ranking-poc
+	./bin/crucible index --project-dir examples/go-ranking-poc
+	./bin/crucible query candidates --project-dir examples/go-ranking-poc --status passed --limit 5
+	./bin/crucible report --project-dir examples/go-ranking-poc
 
 clean:
 	rm -rf bin dist .cache

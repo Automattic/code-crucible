@@ -17,7 +17,7 @@ import (
 func runLeaderboard(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("leaderboard", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	projectDir := fs.String("project", ".", "project directory containing .crucible")
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
 	runID := fs.String("run", "", "run ID; defaults to latest run")
 	jsonOut := fs.Bool("json", false, "print raw leaderboard JSON")
 	if err := fs.Parse(args); err != nil {

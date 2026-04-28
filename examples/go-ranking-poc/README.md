@@ -25,21 +25,21 @@ From the repository root:
 go build -o bin/crucible ./cmd/crucible
 
 ./bin/crucible run \
-  --project examples/go-ranking-poc \
+  --project-dir examples/go-ranking-poc \
   --task-file task.md \
   --source-path ranking/rank.go \
   --evaluator-script evaluator.sh \
   --variants 2 \
   --external-mode deny
 
-./bin/crucible evaluate --project examples/go-ranking-poc
-./bin/crucible leaderboard --project examples/go-ranking-poc
+./bin/crucible evaluate --project-dir examples/go-ranking-poc
+./bin/crucible leaderboard --project-dir examples/go-ranking-poc
 ```
 
 To ask Codex for competitors:
 
 ```bash
-./bin/crucible generate --project examples/go-ranking-poc --agent codex
-./bin/crucible evaluate --project examples/go-ranking-poc
-./bin/crucible leaderboard --project examples/go-ranking-poc
+./bin/crucible generate --project-dir examples/go-ranking-poc --agent codex
+./bin/crucible evaluate --project-dir examples/go-ranking-poc
+./bin/crucible leaderboard --project-dir examples/go-ranking-poc
 ```

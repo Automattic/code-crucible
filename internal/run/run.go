@@ -48,13 +48,13 @@ func Create(opts Options) (*CreatedRun, error) {
 		return nil, err
 	}
 
+	if strings.TrimSpace(opts.Optimize) == "" {
+		return nil, fmt.Errorf("optimization request is required")
+	}
+
 	cfg, err := project.Ensure(absProject)
 	if err != nil {
 		return nil, err
-	}
-
-	if strings.TrimSpace(opts.Optimize) == "" {
-		return nil, fmt.Errorf("--optimize is required")
 	}
 	if opts.Variants <= 0 {
 		opts.Variants = 3

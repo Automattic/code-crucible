@@ -19,8 +19,10 @@ The goal is not just "does it work", but which implementation works best under m
 ## Current Features
 
 - Local git-friendly Go CLI
-- `crucible init` for adding a `.crucible/` work area to an existing project
-- `crucible run --optimize ...` or `--task-file ...` for creating a tournament archive
+- Bare `crucible` interactive workflow for creating runs and acting on existing project data
+- `crucible discover` for reviewable source-path, interface, evaluator, and external-policy discovery plans
+- Automatic `.crucible/` work area setup when `crucible run` is used in an existing project
+- `crucible run "..."`, `--optimize ...`, or `--task-file ...` for creating a tournament archive
 - Baseline competitor extraction from an optional `--source-path`
 - Interface discovery document scaffold
 - External policy scaffold for `deny`, `allowlist`, `mock`, `replay`, and `record`
@@ -61,18 +63,37 @@ Run creation, adoption, inspection, and filesystem archive workflows keep JSON f
 
 ## Quick Start
 
-Initialize Code Crucible inside an existing project:
+For a guided workflow, run Code Crucible without arguments:
 
 ```bash
 cd /path/to/your/project
-crucible init
+crucible
 ```
 
-Create a tournament run for a feature, function, handler, or module you want to optimize:
+The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, creates the run, shows the current leaderboard, and then offers actions such as new run, leaderboard, generate, evaluate, evolve, report, inspect, and index rebuild. When the source path is not already known or accepted from the local suggestions, the run is created without `--source-path` so the generation prompt asks the agent to discover the involved code.
+
+Create a tournament run from inside an existing project:
+
+```bash
+cd /path/to/your/project
+crucible run "reduce p95 latency of the search ranking function"
+```
+
+`run` creates `.crucible/` automatically when the project does not have one yet.
+
+If the source path or evaluator boundary is unclear, create a discovery plan first:
+
+```bash
+crucible discover "reduce p95 latency of the search ranking function"
+```
+
+`discover` writes a local plan under `.crucible/discoveries/<discovery-id>/` with source-path suggestions, an agent discovery prompt, and a review checklist. Use `--agent codex --dry-run` to preview Codex discovery, or remove `--dry-run` to let Codex write `agent-plan.md`; Code Crucible extracts the structured handoff into `agent-plan.json` when the final response includes the requested JSON block.
+
+When you already know the source file or directory involved, pass it as the initial baseline source:
 
 ```bash
 crucible run \
-  --optimize "reduce p95 latency of the search ranking function" \
+  "reduce p95 latency of the search ranking function" \
   --source-path internal/search/rank.go \
   --variants 5 \
   --rounds 3 \
@@ -92,7 +113,7 @@ For a full evaluator script instead of a short command, use `--evaluator-script`
 
 ```bash
 crucible run \
-  --optimize "reduce p95 latency of the search ranking function" \
+  "reduce p95 latency of the search ranking function" \
   --source-path internal/search/rank.go \
   --evaluator-script ./crucible-evaluator.sh
 ```
@@ -117,6 +138,12 @@ leaderboard.json
 ```
 
 Generated competitors must follow the [candidate format](docs/candidate-format.md).
+
+Measure the baseline before asking an agent for competitors:
+
+```bash
+crucible evaluate --candidate candidate-0000-baseline
+```
 
 View the current standings:
 
@@ -208,7 +235,7 @@ When you already trust the generated scaffold for a task, create the run and inv
 
 ```bash
 crucible run \
-  --optimize "reduce p95 latency of the search ranking function" \
+  "reduce p95 latency of the search ranking function" \
   --source-path internal/search/rank.go \
   --variants 5 \
   --generate
@@ -219,7 +246,7 @@ crucible run \
 If you do not know where the relevant code lives yet, omit `--source-path`:
 
 ```bash
-crucible run --optimize "reduce checkout API external calls"
+crucible run "reduce checkout API external calls"
 ```
 
 The run archive will include:
@@ -270,7 +297,7 @@ The same Codex options can be passed through `crucible run --generate`:
 
 ```bash
 crucible run \
-  --optimize "reduce allocation pressure in the parser" \
+  "reduce allocation pressure in the parser" \
   --source-path internal/parser \
   --variants 4 \
   --generate \
@@ -348,15 +375,15 @@ Run the local baseline loop:
 go build -o bin/crucible ./cmd/crucible
 
 ./bin/crucible run \
-  --project examples/go-ranking-poc \
+  --project-dir examples/go-ranking-poc \
   --task-file task.md \
   --source-path ranking/rank.go \
   --evaluator-script evaluator.sh \
   --variants 2 \
   --external-mode deny
 
-./bin/crucible evaluate --project examples/go-ranking-poc
-./bin/crucible leaderboard --project examples/go-ranking-poc
+./bin/crucible evaluate --project-dir examples/go-ranking-poc
+./bin/crucible leaderboard --project-dir examples/go-ranking-poc
 ```
 
 ## External Call Policy
@@ -375,7 +402,7 @@ Example:
 
 ```bash
 crucible run \
-  --optimize "reduce API cost in enrichment pipeline" \
+  "reduce API cost in enrichment pipeline" \
   --external-mode allowlist \
   --allow-hosts api.example.com,auth.example.com
 ```
@@ -388,12 +415,13 @@ Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Pro
 
 ## Project Work Area
 
-`crucible init` creates:
+`crucible run` creates the work area automatically when needed. `crucible init` is available when you want explicit preflight setup or a custom project name. The work area contains:
 
 ```text
 .crucible/
   agents/
   competitors/
+  discoveries/
   evaluators/
   fixtures/http/
   interfaces/
@@ -417,7 +445,7 @@ Core packages:
 - `internal/cli`: command parsing and user-facing commands
 - `internal/project`: `.crucible/` initialization and config
 - `internal/run`: tournament run creation and candidate adoption
-- `internal/discovery`: source path inspection and interface doc generation
+- `internal/discovery`: source path inspection, discovery plans, and interface doc generation
 - `internal/agent`: agent prompt construction and Codex CLI provider
 - `internal/evaluator`: evaluator scaffold generation
 - `internal/archive`: JSON archive helpers and baseline copying
