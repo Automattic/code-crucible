@@ -23,6 +23,16 @@ type interactiveSession struct {
 	stderr io.Writer
 }
 
+type interactiveRunOptions struct {
+	Rounds          int
+	Exploration     float64
+	Evaluator       string
+	EvaluatorScript string
+	ExternalMode    string
+	Fixtures        string
+	AllowHosts      []string
+}
+
 func runInteractive(stdin io.Reader, stdout, stderr io.Writer) int {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -367,14 +377,24 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 	}
 
 	externalMode := s.externalModeFromAgentPlan(agentPlan, agentDisplayName(agentPlanProvider))
+	advancedRun, ok := s.askAdvancedRunOptions(externalMode)
+	if !ok {
+		return 0
+	}
 
 	created, err := run.Create(run.Options{
-		ProjectDir:   projectDir,
-		Optimize:     request,
-		SourcePath:   sourcePath,
-		Variants:     variants,
-		ExternalMode: externalMode,
-		AgentPlan:    agentPlan,
+		ProjectDir:      projectDir,
+		Optimize:        request,
+		SourcePath:      sourcePath,
+		Variants:        variants,
+		Rounds:          advancedRun.Rounds,
+		Exploration:     advancedRun.Exploration,
+		Evaluator:       advancedRun.Evaluator,
+		EvaluatorScript: advancedRun.EvaluatorScript,
+		ExternalMode:    advancedRun.ExternalMode,
+		Fixtures:        advancedRun.Fixtures,
+		AllowHosts:      advancedRun.AllowHosts,
+		AgentPlan:       agentPlan,
 		Clarifications: func() []discovery.Clarification {
 			out := make([]discovery.Clarification, 0, len(clarifications))
 			for _, clarification := range clarifications {
@@ -396,7 +416,9 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 	fmt.Fprintf(s.stdout, "Interface docs: %s\n", created.InterfaceDocPath)
 	fmt.Fprintf(s.stdout, "Generation prompt: %s\n", created.PromptPath)
 	fmt.Fprintf(s.stdout, "Baseline source: %s\n", created.BaselineSourceDir)
-	fmt.Fprintf(s.stdout, "External mode: %s\n", externalMode)
+	fmt.Fprintf(s.stdout, "Rounds: %d\n", advancedRun.Rounds)
+	fmt.Fprintf(s.stdout, "Exploration: %.2f\n", advancedRun.Exploration)
+	fmt.Fprintf(s.stdout, "External mode: %s\n", advancedRun.ExternalMode)
 	if sourcePath == "" {
 		fmt.Fprintln(s.stdout, "Source path: agent discovery pending")
 	} else {
@@ -404,6 +426,78 @@ func (s interactiveSession) newRunWizard(projectDir string) int {
 	}
 	fmt.Fprintln(s.stdout)
 	return runLeaderboard([]string{"--project-dir", projectDir}, s.stdout, s.stderr)
+}
+
+func (s interactiveSession) askAdvancedRunOptions(externalMode string) (interactiveRunOptions, bool) {
+	opts := interactiveRunOptions{
+		Rounds:       1,
+		Exploration:  0.35,
+		ExternalMode: strings.TrimSpace(externalMode),
+	}
+	if opts.ExternalMode == "" {
+		opts.ExternalMode = string(model.ExternalModeDeny)
+	}
+	configure, ok := s.confirm("Configure advanced run options?", false)
+	if !ok || !configure {
+		return opts, ok
+	}
+	rounds, ok := s.askInt("Rounds", opts.Rounds)
+	if !ok {
+		return opts, false
+	}
+	opts.Rounds = rounds
+	exploration, ok := s.askFloatRange("Exploration", opts.Exploration, 0, 1)
+	if !ok {
+		return opts, false
+	}
+	opts.Exploration = exploration
+	evaluator, ok := s.ask("Evaluator command [none]: ")
+	if !ok {
+		return opts, false
+	}
+	opts.Evaluator = strings.TrimSpace(evaluator)
+	evaluatorScript, ok := s.ask("Evaluator script path [none]: ")
+	if !ok {
+		return opts, false
+	}
+	opts.EvaluatorScript = strings.TrimSpace(evaluatorScript)
+	mode, ok := s.askExternalMode(opts.ExternalMode)
+	if !ok {
+		return opts, false
+	}
+	opts.ExternalMode = mode
+	fixtures, ok := s.ask("External fixtures path [none]: ")
+	if !ok {
+		return opts, false
+	}
+	opts.Fixtures = strings.TrimSpace(fixtures)
+	allowHosts, ok := s.ask("Allow hosts, comma separated [none]: ")
+	if !ok {
+		return opts, false
+	}
+	opts.AllowHosts = splitCSV(allowHosts)
+	return opts, true
+}
+
+func (s interactiveSession) askExternalMode(fallback string) (string, bool) {
+	fallback = strings.TrimSpace(fallback)
+	if fallback == "" {
+		fallback = string(model.ExternalModeDeny)
+	}
+	for {
+		answer, ok := s.ask(fmt.Sprintf("External mode [%s]: ", fallback))
+		if !ok {
+			return "", false
+		}
+		mode := strings.TrimSpace(answer)
+		if mode == "" {
+			mode = fallback
+		}
+		if model.ExternalMode(mode).Valid() {
+			return mode, true
+		}
+		fmt.Fprintln(s.stdout, "External mode must be deny, allowlist, mock, replay, or record.")
+	}
 }
 
 func (s interactiveSession) askGenerationAgent(projectDir string) (string, bool) {
@@ -880,6 +974,24 @@ func (s interactiveSession) askInt(label string, fallback int) (int, bool) {
 			return value, true
 		}
 		fmt.Fprintf(s.stdout, "%s must be a positive integer.\n", label)
+	}
+}
+
+func (s interactiveSession) askFloatRange(label string, fallback, min, max float64) (float64, bool) {
+	for {
+		answer, ok := s.ask(fmt.Sprintf("%s [%.2f]: ", label, fallback))
+		if !ok {
+			return 0, false
+		}
+		answer = strings.TrimSpace(answer)
+		if answer == "" {
+			return fallback, true
+		}
+		value, err := strconv.ParseFloat(answer, 64)
+		if err == nil && value >= min && value <= max {
+			return value, true
+		}
+		fmt.Fprintf(s.stdout, "%s must be between %.2f and %.2f.\n", label, min, max)
 	}
 }
 

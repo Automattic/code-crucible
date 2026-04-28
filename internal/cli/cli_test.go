@@ -20,7 +20,7 @@ func TestInteractiveCreatesRun(t *testing.T) {
 	chdir(t, projectDir)
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n\nmake checkout pricing faster\n\nn\nq\n"), &stdout, &stderr)
+	code := RunWithIO(nil, strings.NewReader("\n\nmake checkout pricing faster\n\nn\nn\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -44,6 +44,51 @@ func TestInteractiveCreatesRun(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Source path: agent discovery pending") {
 		t.Fatalf("stdout did not describe source discovery:\n%s", stdout.String())
+	}
+}
+
+func TestInteractiveNewRunPromptsForAdvancedOptions(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	input := "\n\nmake ranking faster\n\nn\ny\ny\n2\n0.80\ngo test ./...\n\nallowlist\n\napi.example.com,cache.example.com\nq\n"
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one run config, found %d", len(matches))
+	}
+	cfg, err := archive.LoadRunConfig(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Rounds != 2 || cfg.Exploration != 0.80 || cfg.Evaluator != "go test ./..." {
+		t.Fatalf("advanced run fields = rounds %d exploration %.2f evaluator %q", cfg.Rounds, cfg.Exploration, cfg.Evaluator)
+	}
+	if cfg.External.Mode != model.ExternalModeAllowlist {
+		t.Fatalf("external mode = %q", cfg.External.Mode)
+	}
+	if got := strings.Join(cfg.External.Allowlist, ","); got != "api.example.com,cache.example.com" {
+		t.Fatalf("allowlist = %q", got)
+	}
+	for _, want := range []string{"Rounds: 2", "Exploration: 0.80", "External mode: allowlist"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not contain %q:\n%s", want, stdout.String())
+		}
 	}
 }
 
@@ -127,7 +172,7 @@ MD
 	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	var stdout, stderr bytes.Buffer
-	input := "\n\nreduce checkout pricing latency\n\ny\n\np95 of PriceCheckout\n\nq\n"
+	input := "\n\nreduce checkout pricing latency\n\ny\n\np95 of PriceCheckout\n\nn\nq\n"
 	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
@@ -244,7 +289,7 @@ MD
 	}
 
 	var stdout, stderr bytes.Buffer
-	input := "\n1\nmake ranking faster\n\ny\n\n\nq\n"
+	input := "\n1\nmake ranking faster\n\ny\n\n\nn\nq\n"
 	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
