@@ -524,6 +524,7 @@ Base functionality roadmap:
 - [x] Add `crucible run --agent-plan` to seed run archives from structured discovery handoffs
 - [x] Automatically generate deterministic evaluator checks from discovery handoff data when enough contract detail is available
 - [x] Add pre-evaluation source-shape contract checks before benchmarking
+- [x] Add pre-evaluation Go function signature checks when discovery names a Go drop-in interface
 - [ ] Validate semantic drop-in replacement contracts before benchmarking
 - [x] Improve no-source-path generation so the agent extracts and archives the baseline before creating competitors
 - [ ] Add repeated evaluation controls: warmups, repetitions, outlier handling, confidence summaries, and configurable statistical score inputs

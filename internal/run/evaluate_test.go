@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Automattic/code-crucible/internal/archive"
+	"github.com/Automattic/code-crucible/internal/discovery"
 	externalfixtures "github.com/Automattic/code-crucible/internal/external"
 	"github.com/Automattic/code-crucible/internal/model"
 )
@@ -869,6 +870,138 @@ JSON
 	}
 	if !result.Verdict.ExternalPolicyPassed {
 		t.Fatalf("external_policy_passed = false, want contract failure to preserve passed policy state")
+	}
+}
+
+func TestEvaluateCandidatesFailsGoSignatureContractBeforeBenchmarking(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "checkout")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baselineSource := `package checkout
+
+type Cart struct{}
+type Money int
+
+func PriceCheckout(cart Cart) Money { return 0 }
+`
+	if err := os.WriteFile(filepath.Join(sourceDir, "pricing.go"), []byte(baselineSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := &discovery.AgentPlan{
+		SourcePath:      "internal/checkout/pricing.go",
+		DropInInterface: "PriceCheckout(cart Cart) Money",
+		Inputs:          []string{"cart fixture"},
+		Outputs:         []string{"priced total"},
+	}
+	created, err := Create(Options{
+		ProjectDir:   projectDir,
+		Optimize:     "reduce checkout pricing latency",
+		SourcePath:   plan.SourcePath,
+		ExternalMode: "deny",
+		AgentPlan:    plan,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	candidateDir := filepath.Join(created.RunDir, "round-0001", "candidate-0001")
+	srcDir := filepath.Join(candidateDir, "src")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	candidateSource := `package checkout
+
+type Cart struct{}
+type Money int
+
+func PriceCheckout(cart Cart, discount int) Money { return 0 }
+`
+	if err := os.WriteFile(filepath.Join(srcDir, "pricing.go"), []byte(candidateSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateDir, "design.md"), []byte("# Candidate\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	candidate := model.Candidate{
+		ID:         "candidate-0001",
+		Name:       "changed signature",
+		Round:      1,
+		ParentIDs:  []string{"candidate-0000-baseline"},
+		Agent:      "codex",
+		SourcePath: "src",
+	}
+	data, err := json.MarshalIndent(candidate, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateDir, "candidate.json"), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AdoptCandidates(AdoptionOptions{ProjectDir: projectDir, RunID: created.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluator := `#!/usr/bin/env bash
+set -euo pipefail
+touch "$1/evaluator-ran"
+metrics_out="$3"
+verdict_out="$4"
+cat > "$metrics_out" <<'JSON'
+{
+  "runtime_mean_ms": 1
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+`
+	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluator), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCandidates(EvaluationOptions{
+		ProjectDir:  projectDir,
+		RunID:       created.ID,
+		CandidateID: "candidate-0001",
+		Adopt:       false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("evaluated results = %d, want one", len(report.Results))
+	}
+	if _, err := os.Stat(filepath.Join(candidateDir, "evaluator-ran")); !os.IsNotExist(err) {
+		t.Fatalf("evaluator should not have run, stat err: %v", err)
+	}
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result model.CandidateResult
+	for _, candidateResult := range board.Results {
+		if candidateResult.Candidate.ID == "candidate-0001" {
+			result = candidateResult
+			break
+		}
+	}
+	if result.Candidate.ID == "" {
+		t.Fatal("candidate-0001 missing from leaderboard")
+	}
+	if result.Status != "failed" {
+		t.Fatalf("status = %q, want failed", result.Status)
+	}
+	if len(result.Verdict.Errors) == 0 || !strings.Contains(result.Verdict.Errors[0], "signature changed") {
+		t.Fatalf("verdict errors = %#v, want signature contract failure", result.Verdict.Errors)
+	}
+	if !result.Verdict.ExternalPolicyPassed {
+		t.Fatalf("external_policy_passed = false, want signature failure to preserve passed policy state")
 	}
 }
 

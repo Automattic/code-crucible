@@ -412,6 +412,7 @@ func validateCandidateContract(runDir, candidateDir string, candidate model.Cand
 	if err != nil || baselineFiles == 0 || len(baselineExts) == 0 {
 		return nil
 	}
+	var errors []string
 	var missing []string
 	for ext := range baselineExts {
 		if !candidateExts[ext] {
@@ -420,9 +421,10 @@ func validateCandidateContract(runDir, candidateDir string, candidate model.Cand
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return []string{fmt.Sprintf("candidate contract failed: src does not contain baseline language extensions %s", strings.Join(missing, ", "))}
+		errors = append(errors, fmt.Sprintf("candidate contract failed: src does not contain baseline language extensions %s", strings.Join(missing, ", ")))
 	}
-	return nil
+	errors = append(errors, semanticContractErrors(runDir, baselineSrc, srcDir, baselineExts, candidateExts)...)
+	return errors
 }
 
 func contractSourceExtensions(root string) (map[string]bool, int, error) {
