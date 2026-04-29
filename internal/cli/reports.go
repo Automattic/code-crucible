@@ -24,6 +24,32 @@ func printAdoptionReport(stdout, stderr io.Writer, report *run.AdoptionReport) {
 	}
 }
 
+func printPromotionReport(stdout io.Writer, report *run.PromotionReport) {
+	if report.DryRun {
+		fmt.Fprintf(stdout, "\nPromotion plan for run %s\n", report.RunID)
+		fmt.Fprintln(stdout, "Dry run: no files copied")
+	} else {
+		fmt.Fprintf(stdout, "\nPromoted candidate %s\n", report.CandidateID)
+	}
+	fmt.Fprintf(stdout, "Candidate: %s (%s)\n", report.CandidateID, report.CandidateStatus)
+	fmt.Fprintf(stdout, "Target: %s\n", report.TargetPath)
+	fmt.Fprintf(stdout, "Candidate source: %s\n", report.CandidateSourcePath)
+	fmt.Fprintf(stdout, "Files: %d\n", len(report.Files))
+	limit := len(report.Files)
+	if limit > 10 {
+		limit = 10
+	}
+	for i := 0; i < limit; i++ {
+		fmt.Fprintf(stdout, "- %s <- %s\n", report.Files[i].Destination, report.Files[i].Source)
+	}
+	if len(report.Files) > limit {
+		fmt.Fprintf(stdout, "- ... %d more\n", len(report.Files)-limit)
+	}
+	if report.ReportPath != "" {
+		fmt.Fprintf(stdout, "Report: %s\n", report.ReportPath)
+	}
+}
+
 func formatIDList(ids []string) string {
 	if len(ids) == 0 {
 		return "none"

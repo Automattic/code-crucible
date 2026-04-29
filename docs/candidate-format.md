@@ -77,6 +77,14 @@ Adoption validates:
 
 Malformed candidates are reported and skipped. Adoption does not silently repair candidate artifacts.
 
+## Promotion
+
+`crucible promote` applies a tournament result back into the host project. With no candidate argument, it selects the best passing non-baseline candidate from the leaderboard. Passing `candidate-NNNN` or `--candidate candidate-NNNN` promotes that specific candidate.
+
+Promotion copies from the candidate's archived `src/` path to the original `run.json.source_path`. If the run source path is a file, the matching file from `src/` replaces it. If the run source path is a directory, Code Crucible overlays regular files from the candidate source directory without deleting unrelated project files. Promotion rejects targets outside the project and targets inside `.crucible/`.
+
+By default, promotion requires `status: passed`; use `--allow-unpassed` only for deliberate manual overrides. `--dry-run` prints the copy plan without modifying the project. Successful promotions write a JSON report under `promotions/` in the run archive.
+
 ## Evaluation Artifacts
 
 After `crucible evaluate`, each evaluated candidate may also contain:

@@ -4,7 +4,7 @@ Code Crucible is a model-agnostic CLI framework for generating, evaluating, benc
 
 It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, ask a selected agent to draft run evaluators, print command-provider setup templates, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, package gateway binaries for container sandboxes, route standard HTTP/HTTPS proxy and declared raw socket traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, rebuild a SQLite index from filesystem artifacts, write static HTML run reports, and open a TUI dashboard with basic action forms. Reporting and the TUI are still under active development.
+Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, ask a selected agent to draft run evaluators, print command-provider setup templates, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, package gateway binaries for container sandboxes, route standard HTTP/HTTPS proxy and declared raw socket traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, promote passed candidates back into the source project, rebuild a SQLite index from filesystem artifacts, write static HTML run reports, and open a TUI dashboard with basic action forms. Reporting and the TUI are still under active development.
 
 ## Why
 
@@ -32,6 +32,7 @@ The goal is not just "does it work", but which implementation works best under m
 - Agent generation prompt scaffold
 - Codex CLI generation adapter through `codex exec`
 - Candidate adoption from generated `candidate-NNNN` artifacts into `leaderboard.json`
+- Candidate promotion from passed tournament results back into the original source path
 - Local evaluator execution through `crucible evaluate`
 - Docker and Podman evaluator sandboxing with in-container resource metrics
 - Gateway startup, proxy wiring, direct-routed URLs, container gateway-network routing, allowlist checks, replay, and record capture for external-call policies
@@ -61,7 +62,7 @@ go build -o bin/crucible ./cmd/crucible
 - Docker or Podman when using containerized evaluator sandboxes
 - A pure-Go SQLite driver is included for `crucible index`
 
-Run creation, adoption, inspection, and filesystem archive workflows keep JSON files as the source of truth. The SQLite index is derivative and can be rebuilt at any time.
+Run creation, adoption, promotion, inspection, and filesystem archive workflows keep JSON files as the source of truth. The SQLite index is derivative and can be rebuilt at any time.
 
 ## Quick Start
 
@@ -72,7 +73,7 @@ cd /path/to/your/project
 crucible
 ```
 
-The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run discovery through a configured agent before creating the run. When the agent returns clarifying questions, the wizard records the answers in the run request. When the agent recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the generation agent to discover the involved code. The wizard prompts for evaluator setup before run creation, defaulting to agent-generated evaluator drafting while still allowing a supplied evaluator command or script. The wizard then shows the current leaderboard and offers actions such as new run, standalone discovery, evaluator generation, leaderboard, generate, adopt, evaluate, next round, evolve, query, report, inspect, index rebuild, and agent settings. Interactive run creation can opt into advanced external/round/exploration options, run actions auto-select the only available run and prompt only when multiple runs exist, generate/evolve/evaluator actions can select a generation-capable agent, generate can review or edit run artifacts with `$VISUAL`/`$EDITOR` before invocation, generate can opt into advanced model/output/dry-run and Codex profile/sandbox/approval options, evaluate can opt into candidate/resource/sandbox options, reports can choose output/JSON options, index rebuilds can scope to one run or print JSON, discovery can run locally or through an agent, and agent settings can update the project `default_agent`.
+The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run discovery through a configured agent before creating the run. When the agent returns clarifying questions, the wizard records the answers in the run request. When the agent recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the generation agent to discover the involved code. The wizard prompts for evaluator setup before run creation, defaulting to agent-generated evaluator drafting while still allowing a supplied evaluator command or script. The wizard then shows the current leaderboard and offers actions such as new run, standalone discovery, evaluator generation, leaderboard, generate, adopt, evaluate, promote, next round, evolve, query, report, inspect, index rebuild, and agent settings. Interactive run creation can opt into advanced external/round/exploration options, run actions auto-select the only available run and prompt only when multiple runs exist, generate/evolve/evaluator actions can select a generation-capable agent, generate can review or edit run artifacts with `$VISUAL`/`$EDITOR` before invocation, generate can opt into advanced model/output/dry-run and Codex profile/sandbox/approval options, evaluate can opt into candidate/resource/sandbox options, reports can choose output/JSON options, index rebuilds can scope to one run or print JSON, discovery can run locally or through an agent, and agent settings can update the project `default_agent`.
 
 For a run-review dashboard, use the explicit TUI command:
 
@@ -81,7 +82,7 @@ crucible tui
 crucible tui --run previous
 ```
 
-The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and forms for auto run setup, discovery, evaluator generation, competitor generation, adoption, evaluation, next-round preparation, evolution, reports, index rebuilds, archive queries, and candidate inspection. The new-run form defaults to `run --auto`, so typing the optimization request and pressing Enter is enough to create the run, generate and validate an evaluator, record baseline metrics, and return to a leaderboard. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
+The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and forms for auto run setup, discovery, evaluator generation, competitor generation, adoption, promotion, evaluation, next-round preparation, evolution, reports, index rebuilds, archive queries, and candidate inspection. The new-run form defaults to `run --auto`, so typing the optimization request and pressing Enter is enough to create the run, generate and validate an evaluator, record baseline metrics, and return to a leaderboard. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
 
 Create a tournament run from inside an existing project:
 
@@ -324,6 +325,21 @@ Evaluation runs one candidate at a time by default and starts evaluator processe
 ```bash
 crucible evaluate --jobs 1 --nice 10 --cpu-limit 2 --env GOMAXPROCS=1
 ```
+
+Promote the best passing non-baseline candidate back into the original source path recorded in `run.json`:
+
+```bash
+crucible promote
+```
+
+Use `--dry-run` to preview copied files first, or pass a specific candidate when you do not want the current best passed result:
+
+```bash
+crucible promote --dry-run
+crucible promote candidate-0002
+```
+
+Promotion copies from the candidate's archived `src/` directory back to the run `source_path`. File targets replace the matching file; directory targets overlay candidate files without deleting unrelated project files. By default, only `passed` candidates can be promoted. Every real promotion writes a report under `.crucible/runs/<run-id>/promotions/`.
 
 Prepare the next round after at least one candidate has passed:
 
@@ -690,6 +706,7 @@ Current priorities:
 - [x] Validate agent-generated evaluators against the baseline before marking runs evaluator-ready
 - [x] Add prompt and TUI actions for evaluator generation on existing runs
 - [x] Fail fast with clear guidance when a selected agent executable is unavailable
+- [x] Add CLI and TUI candidate promotion back into the source project with dry-run previews and archived promotion reports
 
 Deferred roadmap:
 
@@ -769,6 +786,7 @@ Interactive interface roadmap:
 - [x] Add interactive controls for report/index JSON and output-path options
 - [x] Add `$EDITOR`-based review/edit prompts for generated interface docs, evaluator scaffold, and discovery handoff before generation
 - [x] Add interactive and TUI evaluator-generation actions for existing runs
+- [x] Add TUI candidate promotion for applying selected competitors back to the source project
 
 Evaluator and external policy roadmap:
 
@@ -788,7 +806,7 @@ TUI roadmap:
 - [x] Decide TUI launch mode: add explicit `crucible tui` first and keep bare `crucible` prompt-based
 - [x] Extract interactive workflow actions into reusable controller functions shared by prompt mode and TUI mode
 - [x] Build a TUI run dashboard with latest run status, leaderboard, candidate details, and common next actions
-- [x] Build TUI forms for run creation, discovery, evaluator generation, generation, adoption, evaluation, next-round preparation, evolution, reports, index rebuilds, queries, and inspection
+- [x] Build TUI forms for run creation, discovery, evaluator generation, generation, adoption, promotion, evaluation, next-round preparation, evolution, reports, index rebuilds, queries, and inspection
 - [x] Add TUI tests around navigation state and command construction
 
 ## License

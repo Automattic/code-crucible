@@ -71,6 +71,7 @@ const (
 	tuiActionEvaluator tuiAction = "evaluator"
 	tuiActionEvaluate  tuiAction = "evaluate"
 	tuiActionAdopt     tuiAction = "adopt"
+	tuiActionPromote   tuiAction = "promote"
 	tuiActionNextRound tuiAction = "next-round"
 	tuiActionEvolve    tuiAction = "evolve"
 	tuiActionReport    tuiAction = "report"
@@ -309,6 +310,8 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openForm(tuiActionEvaluate)
 		case "a":
 			m.openForm(tuiActionAdopt)
+		case "m":
+			m.openForm(tuiActionPromote)
 		case "x":
 			m.openForm(tuiActionNextRound)
 		case "o":
@@ -392,8 +395,9 @@ func (m tuiDashboardModel) dashboardView() string {
 	for _, action := range m.nextActions() {
 		fmt.Fprintf(&b, "%s\n", action)
 	}
-	b.WriteString("\nKeys: n run, d discover, g generate, v evaluator, e evaluate, a adopt, x next\n")
-	b.WriteString("      o evolve, r report, i index, s query, p inspect, j/k select, q quit\n")
+	b.WriteString("\nKeys: n run, d discover, g generate, v evaluator, e evaluate\n")
+	b.WriteString("      a adopt, m promote, x next, o evolve, r report\n")
+	b.WriteString("      i index, s query, p inspect, j/k select, q quit\n")
 	return b.String()
 }
 
@@ -625,6 +629,18 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 				{Name: "json", Label: "Print JSON", Value: "false"},
 			},
 		}
+	case tuiActionPromote:
+		return tuiForm{
+			Action: action,
+			Title:  "Promote Candidate To Project",
+			Fields: []tuiFormField{
+				{Name: "run", Label: "Run", Value: runID, Required: true},
+				{Name: "candidate", Label: "Candidate", Value: candidateID},
+				{Name: "dry_run", Label: "Dry run", Value: "false"},
+				{Name: "allow_unpassed", Label: "Allow unpassed", Value: "false"},
+				{Name: "json", Label: "Print JSON", Value: "false"},
+			},
+		}
 	case tuiActionNextRound:
 		return tuiForm{
 			Action: action,
@@ -743,6 +759,14 @@ func runTUIFormAction(controller WorkflowController, form tuiForm) int {
 			RunSelector: form.value("run"),
 			Model:       form.value("model"),
 			JSON:        parseTUIBool(form.value("json")),
+		})
+	case tuiActionPromote:
+		return controller.Promote(PromoteWorkflowOptions{
+			RunSelector:   form.value("run"),
+			CandidateID:   form.value("candidate"),
+			DryRun:        parseTUIBool(form.value("dry_run")),
+			AllowUnpassed: parseTUIBool(form.value("allow_unpassed")),
+			JSON:          parseTUIBool(form.value("json")),
 		})
 	case tuiActionNextRound:
 		return controller.NextRound(NextRoundWorkflowOptions{
@@ -928,6 +952,21 @@ func (f tuiForm) commandPreview(projectDir, runID string) string {
 		args := []string{"crucible", "adopt", "--project-dir", project, "--run", shellQuote(defaultString(f.value("run"), runID))}
 		if model := strings.TrimSpace(f.value("model")); model != "" {
 			args = append(args, "--model", shellQuote(model))
+		}
+		if parseTUIBool(f.value("json")) {
+			args = append(args, "--json")
+		}
+		return strings.Join(args, " ")
+	case tuiActionPromote:
+		args := []string{"crucible", "promote", "--project-dir", project, "--run", shellQuote(defaultString(f.value("run"), runID))}
+		if candidate := strings.TrimSpace(f.value("candidate")); candidate != "" {
+			args = append(args, "--candidate", shellQuote(candidate))
+		}
+		if parseTUIBool(f.value("dry_run")) {
+			args = append(args, "--dry-run")
+		}
+		if parseTUIBool(f.value("allow_unpassed")) {
+			args = append(args, "--allow-unpassed")
 		}
 		if parseTUIBool(f.value("json")) {
 			args = append(args, "--json")
@@ -1339,6 +1378,7 @@ func (m tuiDashboardModel) nextActions() []string {
 	)
 	if len(m.data.Results) > 0 {
 		candidateID := m.data.Results[m.selected].Candidate.ID
+		actions = append(actions, fmt.Sprintf("Promote selected:    press m (%s)", candidateID))
 		actions = append(actions, fmt.Sprintf("Inspect selected:     press p (%s)", candidateID))
 	}
 	return actions

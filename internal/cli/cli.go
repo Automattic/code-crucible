@@ -43,6 +43,8 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runGenerate(args[1:], stdout, stderr)
 	case "adopt":
 		return runAdopt(args[1:], stdout, stderr)
+	case "promote":
+		return runPromote(args[1:], stdout, stderr)
 	case "evaluate":
 		return runEvaluate(args[1:], stdout, stderr)
 	case "next-round":
@@ -81,6 +83,7 @@ Usage:
   crucible run (--optimize TEXT | --task-file PATH) [--project-dir DIR] [--source-path PATH] [--agent AGENT] [--agent-plan PATH] [--variants N] [--auto] [--generate-evaluator] [--generate] [--evaluate]
   crucible generate [--project-dir DIR] [--run RUN_ID] [--agent AGENT]
   crucible adopt [--project-dir DIR] [--run RUN_ID]
+  crucible promote [candidate-id] [--project-dir DIR] [--run RUN_ID] [--candidate ID] [--dry-run] [--allow-unpassed] [--json]
   crucible evaluate [--project-dir DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--warmups N] [--repetitions N] [--outliers MODE] [--sample-stat STAT] [--nice N] [--cpu-limit N] [--sandbox-profile PROFILE] [--sandbox-engine docker|podman --sandbox-image IMAGE] [--external-routing gateway-network] [--require-passed]
   crucible next-round [--project-dir DIR] [--run RUN_ID] [--parents N]
   crucible evolve [--project-dir DIR] [--run RUN_ID] [--rounds N] [--parents N] [--agent AGENT]
@@ -102,7 +105,8 @@ Core workflow:
   7. Run "crucible generate --agent codex" to ask Codex for competitors, or use "crucible run --generate" as an explicit shortcut.
   8. Run "crucible evaluate" to execute the run evaluator and update leaderboard results.
   9. Run "crucible leaderboard" or "crucible report" to inspect results.
-  10. Run "crucible next-round" or "crucible evolve --rounds N" for follow-up rounds.
+  10. Run "crucible promote" to apply the best passing competitor back into the source project.
+  11. Run "crucible next-round" or "crucible evolve --rounds N" for follow-up rounds.
 
 `)
 }

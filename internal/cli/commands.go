@@ -787,6 +787,56 @@ func runAdopt(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runPromote(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("promote", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	projectDir := projectDirFlag(fs, "project directory containing .crucible")
+	runID := fs.String("run", "", "run ID; defaults to latest run")
+	candidateID := fs.String("candidate", "", "candidate ID to promote; defaults to the best passing non-baseline candidate")
+	dryRun := fs.Bool("dry-run", false, "print the promotion plan without copying files")
+	allowUnpassed := fs.Bool("allow-unpassed", false, "allow promoting a candidate that has not passed evaluation")
+	jsonOut := fs.Bool("json", false, "print raw promotion report JSON")
+	if err := fs.Parse(flagsAnywhere(args, fs)); err != nil {
+		return 2
+	}
+	if fs.NArg() > 1 {
+		fmt.Fprintf(stderr, "promote accepts at most one positional candidate ID\n")
+		return 2
+	}
+	if fs.NArg() == 1 {
+		if strings.TrimSpace(*candidateID) != "" {
+			fmt.Fprintf(stderr, "provide the candidate only once: as a positional argument or --candidate\n")
+			return 2
+		}
+		*candidateID = fs.Arg(0)
+	}
+
+	report, err := run.PromoteCandidate(run.PromotionOptions{
+		ProjectDir:    *projectDir,
+		RunID:         *runID,
+		CandidateID:   *candidateID,
+		DryRun:        *dryRun,
+		AllowUnpassed: *allowUnpassed,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "promote failed: %v\n", err)
+		return 1
+	}
+
+	if *jsonOut {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "promote failed: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%s\n", data)
+		return 0
+	}
+
+	printPromotionReport(stdout, report)
+	return 0
+}
+
 func runEvaluate(args []string, stdout, stderr io.Writer) int {
 	return runEvaluateWithContext(context.Background(), args, stdout, stderr)
 }

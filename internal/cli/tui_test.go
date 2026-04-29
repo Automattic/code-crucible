@@ -74,6 +74,7 @@ func TestTUIDashboardViewShowsRunCandidatesAndCommands(t *testing.T) {
 		"Adopt generated:      press a",
 		"Prepare next round:   press x",
 		"Rebuild index:        press i",
+		"Promote selected:    press m (candidate-0001)",
 		"Inspect selected:     press p (candidate-0001)",
 	} {
 		if !strings.Contains(view, want) {
@@ -181,6 +182,16 @@ func TestTUIFormsBuildCommandPreviews(t *testing.T) {
 	for _, want := range []string{"crucible adopt", "--run run-1", "--model gpt-test"} {
 		if !strings.Contains(preview, want) {
 			t.Fatalf("adopt preview did not contain %q:\n%s", want, preview)
+		}
+	}
+
+	dashboard.openForm(tuiActionPromote)
+	setTUIFormValue(&dashboard.form, "candidate", "candidate-0001")
+	setTUIFormValue(&dashboard.form, "dry_run", "true")
+	preview = dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
+	for _, want := range []string{"crucible promote", "--run run-1", "--candidate candidate-0001", "--dry-run"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("promote preview did not contain %q:\n%s", want, preview)
 		}
 	}
 

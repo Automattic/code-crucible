@@ -73,6 +73,14 @@ type AdoptWorkflowOptions struct {
 	JSON        bool
 }
 
+type PromoteWorkflowOptions struct {
+	RunSelector   string
+	CandidateID   string
+	DryRun        bool
+	AllowUnpassed bool
+	JSON          bool
+}
+
 type NextRoundWorkflowOptions struct {
 	RunSelector string
 	Parents     int
@@ -193,6 +201,23 @@ func (c WorkflowController) Adopt(opts AdoptWorkflowOptions) int {
 		args = append(args, "--json")
 	}
 	return runAdopt(args, c.Stdout, c.Stderr)
+}
+
+func (c WorkflowController) Promote(opts PromoteWorkflowOptions) int {
+	args := []string{"--project-dir", c.ProjectDir, "--run", opts.RunSelector}
+	if strings.TrimSpace(opts.CandidateID) != "" {
+		args = append(args, "--candidate", strings.TrimSpace(opts.CandidateID))
+	}
+	if opts.DryRun {
+		args = append(args, "--dry-run")
+	}
+	if opts.AllowUnpassed {
+		args = append(args, "--allow-unpassed")
+	}
+	if opts.JSON {
+		args = append(args, "--json")
+	}
+	return runPromote(args, c.Stdout, c.Stderr)
 }
 
 func (c WorkflowController) NextRound(opts NextRoundWorkflowOptions) int {

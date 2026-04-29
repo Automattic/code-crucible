@@ -795,6 +795,80 @@ func TestInteractiveQueryRuns(t *testing.T) {
 	}
 }
 
+func TestPromoteCommandCopiesWinningCandidate(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.Join(sourceDir, "rank.go")
+	if err := os.WriteFile(sourcePath, []byte("package search\n\nfunc Rank() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		SourcePath:   "internal/search/rank.go",
+		Variants:     1,
+		ExternalMode: "deny",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateSrc := filepath.Join(created.RunDir, "round-0001", "candidate-0001", "src")
+	if err := os.MkdirAll(candidateSrc, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidateSrc, "rank.go"), []byte("package search\n\nfunc Rank() int { return 5 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	board.Results = append(board.Results, model.CandidateResult{
+		Candidate: model.Candidate{
+			ID:         "candidate-0001",
+			Name:       "winner",
+			Round:      1,
+			ParentIDs:  []string{"candidate-0000-baseline"},
+			Agent:      "codex",
+			SourcePath: archive.ProjectRelativePath(projectDir, candidateSrc),
+		},
+		External: model.ExternalCallTrace{
+			Mode:         model.ExternalModeDeny,
+			PolicyPassed: true,
+		},
+		Verdict: model.Verdict{
+			CorrectnessPassed:    true,
+			BenchmarkPassed:      true,
+			ExternalPolicyPassed: true,
+		},
+		Score:  100,
+		Status: model.CandidateStatusPassed,
+	})
+	if err := archive.SaveJSON(filepath.Join(created.RunDir, "leaderboard.json"), board); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"promote", "--project-dir", projectDir, "--run", created.ID}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("promote returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Promoted candidate candidate-0001") {
+		t.Fatalf("stdout did not include promotion result:\n%s", stdout.String())
+	}
+	updated, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), "return 5") {
+		t.Fatalf("promote did not update source:\n%s", string(updated))
+	}
+}
+
 func TestDiscoverCreatesPlan(t *testing.T) {
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "checkout")
