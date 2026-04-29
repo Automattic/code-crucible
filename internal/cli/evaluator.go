@@ -286,6 +286,9 @@ func finishEvaluatorGeneration(projectDir, runID, evaluatorPath, designPath stri
 	fmt.Fprintf(stdout, "Stdout: %s\n", stdoutPath)
 	fmt.Fprintf(stdout, "Stderr: %s\n", stderrPath)
 	fmt.Fprintf(stdout, "Final message: %s\n", finalPath)
+	if validation != nil && validation.Status == model.CandidateStatusPassed {
+		fmt.Fprintf(stdout, "Baseline evaluated: %s\n", validation.CandidateID)
+	}
 	if len(report.UpdatedCandidates) > 0 {
 		fmt.Fprintf(stdout, "Ready for evaluation: %s\n", strings.Join(report.UpdatedCandidates, ", "))
 	}

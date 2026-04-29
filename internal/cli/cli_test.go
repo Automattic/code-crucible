@@ -1335,7 +1335,7 @@ printf 'evaluator provider complete\n'
 		"evaluator provider complete",
 		"Validation:",
 		"Evaluator generation complete",
-		"Ready for evaluation: candidate-0000-baseline",
+		"Baseline evaluated: candidate-0000-baseline",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
@@ -1367,8 +1367,26 @@ printf 'evaluator provider complete\n'
 	if err != nil {
 		t.Fatal(err)
 	}
-	if board.Results[0].Status != "pending" {
-		t.Fatalf("baseline status = %q, want pending", board.Results[0].Status)
+	if board.Results[0].Status != model.CandidateStatusPassed {
+		t.Fatalf("baseline status = %q, want passed", board.Results[0].Status)
+	}
+	if board.Results[0].Metrics.RuntimeMeanMS != 1 || board.Results[0].Metrics.P95LatencyMS != 1 {
+		t.Fatalf("baseline metrics = %#v, want generated evaluator metrics", board.Results[0].Metrics)
+	}
+	if !board.Results[0].Verdict.CorrectnessPassed || !board.Results[0].Verdict.BenchmarkPassed || !board.Results[0].Verdict.ExternalPolicyPassed {
+		t.Fatalf("baseline verdict = %#v, want passed", board.Results[0].Verdict)
+	}
+	if board.Results[0].Score <= 0 {
+		t.Fatalf("baseline score = %f, want scored result", board.Results[0].Score)
+	}
+	for _, rel := range []string{
+		"round-0001/candidate-0000-baseline/metrics.json",
+		"round-0001/candidate-0000-baseline/verdict.json",
+		"round-0001/candidate-0000-baseline/evaluation-samples.json",
+	} {
+		if _, err := os.Stat(filepath.Join(created.RunDir, rel)); err != nil {
+			t.Fatalf("expected baseline artifact %s: %v", rel, err)
+		}
 	}
 	prompt, err := os.ReadFile(filepath.Join(created.RunDir, "prompts", "evaluator-generation.md"))
 	if err != nil {

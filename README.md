@@ -218,7 +218,7 @@ When you do not already have an evaluator, ask the selected agent to draft one f
 crucible evaluator generate
 ```
 
-This writes `prompts/evaluator-generation.md`, asks the configured provider to replace `evaluator/evaluator.sh`, and records design notes under `evaluator/evaluator.md` when the provider supplies them. Code Crucible then runs the generated evaluator against the baseline candidate and writes the result to `evaluator/validation.json`. Only a baseline-passing evaluator moves candidates that were waiting on evaluator setup from `needs-evaluator` to `pending`.
+This writes `prompts/evaluator-generation.md`, asks the configured provider to replace `evaluator/evaluator.sh`, and records design notes under `evaluator/evaluator.md` when the provider supplies them. Code Crucible then runs the generated evaluator against the baseline candidate, writes the validation report to `evaluator/validation.json`, and records the passing baseline result in the normal candidate artifacts and leaderboard. Other candidates that were waiting on evaluator setup move from `needs-evaluator` to `pending`.
 
 This creates a run under:
 
@@ -242,7 +242,7 @@ leaderboard.json
 
 Generated competitors must follow the [candidate format](docs/candidate-format.md).
 
-Measure the baseline before asking an agent for competitors:
+Measure the baseline before asking an agent for competitors. Generated evaluators record the baseline during validation, so this is mainly needed for supplied evaluators or when rerunning changed evaluator logic:
 
 ```bash
 crucible evaluate --candidate candidate-0000-baseline
@@ -659,6 +659,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 Current priorities:
 
 - [x] Add evaluator-generation guidance for cache-resistant benchmark design
+- [x] Record generated-evaluator baseline validation in the leaderboard
 - [x] Suppress placeholder-evaluator guidance after a run already has passing evaluator results
 - [x] Treat empty external allowlists as "allow no live hosts" instead of failing every candidate
 - [x] Add provider setup templates and a dry-run CLI path for Claude

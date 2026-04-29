@@ -10,6 +10,7 @@ import (
 
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/scoring"
 )
 
 const DefaultEvaluatorValidationTimeout = 60 * time.Second
@@ -179,7 +180,125 @@ func ValidateGeneratedEvaluator(opts EvaluatorValidationOptions) (*EvaluatorVali
 	if report.Status != model.CandidateStatusPassed {
 		return report, fmt.Errorf("generated evaluator validation failed for %s; see %s", report.CandidateID, reportPath)
 	}
+	if err := recordBaselineValidationResult(absProject, cfg, leaderboardPath, baseline, report); err != nil {
+		return report, err
+	}
 	return report, nil
+}
+
+func recordBaselineValidationResult(projectDir string, cfg *model.RunConfig, leaderboardPath string, baseline model.CandidateResult, report *EvaluatorValidationReport) error {
+	candidateDir := candidateDirectory(projectDir, baseline.Candidate)
+	if err := os.MkdirAll(candidateDir, 0o755); err != nil {
+		return err
+	}
+
+	metricsPath := filepath.Join(candidateDir, "metrics.json")
+	resourcePath := filepath.Join(candidateDir, "resource-metrics.json")
+	samplesPath := filepath.Join(candidateDir, "evaluation-samples.json")
+	verdictPath := filepath.Join(candidateDir, "verdict.json")
+	stdoutPath := filepath.Join(candidateDir, "evaluation.stdout.log")
+	stderrPath := filepath.Join(candidateDir, "evaluation.stderr.log")
+	tracePath := filepath.Join(candidateDir, "external-trace.json")
+	recordFixturesPath := filepath.Join(candidateDir, "recorded-http-fixtures.json")
+
+	if err := removeEvaluationOutputs(metricsPath, resourcePath, samplesPath, verdictPath, tracePath, recordFixturesPath); err != nil {
+		return err
+	}
+	if err := copyExistingArtifact(filepath.FromSlash(report.ResourcePath), resourcePath); err != nil {
+		return err
+	}
+	if err := copyExistingArtifact(filepath.FromSlash(report.SamplesPath), samplesPath); err != nil {
+		return err
+	}
+	if err := copyExistingArtifact(filepath.FromSlash(report.StdoutPath), stdoutPath); err != nil {
+		return err
+	}
+	if err := copyExistingArtifact(filepath.FromSlash(report.StderrPath), stderrPath); err != nil {
+		return err
+	}
+
+	metrics := report.Metrics
+	verdict := report.Verdict
+	externalTrace := model.ExternalCallTrace{
+		Mode:              cfg.External.Mode,
+		PolicyPassed:      verdict.ExternalPolicyPassed,
+		PolicyEnforcement: report.ExternalPolicy,
+	}
+	if report.ExternalPolicy != nil {
+		externalTrace.PolicyViolations = append(externalTrace.PolicyViolations, report.ExternalPolicy.Errors...)
+	}
+
+	if report.ExternalTracePath != "" {
+		if err := copyExistingArtifact(filepath.FromSlash(report.ExternalTracePath), tracePath); err != nil {
+			return err
+		}
+		trace, err := loadExternalTrace(tracePath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
+		} else {
+			externalTrace = trace
+			externalTrace.PolicyPassed = verdict.ExternalPolicyPassed
+			externalTrace.PolicyEnforcement = report.ExternalPolicy
+			if report.ExternalPolicy != nil {
+				externalTrace.PolicyViolations = appendMissingStrings(externalTrace.PolicyViolations, report.ExternalPolicy.Errors)
+			}
+			metrics = mergeExternalTraceMetrics(metrics, trace)
+		}
+		externalTrace.TracePath = filepath.ToSlash(tracePath)
+	}
+	if report.RecordFixturesPath != "" {
+		if err := copyExistingArtifact(filepath.FromSlash(report.RecordFixturesPath), recordFixturesPath); err != nil {
+			return err
+		}
+		externalTrace.RecordFixturesPath = filepath.ToSlash(recordFixturesPath)
+	}
+
+	verdict.Warnings = appendMissingStrings(verdict.Warnings, report.Warnings)
+	verdict.Errors = appendMissingStrings(verdict.Errors, report.Errors)
+	if err := archive.SaveJSON(metricsPath, metrics); err != nil {
+		return err
+	}
+	if err := archive.SaveJSON(verdictPath, verdict); err != nil {
+		return err
+	}
+
+	board, err := archive.LoadLeaderboard(leaderboardPath)
+	if err != nil {
+		return err
+	}
+	found := false
+	for i := range board.Results {
+		if board.Results[i].Candidate.ID != baseline.Candidate.ID {
+			continue
+		}
+		board.Results[i].Metrics = metrics
+		board.Results[i].Verdict = verdict
+		board.Results[i].External = externalTrace
+		board.Results[i].External.Mode = cfg.External.Mode
+		board.Results[i].Status = statusForVerdict(verdict)
+		found = true
+		break
+	}
+	if !found {
+		return fmt.Errorf("baseline candidate %s was not found in %s", baseline.Candidate.ID, leaderboardPath)
+	}
+	scoring.ScoreResults(board.Results)
+	return archive.SaveJSON(leaderboardPath, board)
+}
+
+func copyExistingArtifact(src, dst string) error {
+	if strings.TrimSpace(src) == "" {
+		return nil
+	}
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return archive.CopyPath(src, dst)
 }
 
 func MarkEvaluatorReady(opts EvaluatorReadyOptions) (*EvaluatorReadyReport, error) {

@@ -98,7 +98,7 @@ Core workflow:
   3. Run "crucible discover \"make this feature faster\" --agent codex" when the source path or evaluator contract needs discovery.
   4. Run "crucible evaluator generate" or supply your own evaluator before trusting tournament scores.
   5. Review or edit docs/interfaces.md and evaluator/evaluator.sh in the run archive.
-  6. Run "crucible evaluate --candidate candidate-0000-baseline" to measure the baseline when a baseline source is available.
+  6. Run "crucible evaluate --candidate candidate-0000-baseline" to measure a supplied-evaluator baseline or rerun changed evaluator logic.
   7. Run "crucible generate --agent codex" to ask Codex for competitors, or use "crucible run --generate" as an explicit shortcut.
   8. Run "crucible evaluate" to execute the run evaluator and update leaderboard results.
   9. Run "crucible leaderboard" or "crucible report" to inspect results.
