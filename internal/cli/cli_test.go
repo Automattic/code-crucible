@@ -1042,6 +1042,99 @@ JSON
 	}
 }
 
+func TestGenerateDoesNotWarnAboutEvaluatorWhenRunHasPassedResults(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n\nfunc Rank() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		SourcePath:   "internal/search/rank.go",
+		Variants:     1,
+		ExternalMode: "deny",
+		Agent:        "codex",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	boardPath := filepath.Join(created.RunDir, "leaderboard.json")
+	board, err := archive.LoadLeaderboard(boardPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	board.Results[0].Status = model.CandidateStatusPassed
+	board.Results[0].Verdict = model.Verdict{
+		CorrectnessPassed:    true,
+		BenchmarkPassed:      true,
+		ExternalPolicyPassed: true,
+	}
+	board.Results[0].Metrics.RuntimeMeanMS = 1
+	if err := archive.SaveJSON(boardPath, board); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeCodex := filepath.Join(t.TempDir(), "codex")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-last-message" ]]; then
+    out="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+cat >/dev/null
+mkdir -p "$(dirname "$out")"
+printf 'fake codex complete\n' > "$out"
+round="$(find .crucible/runs -name round-0001 -type d | sort | tail -n1)"
+mkdir -p "$round/candidate-0001/src"
+printf 'package search\n\nfunc Rank() int { return 2 }\n' > "$round/candidate-0001/src/rank.go"
+printf '# Candidate\n' > "$round/candidate-0001/design.md"
+cat > "$round/candidate-0001/candidate.json" <<'JSON'
+{
+  "id": "candidate-0001",
+  "name": "fake generated candidate",
+  "round": 1,
+  "parent_ids": ["candidate-0000-baseline"],
+  "agent": "codex",
+  "source_path": "src",
+  "baseline": false
+}
+JSON
+`
+	if err := os.WriteFile(fakeCodex, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"generate",
+		"--project-dir", projectDir,
+		"--run", created.ID,
+		"--codex-bin", fakeCodex,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("generate returned %d, stderr: %s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "Evaluator warning: this run uses the placeholder evaluator scaffold.") {
+		t.Fatalf("stdout included stale evaluator warning:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "Generate evaluator:") {
+		t.Fatalf("stdout included stale evaluator generation guidance:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Evaluate candidates:") {
+		t.Fatalf("stdout did not include evaluate next step:\n%s", stdout.String())
+	}
+}
+
 func TestRunGenerateUsesConfiguredCommandProvider(t *testing.T) {
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "search")

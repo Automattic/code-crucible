@@ -656,6 +656,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 Current priorities:
 
+- [x] Suppress placeholder-evaluator guidance after a run already has passing evaluator results
 - [x] Treat empty external allowlists as "allow no live hosts" instead of failing every candidate
 - [x] Add provider setup templates and a dry-run CLI path for Claude
 - [x] Add async TUI action progress with spinner, elapsed time, and command preview

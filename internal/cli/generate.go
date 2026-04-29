@@ -261,12 +261,13 @@ func printPostGenerationNextSteps(stdout io.Writer, projectDir string, cfg *mode
 	if cfg == nil {
 		return
 	}
+	hasEvaluator := runConfigHasEvaluatorForProject(projectDir, cfg)
 	fmt.Fprintln(stdout)
-	if !runConfigHasEvaluator(cfg) {
+	if !hasEvaluator {
 		fmt.Fprintf(stdout, "Generate evaluator: %s\n", agent.FormatCommand([]string{"crucible", "evaluator", "generate", "--project-dir", projectDir, "--run", cfg.ID}))
 	}
 	fmt.Fprintf(stdout, "Evaluate candidates: %s\n", agent.FormatCommand([]string{"crucible", "evaluate", "--project-dir", projectDir, "--run", cfg.ID}))
-	if !runConfigHasEvaluator(cfg) {
+	if !hasEvaluator {
 		fmt.Fprintln(stdout, "Evaluator warning: this run uses the placeholder evaluator scaffold. Run evaluator generate or configure evaluator/evaluator.sh before expecting candidates to pass or produce meaningful metrics.")
 	}
 }
@@ -276,6 +277,30 @@ func runConfigHasEvaluator(cfg *model.RunConfig) bool {
 		return false
 	}
 	return strings.TrimSpace(cfg.Evaluator) != "" || strings.TrimSpace(cfg.EvaluatorScript) != "" || cfg.EvaluatorGenerated
+}
+
+func runConfigHasEvaluatorForProject(projectDir string, cfg *model.RunConfig) bool {
+	if runConfigHasEvaluator(cfg) {
+		return true
+	}
+	if cfg == nil {
+		return false
+	}
+	runDir := cfg.RunDir
+	if runDir == "" {
+		return false
+	}
+	runDir = archive.ProjectPath(projectDir, runDir)
+	board, err := archive.LoadLeaderboard(filepath.Join(runDir, "leaderboard.json"))
+	if err != nil {
+		return false
+	}
+	for _, result := range board.Results {
+		if result.Status == model.CandidateStatusPassed {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveGenerationProvider(projectDir string, cfg *model.RunConfig, requested string) (agent.ProviderDefinition, error) {
