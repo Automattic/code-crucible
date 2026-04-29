@@ -195,6 +195,18 @@ crucible run \
   --external-mode deny
 ```
 
+For a low-prompt start from inside the target project, use `--auto`:
+
+```bash
+crucible run "reduce p95 latency of the search ranking function" --auto
+```
+
+`--auto` creates a local discovery plan, uses the top source-path suggestion as the baseline, asks the configured generation provider to draft and validate an evaluator, records the baseline metrics, and prints the leaderboard. Provider output is archived under the run `agents/` directory instead of streamed into the terminal, so the command output stays focused on setup status and results. Add `--generate --evaluate` when you want the same command to also request competitors and evaluate them after setup:
+
+```bash
+crucible run "reduce p95 latency of the search ranking function" --auto --generate --evaluate
+```
+
 For longer tasks, put the request in a Markdown file:
 
 ```bash
@@ -658,6 +670,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 Current priorities:
 
+- [x] Add a low-prompt `run --auto` path that infers setup and records baseline results
+- [x] Archive provider logs without streaming raw agent output during `run --auto`
 - [x] Add evaluator-generation guidance for cache-resistant benchmark design
 - [x] Record generated-evaluator baseline validation in the leaderboard
 - [x] Suppress placeholder-evaluator guidance after a run already has passing evaluator results
@@ -676,6 +690,7 @@ Current priorities:
 
 Deferred roadmap:
 
+- [ ] Add project or user preference presets for common low-prompt workflow defaults
 - [ ] Add a full provider install or marketplace flow after provider templates prove useful
 - [ ] Add a full TUI job manager with logs, history, parallel jobs, cancellation, and richer progress displays
 - [ ] Revisit pre-release planning after stability work has run for a few days

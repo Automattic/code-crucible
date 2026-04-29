@@ -31,6 +31,14 @@ type evaluatorGenerationOptions struct {
 	OutputLastMessage string
 	ValidationTimeout time.Duration
 	DryRun            bool
+	QuietAgentOutput  bool
+}
+
+func agentOutputWriters(stdout, stderr io.Writer, quiet bool) (io.Writer, io.Writer) {
+	if quiet {
+		return io.Discard, io.Discard
+	}
+	return stdout, stderr
 }
 
 func runEvaluator(args []string, stdout, stderr io.Writer) int {
@@ -200,7 +208,8 @@ func evaluatorGenerateWithOptions(opts evaluatorGenerationOptions, stdout, stder
 	}
 	fmt.Fprintf(stdout, "Running %s to generate evaluator for run %s\n", provider.Name, cfg.ID)
 	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
-	result, err := agent.RunCodex(ctx, codexOpts, stdout, stderr)
+	agentStdout, agentStderr := agentOutputWriters(stdout, stderr, opts.QuietAgentOutput)
+	result, err := agent.RunCodex(ctx, codexOpts, agentStdout, agentStderr)
 	if err != nil {
 		printProviderFailure(stderr, "Codex", result)
 		fmt.Fprintf(stderr, "evaluator generate failed: %v\n", err)
@@ -225,6 +234,7 @@ func runCommandEvaluatorProvider(provider agent.ProviderDefinition, projectDir, 
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	agentStdout, agentStderr := agentOutputWriters(stdout, stderr, opts.QuietAgentOutput)
 	result, err := agent.RunCommandProvider(ctx, agent.CommandProviderOptions{
 		Provider:          provider,
 		ProjectDir:        projectDir,
@@ -232,7 +242,7 @@ func runCommandEvaluatorProvider(provider agent.ProviderDefinition, projectDir, 
 		PromptPath:        promptPath,
 		Model:             opts.Model,
 		OutputLastMessage: opts.OutputLastMessage,
-	}, stdout, stderr)
+	}, agentStdout, agentStderr)
 	if err != nil {
 		printProviderFailure(stderr, provider.Name, result)
 		fmt.Fprintf(stderr, "evaluator generate failed: %v\n", err)

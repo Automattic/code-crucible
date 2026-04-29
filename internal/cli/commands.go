@@ -155,7 +155,10 @@ func runTournamentWithContext(ctx context.Context, args []string, stdout, stderr
 	externalMode := fs.String("external-mode", "deny", "external call mode: deny, allowlist, mock, replay, record")
 	fixtures := fs.String("external-fixtures", "", "fixtures path for mock or replay mode")
 	allowHosts := fs.String("allow-hosts", "", "comma-separated host allowlist")
+	autoSetup := fs.Bool("auto", false, "infer the source path, generate a baseline evaluator, and print results without prompts")
+	generateEvaluator := fs.Bool("generate-evaluator", false, "generate and validate an evaluator after creating the run")
 	generateNow := fs.Bool("generate", false, "run the selected agent immediately after creating the run")
+	evaluateAfter := fs.Bool("evaluate", false, "evaluate candidates after setup and optional generation")
 	codexBin := fs.String("codex-bin", agent.DefaultCodexBinary, "Codex CLI binary used with --generate")
 	model := fs.String("model", "", "Codex model override used with --generate")
 	profile := fs.String("profile", "", "Codex config profile used with --generate")
@@ -184,6 +187,27 @@ func runTournamentWithContext(ctx context.Context, args []string, stdout, stderr
 		if strings.TrimSpace(*sourcePath) == "" && strings.TrimSpace(agentPlan.SourcePath) != "" {
 			*sourcePath = strings.TrimSpace(agentPlan.SourcePath)
 		}
+	}
+	if *autoSetup && strings.TrimSpace(*sourcePath) == "" {
+		plan, err := discovery.CreatePlan(discovery.PlanOptions{
+			ProjectDir: *projectDir,
+			Optimize:   task,
+			Limit:      defaultVariantCount,
+		})
+		if err != nil {
+			fmt.Fprintf(stderr, "auto setup failed: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Auto discovery plan: %s\n", plan.PlanPath)
+		if len(plan.Suggestions) == 0 {
+			fmt.Fprintf(stderr, "auto setup failed: no source path suggestion was found; rerun with --source-path or use the interactive workflow\n")
+			return 1
+		}
+		*sourcePath = plan.Suggestions[0].Path
+		fmt.Fprintf(stdout, "Auto source path: %s (score %.1f)\n", plan.Suggestions[0].Path, plan.Suggestions[0].Score)
+	}
+	if *autoSetup && strings.TrimSpace(*evaluator) == "" && strings.TrimSpace(*evaluatorScript) == "" {
+		*generateEvaluator = true
 	}
 
 	runAgent := agent.NormalizeProviderName(*agentName)
@@ -236,9 +260,23 @@ func runTournamentWithContext(ctx context.Context, args []string, stdout, stderr
 	fmt.Fprintf(stdout, "Generation prompt: %s\n", created.PromptPath)
 	fmt.Fprintf(stdout, "Baseline source: %s\n", created.BaselineSourceDir)
 
+	if *generateEvaluator {
+		fmt.Fprintln(stdout)
+		code := evaluatorGenerateWithOptions(evaluatorGenerationOptions{
+			Context:          ctx,
+			ProjectDir:       *projectDir,
+			RunID:            created.ID,
+			AgentName:        runAgent,
+			QuietAgentOutput: *autoSetup,
+		}, stdout, stderr)
+		if code != 0 {
+			return code
+		}
+	}
+
 	if *generateNow {
 		fmt.Fprintln(stdout)
-		return generateWithOptions(generationOptions{
+		code := generateWithOptions(generationOptions{
 			Context:           ctx,
 			ProjectDir:        *projectDir,
 			RunID:             created.ID,
@@ -251,7 +289,24 @@ func runTournamentWithContext(ctx context.Context, args []string, stdout, stderr
 			EventJSON:         *eventJSON,
 			SkipGitRepoCheck:  *skipGitRepoCheck,
 			OutputLastMessage: *outputLastMessage,
+			QuietAgentOutput:  *autoSetup,
 		}, stdout, stderr)
+		if code != 0 {
+			return code
+		}
+	}
+
+	if *evaluateAfter {
+		fmt.Fprintln(stdout)
+		code := runEvaluateWithContext(ctx, []string{"--project-dir", *projectDir, "--run", created.ID}, stdout, stderr)
+		if code != 0 {
+			return code
+		}
+	}
+
+	if *autoSetup || *generateEvaluator || *evaluateAfter {
+		fmt.Fprintln(stdout)
+		return runLeaderboard([]string{"--project-dir", *projectDir, "--run", created.ID}, stdout, stderr)
 	}
 
 	printCreatedRunNextSteps(stdout, *projectDir, created.ID, *evaluator, *evaluatorScript)

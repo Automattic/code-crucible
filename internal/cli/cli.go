@@ -77,8 +77,8 @@ Usage:
   crucible provider list
   crucible discover "OPTIMIZATION REQUEST" [--project-dir DIR] [--agent local|codex]
   crucible evaluator generate [--project-dir DIR] [--run RUN_ID] [--agent AGENT] [--dry-run]
-  crucible run "OPTIMIZATION REQUEST" [--project-dir DIR] [--source-path PATH] [--agent AGENT] [--agent-plan PATH] [--variants N] [--generate]
-  crucible run (--optimize TEXT | --task-file PATH) [--project-dir DIR] [--source-path PATH] [--agent AGENT] [--agent-plan PATH] [--variants N] [--generate]
+  crucible run "OPTIMIZATION REQUEST" [--project-dir DIR] [--source-path PATH] [--agent AGENT] [--agent-plan PATH] [--variants N] [--auto] [--generate-evaluator] [--generate] [--evaluate]
+  crucible run (--optimize TEXT | --task-file PATH) [--project-dir DIR] [--source-path PATH] [--agent AGENT] [--agent-plan PATH] [--variants N] [--auto] [--generate-evaluator] [--generate] [--evaluate]
   crucible generate [--project-dir DIR] [--run RUN_ID] [--agent AGENT]
   crucible adopt [--project-dir DIR] [--run RUN_ID]
   crucible evaluate [--project-dir DIR] [--run RUN_ID] [--candidate ID] [--jobs N] [--warmups N] [--repetitions N] [--outliers MODE] [--sample-stat STAT] [--nice N] [--cpu-limit N] [--sandbox-profile PROFILE] [--sandbox-engine docker|podman --sandbox-image IMAGE] [--external-routing gateway-network] [--require-passed]
@@ -93,7 +93,7 @@ Usage:
   crucible version
 
 Core workflow:
-  1. Run "crucible" for the guided workflow, or run "crucible run \"make this feature faster\"" directly.
+  1. Run "crucible" for the guided workflow, or run "crucible run \"make this feature faster\" --auto" to infer setup and measure the baseline.
   2. Run "crucible provider template claude --json" to inspect optional non-Codex provider config.
   3. Run "crucible discover \"make this feature faster\" --agent codex" when the source path or evaluator contract needs discovery.
   4. Run "crucible evaluator generate" or supply your own evaluator before trusting tournament scores.

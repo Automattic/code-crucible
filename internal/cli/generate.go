@@ -29,6 +29,7 @@ type generationOptions struct {
 	SkipGitRepoCheck  bool
 	OutputLastMessage string
 	DryRun            bool
+	QuietAgentOutput  bool
 }
 
 func runGenerate(args []string, stdout, stderr io.Writer) int {
@@ -157,7 +158,8 @@ func generateWithOptions(opts generationOptions, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "Running %s for run %s\n", provider.Name, cfg.ID)
 	fmt.Fprintf(stdout, "Command: %s\n", agent.FormatCommand(command))
-	result, err := agent.RunCodex(ctx, codexOpts, stdout, stderr)
+	agentStdout, agentStderr := agentOutputWriters(stdout, stderr, opts.QuietAgentOutput)
+	result, err := agent.RunCodex(ctx, codexOpts, agentStdout, agentStderr)
 	if err != nil {
 		if result != nil {
 			fmt.Fprintf(stderr, "Codex exited with status %d\n", result.ExitCode)
@@ -218,6 +220,7 @@ func runCommandGenerationProvider(provider agent.ProviderDefinition, projectDir,
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	agentStdout, agentStderr := agentOutputWriters(stdout, stderr, opts.QuietAgentOutput)
 	result, err := agent.RunCommandProvider(ctx, agent.CommandProviderOptions{
 		Provider:          provider,
 		ProjectDir:        projectDir,
@@ -225,7 +228,7 @@ func runCommandGenerationProvider(provider agent.ProviderDefinition, projectDir,
 		PromptPath:        promptPath,
 		Model:             opts.Model,
 		OutputLastMessage: opts.OutputLastMessage,
-	}, stdout, stderr)
+	}, agentStdout, agentStderr)
 	if err != nil {
 		if result != nil {
 			fmt.Fprintf(stderr, "Provider %s exited with status %d\n", provider.Name, result.ExitCode)

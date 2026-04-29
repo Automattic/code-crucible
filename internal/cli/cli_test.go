@@ -1239,6 +1239,132 @@ printf 'command provider complete\n'
 	}
 }
 
+func TestRunAutoUsesSourceSuggestionAndGeneratedEvaluator(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n\nfunc Rank() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	providerScript := filepath.Join(t.TempDir(), "provider.sh")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+cat > "$CRUCIBLE_RUN_DIR/evaluator/evaluator.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+metrics_out="${3:?metrics path required}"
+verdict_out="${4:?verdict path required}"
+cat > "$metrics_out" <<'JSON'
+{
+  "runtime_mean_ms": 2,
+  "p95_latency_ms": 3,
+  "memory_peak_bytes": 2048
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+SH
+printf 'auto evaluator provider complete\n'
+`
+	if err := os.WriteFile(providerScript, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := project.Init(projectDir, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DefaultAgent = "custom"
+	cfg.AgentProviders = map[string]agent.ProviderDefinition{
+		"custom": {
+			Name:    "custom",
+			Kind:    "command",
+			Command: []string{providerScript},
+			Capabilities: agent.ProviderCapabilities{
+				SupportsGeneration: true,
+			},
+		},
+	}
+	if err := project.Save(projectDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"run",
+		"--project", projectDir,
+		"--auto",
+		"make rank faster",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run returned %d, stderr: %s\nstdout:\n%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		"Auto discovery plan:",
+		"Auto source path: internal/search/rank.go",
+		"Baseline evaluated: candidate-0000-baseline",
+		"candidate-0000-baseline  passed",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "auto evaluator provider complete") {
+		t.Fatalf("auto run streamed provider stdout instead of archiving it:\n%s", stdout.String())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".crucible", "runs", "*", "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one run, found %d", len(matches))
+	}
+	runCfg, err := archive.LoadRunConfig(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runCfg.SourcePath != "internal/search/rank.go" {
+		t.Fatalf("source path = %q, want local suggestion", runCfg.SourcePath)
+	}
+	if !runCfg.EvaluatorGenerated {
+		t.Fatal("run config was not marked evaluator_generated")
+	}
+	board, err := archive.LoadLeaderboard(filepath.Join(filepath.Dir(matches[0]), "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if board.Results[0].Status != model.CandidateStatusPassed {
+		t.Fatalf("baseline status = %q, want passed", board.Results[0].Status)
+	}
+	if board.Results[0].Metrics.P95LatencyMS != 3 {
+		t.Fatalf("baseline metrics = %#v, want generated evaluator metrics", board.Results[0].Metrics)
+	}
+	logs, err := filepath.Glob(filepath.Join(filepath.Dir(matches[0]), "agents", "custom-*-stdout.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected one archived provider stdout log, found %d", len(logs))
+	}
+	logData, err := os.ReadFile(logs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logData), "auto evaluator provider complete") {
+		t.Fatalf("archived provider stdout did not include provider output:\n%s", string(logData))
+	}
+}
+
 func TestEvaluatorGenerateUsesConfiguredCommandProvider(t *testing.T) {
 	projectDir := t.TempDir()
 	sourceDir := filepath.Join(projectDir, "internal", "search")
