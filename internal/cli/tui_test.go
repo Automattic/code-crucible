@@ -554,6 +554,31 @@ func TestTUICommandRendersDashboard(t *testing.T) {
 	}
 }
 
+func TestBareCommandLaunchesTUI(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+	if _, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		Variants:     1,
+		ExternalMode: "deny",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader("q"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("bare command returned %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Code Crucible") {
+		t.Fatalf("stdout did not include TUI dashboard:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "Use "+projectDir+" as the project directory?") {
+		t.Fatalf("bare command launched prompt mode instead of TUI:\n%s", stdout.String())
+	}
+}
+
 func loadTestLeaderboard(t *testing.T, runDir string) *model.Leaderboard {
 	t.Helper()
 	board, err := archive.LoadLeaderboard(filepath.Join(runDir, "leaderboard.json"))

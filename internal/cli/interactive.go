@@ -48,6 +48,9 @@ type reviewArtifact struct {
 }
 
 func runInteractive(stdin io.Reader, stdout, stderr io.Writer) int {
+	if stdin == nil {
+		stdin = os.Stdin
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(stderr, "interactive failed: %v\n", err)

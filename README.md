@@ -19,8 +19,8 @@ The goal is not just "does it work", but which implementation works best under m
 ## Current Features
 
 - Local git-friendly Go CLI
-- Bare `crucible` interactive workflow for creating runs and acting on existing project data
-- Explicit `crucible tui` dashboard for reviewing run status, candidates, leaderboard data, and basic action forms
+- Bare `crucible` TUI dashboard for reviewing run status, candidates, leaderboard data, and action forms
+- Explicit `crucible prompt` line-oriented workflow for creating runs and acting on existing project data
 - `crucible discover` for reviewable source-path, interface, evaluator, and external-policy discovery plans
 - Automatic `.crucible/` work area setup when `crucible run` is used in an existing project
 - `crucible run "..."`, `--optimize ...`, or `--task-file ...` for creating a tournament archive
@@ -66,23 +66,29 @@ Run creation, adoption, promotion, inspection, and filesystem archive workflows 
 
 ## Quick Start
 
-For a guided workflow, run Code Crucible without arguments:
+For the guided TUI workflow, run Code Crucible without arguments:
 
 ```bash
 cd /path/to/your/project
 crucible
 ```
 
-The interactive flow confirms the project directory, initializes `.crucible/` when needed, creates a discovery plan, asks for the optimization request and variant count, and can run discovery through a configured agent before creating the run. When the agent returns clarifying questions, the wizard records the answers in the run request. When the agent recommends a source path, the wizard can use it as the baseline and copies the structured discovery handoff into the run's `docs/` directory. If the source path is still not known, the run is created without `--source-path` so the generation prompt asks the generation agent to discover the involved code. The wizard prompts for evaluator setup before run creation, defaulting to agent-generated evaluator drafting while still allowing a supplied evaluator command or script. The wizard then shows the current leaderboard and offers actions such as new run, standalone discovery, evaluator generation, leaderboard, generate, adopt, evaluate, promote, next round, evolve, query, report, inspect, index rebuild, and agent settings. Interactive run creation can opt into advanced external/round/exploration options, run actions auto-select the only available run and prompt only when multiple runs exist, inspect candidate shows a numbered candidate selector instead of requiring ID copy/paste, generate/evolve/evaluator actions can select a generation-capable agent, generate can review or edit run artifacts with `$VISUAL`/`$EDITOR` before invocation, generate can opt into advanced model/output/dry-run and Codex profile/sandbox/approval options, evaluate can opt into candidate/resource/sandbox options, reports can choose output/JSON options, index rebuilds can scope to one run or print JSON, discovery can run locally or through an agent, and agent settings can update the project `default_agent`.
+The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and forms for auto run setup, discovery, evaluator generation, competitor generation, adoption, promotion, evaluation, next-round preparation, evolution, reports, index rebuilds, archive queries, and candidate inspection. When a non-baseline candidate has passed, the dashboard selects it by default; otherwise it selects the first non-baseline candidate before falling back to the baseline. The candidate table is the picker for candidate-specific actions, so inspecting the selected candidate runs directly from the table instead of asking for an ID. The new-run form defaults to `run --auto`, so typing the optimization request and pressing Enter is enough to create the run, generate and validate an evaluator, record baseline metrics, and return to a leaderboard. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
 
-For a run-review dashboard, use the explicit TUI command:
+`crucible tui` remains an explicit alias for launching the same dashboard with options:
 
 ```bash
 crucible tui
 crucible tui --run previous
 ```
 
-The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and forms for auto run setup, discovery, evaluator generation, competitor generation, adoption, promotion, evaluation, next-round preparation, evolution, reports, index rebuilds, archive queries, and candidate inspection. When a non-baseline candidate has passed, the dashboard selects it by default; otherwise it selects the first non-baseline candidate before falling back to the baseline. The candidate table is the picker for candidate-specific actions, so inspecting the selected candidate runs directly from the table instead of asking for an ID. The new-run form defaults to `run --auto`, so typing the optimization request and pressing Enter is enough to create the run, generate and validate an evaluator, record baseline metrics, and return to a leaderboard. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
+For the older line-oriented prompt workflow:
+
+```bash
+crucible prompt
+```
+
+The prompt flow confirms the project directory, initializes `.crucible/` when needed, creates discovery plans, asks for optimization request details, and offers menu actions for existing run data. It remains useful in limited terminals or scripted IO tests, but the TUI is the default interactive surface.
 
 Create a tournament run from inside an existing project:
 
@@ -709,6 +715,7 @@ Current priorities:
 - [x] Add CLI and TUI candidate promotion back into the source project with dry-run previews and archived promotion reports
 - [x] Make TUI candidate inspection act on the selected row without requiring candidate ID entry
 - [x] Make prompt-mode candidate inspection use a numbered selector with non-baseline defaults
+- [x] Make bare `crucible` launch the TUI and move the prompt workflow to `crucible prompt`
 
 Deferred roadmap:
 
@@ -805,7 +812,7 @@ Evaluator and external policy roadmap:
 TUI roadmap:
 
 - [x] Select and document a Go TUI framework; selected Bubble Tea from Charmbracelet
-- [x] Decide TUI launch mode: add explicit `crucible tui` first and keep bare `crucible` prompt-based
+- [x] Decide TUI launch mode: make bare `crucible` launch the TUI and keep `crucible tui` as an explicit alias
 - [x] Extract interactive workflow actions into reusable controller functions shared by prompt mode and TUI mode
 - [x] Build a TUI run dashboard with latest run status, leaderboard, candidate details, and common next actions
 - [x] Build TUI forms for run creation, discovery, evaluator generation, generation, adoption, promotion, evaluation, next-round preparation, evolution, reports, index rebuilds, queries, and inspection

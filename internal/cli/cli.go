@@ -13,11 +13,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		if stdin != nil {
-			return runInteractive(stdin, stdout, stderr)
-		}
-		printHelp(stdout)
-		return 0
+		return runTUI(nil, stdin, stdout, stderr)
 	}
 
 	switch args[0] {
@@ -35,6 +31,11 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runEvaluator(args[1:], stdout, stderr)
 	case "tui":
 		return runTUI(args[1:], stdin, stdout, stderr)
+	case "prompt", "interactive":
+		if stdin == nil {
+			return runInteractive(nil, stdout, stderr)
+		}
+		return runInteractive(stdin, stdout, stderr)
 	case "run":
 		return runTournament(args[1:], stdout, stderr)
 	case "discover":
@@ -74,6 +75,7 @@ func printHelp(w io.Writer) {
 Usage:
   crucible
   crucible tui [--project-dir DIR] [--run RUN_ID]
+  crucible prompt
   crucible init [--project-dir DIR] [--name NAME] [--default-agent AGENT]
   crucible provider template PROVIDER [--json]
   crucible provider list
@@ -96,7 +98,7 @@ Usage:
   crucible version
 
 Core workflow:
-  1. Run "crucible" for the guided workflow, or run "crucible run \"make this feature faster\" --auto" to infer setup and measure the baseline.
+  1. Run "crucible" for the TUI dashboard, "crucible prompt" for the legacy prompt workflow, or "crucible run \"make this feature faster\" --auto" to infer setup and measure the baseline.
   2. Run "crucible provider template claude --json" to inspect optional non-Codex provider config.
   3. Run "crucible discover \"make this feature faster\" --agent codex" when the source path or evaluator contract needs discovery.
   4. Run "crucible evaluator generate" or supply your own evaluator before trusting tournament scores.

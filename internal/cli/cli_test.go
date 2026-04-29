@@ -22,7 +22,7 @@ func TestInteractiveCreatesRun(t *testing.T) {
 	chdir(t, projectDir)
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n\nmake checkout pricing faster\n\nn\nskip\nn\nq\n"), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader("\n\nmake checkout pricing faster\n\nn\nskip\nn\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -62,7 +62,7 @@ func TestInteractiveNewRunPromptsForAdvancedOptions(t *testing.T) {
 
 	input := "\n\nmake ranking faster\n\nn\ny\nsupply\ngo test ./...\n\ny\n2\n0.80\nallowlist\n\napi.example.com,cache.example.com\nq\n"
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -121,7 +121,7 @@ func TestInteractiveRunContinuesWhenEvaluatorGenerationProviderMissing(t *testin
 
 	input := "\n1\nmake rank faster\n\nn\nn\ngenerate\n\nn\nq\n"
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s\nstdout:\n%s", code, stderr.String(), stdout.String())
 	}
@@ -276,7 +276,7 @@ MD
 
 	var stdout, stderr bytes.Buffer
 	input := "\n\nreduce checkout pricing latency\n\ny\n\np95 of PriceCheckout\n\nskip\nn\nq\n"
-	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -393,7 +393,7 @@ MD
 
 	var stdout, stderr bytes.Buffer
 	input := "\n1\nmake ranking faster\n\ny\n\n\nskip\nn\nq\n"
-	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -441,7 +441,7 @@ func TestInteractiveExistingProjectShowsLeaderboard(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n2\nq\n"), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader("\n2\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -505,7 +505,7 @@ func TestInteractiveInspectUsesCandidateSelector(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n7\n\nq\n"), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader("\n7\n\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -548,7 +548,7 @@ func TestInteractiveReportPromptsForOutputAndJSON(t *testing.T) {
 	outputPath := filepath.Join(projectDir, "interactive-report.html")
 	var stdout, stderr bytes.Buffer
 	input := "\n6\n" + outputPath + "\ny\nq\n"
-	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -581,7 +581,7 @@ func TestInteractiveIndexPromptsForRunAndJSON(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n8\ny\ny\nq\n"), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader("\n8\ny\ny\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -625,7 +625,7 @@ func TestInteractiveGeneratePromptsForAdvancedOptions(t *testing.T) {
 	finalPath := filepath.Join(projectDir, "codex-final.md")
 	input := "\n3\n\nedit\n\ny\ngpt-test\n" + finalPath + "\nprofile-a\nread-only\non-request\ny\nq\n"
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader(input), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader(input), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -724,7 +724,7 @@ func TestInteractiveAgentSettingsUpdatesDefaultAgent(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n9\ncustom\nq\n"), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader("\n9\ncustom\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -760,7 +760,7 @@ func TestInteractiveStandaloneDiscoveryCreatesPlan(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n10\nreduce checkout pricing latency\n\nq\n"), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader("\n10\nreduce checkout pricing latency\n\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -826,7 +826,7 @@ func TestInteractiveAdoptGeneratedCandidate(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunWithIO(nil, strings.NewReader("\n11\n\nq\n"), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader("\n11\n\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
@@ -852,7 +852,7 @@ func TestInteractiveQueryRuns(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	code := RunWithIO(nil, strings.NewReader("\n13\n\n\nq\n"), &stdout, &stderr)
+	code := RunWithIO([]string{"prompt"}, strings.NewReader("\n13\n\n\nq\n"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
 	}
