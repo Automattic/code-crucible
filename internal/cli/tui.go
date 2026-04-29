@@ -70,8 +70,13 @@ const (
 	tuiActionGenerate  tuiAction = "generate"
 	tuiActionEvaluator tuiAction = "evaluator"
 	tuiActionEvaluate  tuiAction = "evaluate"
+	tuiActionAdopt     tuiAction = "adopt"
+	tuiActionNextRound tuiAction = "next-round"
+	tuiActionEvolve    tuiAction = "evolve"
 	tuiActionReport    tuiAction = "report"
+	tuiActionIndex     tuiAction = "index"
 	tuiActionQuery     tuiAction = "query"
+	tuiActionInspect   tuiAction = "inspect"
 )
 
 type tuiForm struct {
@@ -302,10 +307,20 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openForm(tuiActionEvaluator)
 		case "e":
 			m.openForm(tuiActionEvaluate)
+		case "a":
+			m.openForm(tuiActionAdopt)
+		case "x":
+			m.openForm(tuiActionNextRound)
+		case "o":
+			m.openForm(tuiActionEvolve)
 		case "r":
 			m.openForm(tuiActionReport)
+		case "i":
+			m.openForm(tuiActionIndex)
 		case "s":
 			m.openForm(tuiActionQuery)
+		case "p":
+			m.openForm(tuiActionInspect)
 		case "up", "down", "k", "j", "home", "end", "pgup", "pgdown":
 			var cmd tea.Cmd
 			m.table, cmd = m.table.Update(msg)
@@ -377,7 +392,8 @@ func (m tuiDashboardModel) dashboardView() string {
 	for _, action := range m.nextActions() {
 		fmt.Fprintf(&b, "%s\n", action)
 	}
-	b.WriteString("\nKeys: n auto run, d discover, g generate, v evaluator, e evaluate, r report, s query, j/k select, q quit\n")
+	b.WriteString("\nKeys: n run, d discover, g generate, v evaluator, e evaluate, a adopt, x next\n")
+	b.WriteString("      o evolve, r report, i index, s query, p inspect, j/k select, q quit\n")
 	return b.String()
 }
 
@@ -540,6 +556,7 @@ func (m tuiDashboardModel) actionProgressView() string {
 func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 	runID := defaultString(m.data.Config.ID, "latest")
 	agent := m.data.Config.Agent
+	candidateID := m.selectedCandidateID()
 	variants := m.data.Config.Variants
 	if variants <= 0 {
 		variants = defaultVariantCount
@@ -598,6 +615,37 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 				{Name: "external_routing", Label: "External routing"},
 			},
 		}
+	case tuiActionAdopt:
+		return tuiForm{
+			Action: action,
+			Title:  "Adopt Generated Candidates",
+			Fields: []tuiFormField{
+				{Name: "run", Label: "Run", Value: runID, Required: true},
+				{Name: "model", Label: "Model"},
+				{Name: "json", Label: "Print JSON", Value: "false"},
+			},
+		}
+	case tuiActionNextRound:
+		return tuiForm{
+			Action: action,
+			Title:  "Prepare Next Round",
+			Fields: []tuiFormField{
+				{Name: "run", Label: "Run", Value: runID, Required: true},
+				{Name: "parents", Label: "Parents", Value: strconv.Itoa(variants)},
+				{Name: "json", Label: "Print JSON", Value: "false"},
+			},
+		}
+	case tuiActionEvolve:
+		return tuiForm{
+			Action: action,
+			Title:  "Evolve Rounds",
+			Fields: []tuiFormField{
+				{Name: "run", Label: "Run", Value: runID, Required: true},
+				{Name: "rounds", Label: "Rounds", Value: "1"},
+				{Name: "parents", Label: "Parents", Value: strconv.Itoa(variants)},
+				{Name: "agent", Label: "Agent", Value: agent},
+			},
+		}
 	case tuiActionReport:
 		return tuiForm{
 			Action: action,
@@ -605,6 +653,15 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 			Fields: []tuiFormField{
 				{Name: "run", Label: "Run", Value: runID, Required: true},
 				{Name: "output", Label: "Output path"},
+				{Name: "json", Label: "Print JSON", Value: "false"},
+			},
+		}
+	case tuiActionIndex:
+		return tuiForm{
+			Action: action,
+			Title:  "Rebuild Index",
+			Fields: []tuiFormField{
+				{Name: "run", Label: "Run (blank for all)", Value: runID},
 				{Name: "json", Label: "Print JSON", Value: "false"},
 			},
 		}
@@ -617,6 +674,15 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 				{Name: "limit", Label: "Limit", Value: "10"},
 				{Name: "run", Label: "Run for candidates", Value: runID},
 				{Name: "status", Label: "Candidate status"},
+			},
+		}
+	case tuiActionInspect:
+		return tuiForm{
+			Action: action,
+			Title:  "Inspect Candidate",
+			Fields: []tuiFormField{
+				{Name: "run", Label: "Run", Value: runID, Required: true},
+				{Name: "candidate", Label: "Candidate", Value: candidateID},
 			},
 		}
 	default:
@@ -672,10 +738,36 @@ func runTUIFormAction(controller WorkflowController, form tuiForm) int {
 			RunSelector: form.value("run"),
 			ExtraArgs:   extraArgs,
 		})
+	case tuiActionAdopt:
+		return controller.Adopt(AdoptWorkflowOptions{
+			RunSelector: form.value("run"),
+			Model:       form.value("model"),
+			JSON:        parseTUIBool(form.value("json")),
+		})
+	case tuiActionNextRound:
+		return controller.NextRound(NextRoundWorkflowOptions{
+			RunSelector: form.value("run"),
+			Parents:     parsePositiveInt(form.value("parents"), defaultVariantCount),
+			JSON:        parseTUIBool(form.value("json")),
+		})
+	case tuiActionEvolve:
+		return controller.Evolve(EvolveWorkflowOptions{
+			RunSelector: form.value("run"),
+			Rounds:      parsePositiveInt(form.value("rounds"), 1),
+			Parents:     parsePositiveInt(form.value("parents"), defaultVariantCount),
+			Agent:       form.value("agent"),
+		})
 	case tuiActionReport:
 		return controller.Report(ReportWorkflowOptions{
 			RunSelector: form.value("run"),
 			OutputPath:  form.value("output"),
+			JSON:        parseTUIBool(form.value("json")),
+		})
+	case tuiActionIndex:
+		runSelector := form.value("run")
+		return controller.Index(IndexWorkflowOptions{
+			RunSelector: runSelector,
+			ScopedRun:   strings.TrimSpace(runSelector) != "",
 			JSON:        parseTUIBool(form.value("json")),
 		})
 	case tuiActionQuery:
@@ -684,6 +776,11 @@ func runTUIFormAction(controller WorkflowController, form tuiForm) int {
 			Limit:       parsePositiveInt(form.value("limit"), 10),
 			RunSelector: form.value("run"),
 			Status:      form.value("status"),
+		})
+	case tuiActionInspect:
+		return controller.Inspect(InspectWorkflowOptions{
+			RunSelector: form.value("run"),
+			CandidateID: form.value("candidate"),
 		})
 	default:
 		fmt.Fprintf(controller.Stderr, "unsupported TUI action %q\n", form.Action)
@@ -695,7 +792,7 @@ func markTUIActionCanceled(projectDir string, form tuiForm) (*cruciblerun.Cancel
 	runSelector := strings.TrimSpace(form.value("run"))
 	candidateID := strings.TrimSpace(form.value("candidate"))
 	switch form.Action {
-	case tuiActionGenerate, tuiActionEvaluator, tuiActionEvaluate, tuiActionReport:
+	case tuiActionGenerate, tuiActionEvaluator, tuiActionEvaluate, tuiActionEvolve, tuiActionReport:
 		if runSelector == "" {
 			runSelector = "latest"
 		}
@@ -735,6 +832,23 @@ func (f tuiForm) validate() error {
 		if value := strings.TrimSpace(f.value("jobs")); value != "" {
 			if _, err := strconv.Atoi(value); err != nil {
 				return fmt.Errorf("Jobs must be a number")
+			}
+		}
+	case tuiActionNextRound:
+		if value := strings.TrimSpace(f.value("parents")); value != "" {
+			if parsed, err := strconv.Atoi(value); err != nil || parsed < 1 {
+				return fmt.Errorf("Parents must be a positive number")
+			}
+		}
+	case tuiActionEvolve:
+		if value := strings.TrimSpace(f.value("rounds")); value != "" {
+			if parsed, err := strconv.Atoi(value); err != nil || parsed < 1 {
+				return fmt.Errorf("Rounds must be a positive number")
+			}
+		}
+		if value := strings.TrimSpace(f.value("parents")); value != "" {
+			if parsed, err := strconv.Atoi(value); err != nil || parsed < 1 {
+				return fmt.Errorf("Parents must be a positive number")
 			}
 		}
 	case tuiActionEvaluator:
@@ -810,10 +924,49 @@ func (f tuiForm) commandPreview(projectDir, runID string) string {
 			args = append(args, "--external-routing", shellQuote(routing))
 		}
 		return strings.Join(args, " ")
+	case tuiActionAdopt:
+		args := []string{"crucible", "adopt", "--project-dir", project, "--run", shellQuote(defaultString(f.value("run"), runID))}
+		if model := strings.TrimSpace(f.value("model")); model != "" {
+			args = append(args, "--model", shellQuote(model))
+		}
+		if parseTUIBool(f.value("json")) {
+			args = append(args, "--json")
+		}
+		return strings.Join(args, " ")
+	case tuiActionNextRound:
+		args := []string{"crucible", "next-round", "--project-dir", project, "--run", shellQuote(defaultString(f.value("run"), runID))}
+		if parents := strings.TrimSpace(f.value("parents")); parents != "" {
+			args = append(args, "--parents", shellQuote(parents))
+		}
+		if parseTUIBool(f.value("json")) {
+			args = append(args, "--json")
+		}
+		return strings.Join(args, " ")
+	case tuiActionEvolve:
+		args := []string{"crucible", "evolve", "--project-dir", project, "--run", shellQuote(defaultString(f.value("run"), runID))}
+		if rounds := strings.TrimSpace(f.value("rounds")); rounds != "" {
+			args = append(args, "--rounds", shellQuote(rounds))
+		}
+		if parents := strings.TrimSpace(f.value("parents")); parents != "" {
+			args = append(args, "--parents", shellQuote(parents))
+		}
+		if agent := strings.TrimSpace(f.value("agent")); agent != "" {
+			args = append(args, "--agent", shellQuote(agent))
+		}
+		return strings.Join(args, " ")
 	case tuiActionReport:
 		args := []string{"crucible", "report", "--project-dir", project, "--run", shellQuote(defaultString(f.value("run"), runID))}
 		if output := strings.TrimSpace(f.value("output")); output != "" {
 			args = append(args, "--output", shellQuote(output))
+		}
+		if parseTUIBool(f.value("json")) {
+			args = append(args, "--json")
+		}
+		return strings.Join(args, " ")
+	case tuiActionIndex:
+		args := []string{"crucible", "index", "--project-dir", project}
+		if run := strings.TrimSpace(f.value("run")); run != "" {
+			args = append(args, "--run", shellQuote(run))
 		}
 		if parseTUIBool(f.value("json")) {
 			args = append(args, "--json")
@@ -831,6 +984,12 @@ func (f tuiForm) commandPreview(projectDir, runID string) string {
 			if status := strings.TrimSpace(f.value("status")); status != "" {
 				args = append(args, "--status", shellQuote(status))
 			}
+		}
+		return strings.Join(args, " ")
+	case tuiActionInspect:
+		args := []string{"crucible", "inspect", "--project-dir", project, "--run", shellQuote(defaultString(f.value("run"), runID))}
+		if candidate := strings.TrimSpace(f.value("candidate")); candidate != "" {
+			args = append(args, shellQuote(candidate))
 		}
 		return strings.Join(args, " ")
 	default:
@@ -1170,16 +1329,27 @@ func (m tuiDashboardModel) nextActions() []string {
 	}
 	actions = append(actions,
 		"Generate competitors: press g",
+		"Adopt generated:      press a",
 		"Evaluate candidates:  press e",
+		"Prepare next round:   press x",
+		"Evolve rounds:        press o",
 		"Write HTML report:    press r",
+		"Rebuild index:        press i",
 		"Query archive:        press s",
-		"Prepare next round:   use CLI next-round",
 	)
 	if len(m.data.Results) > 0 {
 		candidateID := m.data.Results[m.selected].Candidate.ID
-		actions = append(actions, fmt.Sprintf("Inspect selected:     use CLI inspect %s", candidateID))
+		actions = append(actions, fmt.Sprintf("Inspect selected:     press p (%s)", candidateID))
 	}
 	return actions
+}
+
+func (m tuiDashboardModel) selectedCandidateID() string {
+	if len(m.data.Results) == 0 {
+		return ""
+	}
+	selected := clampInt(m.selected, 0, len(m.data.Results)-1)
+	return m.data.Results[selected].Candidate.ID
 }
 
 func tuiStatusCounts(results []model.CandidateResult) (passed, failed, canceled, pending int) {

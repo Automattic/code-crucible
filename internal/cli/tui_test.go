@@ -71,7 +71,10 @@ func TestTUIDashboardViewShowsRunCandidatesAndCommands(t *testing.T) {
 		"Candidate Detail",
 		"Generate competitors: press g",
 		"Evaluate candidates:  press e",
-		"Inspect selected:     use CLI inspect candidate-0001",
+		"Adopt generated:      press a",
+		"Prepare next round:   press x",
+		"Rebuild index:        press i",
+		"Inspect selected:     press p (candidate-0001)",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("dashboard view did not contain %q:\n%s", want, view)
@@ -169,6 +172,51 @@ func TestTUIFormsBuildCommandPreviews(t *testing.T) {
 	} {
 		if !strings.Contains(preview, want) {
 			t.Fatalf("evaluator preview did not contain %q:\n%s", want, preview)
+		}
+	}
+
+	dashboard.openForm(tuiActionAdopt)
+	setTUIFormValue(&dashboard.form, "model", "gpt-test")
+	preview = dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
+	for _, want := range []string{"crucible adopt", "--run run-1", "--model gpt-test"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("adopt preview did not contain %q:\n%s", want, preview)
+		}
+	}
+
+	dashboard.openForm(tuiActionNextRound)
+	setTUIFormValue(&dashboard.form, "parents", "2")
+	preview = dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
+	for _, want := range []string{"crucible next-round", "--run run-1", "--parents 2"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("next-round preview did not contain %q:\n%s", want, preview)
+		}
+	}
+
+	dashboard.openForm(tuiActionEvolve)
+	setTUIFormValue(&dashboard.form, "rounds", "2")
+	setTUIFormValue(&dashboard.form, "parents", "2")
+	preview = dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
+	for _, want := range []string{"crucible evolve", "--run run-1", "--rounds 2", "--parents 2", "--agent codex"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("evolve preview did not contain %q:\n%s", want, preview)
+		}
+	}
+
+	dashboard.openForm(tuiActionIndex)
+	preview = dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
+	for _, want := range []string{"crucible index", "--project-dir '/tmp/code crucible fixture'", "--run run-1"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("index preview did not contain %q:\n%s", want, preview)
+		}
+	}
+
+	dashboard.openForm(tuiActionInspect)
+	setTUIFormValue(&dashboard.form, "candidate", "candidate-0001")
+	preview = dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
+	for _, want := range []string{"crucible inspect", "--run run-1", "candidate-0001"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("inspect preview did not contain %q:\n%s", want, preview)
 		}
 	}
 }

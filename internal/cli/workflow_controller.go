@@ -47,6 +47,7 @@ type EvolveWorkflowOptions struct {
 	Rounds      int
 	Parents     int
 	Agent       string
+	ExtraArgs   []string
 }
 
 type ReportWorkflowOptions struct {
@@ -69,11 +70,13 @@ type IndexWorkflowOptions struct {
 type AdoptWorkflowOptions struct {
 	RunSelector string
 	Model       string
+	JSON        bool
 }
 
 type NextRoundWorkflowOptions struct {
 	RunSelector string
 	Parents     int
+	JSON        bool
 }
 
 type DiscoverWorkflowOptions struct {
@@ -151,6 +154,7 @@ func (c WorkflowController) Evolve(opts EvolveWorkflowOptions) int {
 	if strings.TrimSpace(opts.Agent) != "" {
 		args = append(args, "--agent", strings.TrimSpace(opts.Agent))
 	}
+	args = append(args, opts.ExtraArgs...)
 	return runEvolve(args, c.Stdout, c.Stderr)
 }
 
@@ -185,15 +189,22 @@ func (c WorkflowController) Adopt(opts AdoptWorkflowOptions) int {
 	if strings.TrimSpace(opts.Model) != "" {
 		args = append(args, "--model", strings.TrimSpace(opts.Model))
 	}
+	if opts.JSON {
+		args = append(args, "--json")
+	}
 	return runAdopt(args, c.Stdout, c.Stderr)
 }
 
 func (c WorkflowController) NextRound(opts NextRoundWorkflowOptions) int {
-	return runNextRound([]string{
+	args := []string{
 		"--project-dir", c.ProjectDir,
 		"--run", opts.RunSelector,
 		"--parents", strconv.Itoa(opts.Parents),
-	}, c.Stdout, c.Stderr)
+	}
+	if opts.JSON {
+		args = append(args, "--json")
+	}
+	return runNextRound(args, c.Stdout, c.Stderr)
 }
 
 func (c WorkflowController) Discover(opts DiscoverWorkflowOptions) int {
