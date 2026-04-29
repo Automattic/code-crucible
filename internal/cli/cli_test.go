@@ -459,6 +459,72 @@ func TestInteractiveExistingProjectShowsLeaderboard(t *testing.T) {
 	}
 }
 
+func TestInteractiveInspectUsesCandidateSelector(t *testing.T) {
+	projectDir := t.TempDir()
+	chdir(t, projectDir)
+
+	created, err := run.Create(run.Options{
+		ProjectDir:   projectDir,
+		Optimize:     "make ranking faster",
+		Variants:     1,
+		ExternalMode: "deny",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := archive.LoadLeaderboard(filepath.Join(created.RunDir, "leaderboard.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	board.Results[0].Candidate.Baseline = true
+	board.Results[0].Status = model.CandidateStatusPassed
+	board.Results[0].Score = 100
+	board.Results = append(board.Results, model.CandidateResult{
+		Candidate: model.Candidate{
+			ID:         "candidate-0001",
+			Name:       "winner",
+			Round:      1,
+			ParentIDs:  []string{"candidate-0000-baseline"},
+			Agent:      "codex",
+			SourcePath: "round-0001/candidate-0001/src",
+		},
+		External: model.ExternalCallTrace{
+			Mode:         model.ExternalModeDeny,
+			PolicyPassed: true,
+		},
+		Verdict: model.Verdict{
+			CorrectnessPassed:    true,
+			BenchmarkPassed:      true,
+			ExternalPolicyPassed: true,
+		},
+		Score:  80,
+		Status: model.CandidateStatusPassed,
+	})
+	if err := archive.SaveJSON(filepath.Join(created.RunDir, "leaderboard.json"), board); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(nil, strings.NewReader("\n7\n\nq\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunWithIO returned %d, stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Candidates:",
+		"1. candidate-0000-baseline",
+		"2. candidate-0001",
+		"Candidate [2]:",
+		`"id": "candidate-0001"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "Candidate ID [candidate-0000-baseline]:") {
+		t.Fatalf("stdout used old free-text baseline prompt:\n%s", stdout.String())
+	}
+}
+
 func TestInteractiveReportPromptsForOutputAndJSON(t *testing.T) {
 	projectDir := t.TempDir()
 	chdir(t, projectDir)

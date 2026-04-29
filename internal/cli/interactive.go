@@ -246,13 +246,9 @@ func (s interactiveSession) menu(projectDir string) int {
 			if !ok {
 				return 0
 			}
-			candidateID, ok := s.ask("Candidate ID [candidate-0000-baseline]: ")
+			candidateID, ok := s.askCandidateSelector(projectDir, runSelector)
 			if !ok {
 				return 0
-			}
-			candidateID = strings.TrimSpace(candidateID)
-			if candidateID == "" {
-				candidateID = "candidate-0000-baseline"
 			}
 			if code := controller.Inspect(InspectWorkflowOptions{
 				RunSelector: runSelector,
@@ -382,6 +378,54 @@ func (s interactiveSession) askRunSelector(projectDir string) (string, bool) {
 		return "latest", true
 	}
 	return answer, true
+}
+
+func (s interactiveSession) askCandidateSelector(projectDir, runSelector string) (string, bool) {
+	leaderboardPath, err := archive.LeaderboardPath(projectDir, runSelector)
+	if err != nil {
+		fmt.Fprintf(s.stderr, "candidate selection failed: %v\n", err)
+		return "", false
+	}
+	board, err := archive.LoadLeaderboard(leaderboardPath)
+	if err != nil {
+		fmt.Fprintf(s.stderr, "candidate selection failed: %v\n", err)
+		return "", false
+	}
+	results := rankedResults(board.Results)
+	if len(results) == 0 {
+		fmt.Fprintln(s.stdout, "No candidates available.")
+		return "", false
+	}
+	defaultIndex := defaultCandidateSelectionIndex(results)
+	for {
+		fmt.Fprintln(s.stdout, "Candidates:")
+		for i, result := range results {
+			defaultMarker := ""
+			if i == defaultIndex {
+				defaultMarker = " (default)"
+			}
+			fmt.Fprintf(s.stdout, "  %d. %s (%s, score %.2f)%s\n", i+1, result.Candidate.ID, result.Status, result.Score, defaultMarker)
+		}
+		answer, ok := s.ask(fmt.Sprintf("Candidate [%d]: ", defaultIndex+1))
+		if !ok {
+			return "", false
+		}
+		answer = strings.TrimSpace(answer)
+		if answer == "" {
+			return results[defaultIndex].Candidate.ID, true
+		}
+		if index, err := strconv.Atoi(answer); err == nil {
+			if index >= 1 && index <= len(results) {
+				return results[index-1].Candidate.ID, true
+			}
+		}
+		for _, result := range results {
+			if result.Candidate.ID == answer {
+				return answer, true
+			}
+		}
+		fmt.Fprintf(s.stdout, "Unknown candidate %q\n", answer)
+	}
 }
 
 func (s interactiveSession) newRunWizard(projectDir string) int {

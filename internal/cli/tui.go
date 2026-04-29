@@ -204,7 +204,7 @@ func loadTUIDashboard(projectDir, runSelector string) (tuiDashboardData, error) 
 func newTUIDashboardModel(data tuiDashboardData, message string) tuiDashboardModel {
 	m := tuiDashboardModel{
 		data:     data,
-		selected: defaultTUISelectedIndex(data.Results),
+		selected: defaultCandidateSelectionIndex(data.Results),
 		width:    100,
 		message:  message,
 		spinner:  spinner.New(),
@@ -1398,7 +1398,7 @@ func (m tuiDashboardModel) selectedCandidateID() string {
 	return m.data.Results[selected].Candidate.ID
 }
 
-func defaultTUISelectedIndex(results []model.CandidateResult) int {
+func defaultCandidateSelectionIndex(results []model.CandidateResult) int {
 	for i, result := range results {
 		if result.Status == model.CandidateStatusPassed && !result.Candidate.Baseline {
 			return i
