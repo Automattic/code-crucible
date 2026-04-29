@@ -82,7 +82,7 @@ crucible tui
 crucible tui --run previous
 ```
 
-The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and forms for auto run setup, discovery, evaluator generation, competitor generation, adoption, promotion, evaluation, next-round preparation, evolution, reports, index rebuilds, archive queries, and candidate inspection. The new-run form defaults to `run --auto`, so typing the optimization request and pressing Enter is enough to create the run, generate and validate an evaluator, record baseline metrics, and return to a leaderboard. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
+The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and forms for auto run setup, discovery, evaluator generation, competitor generation, adoption, promotion, evaluation, next-round preparation, evolution, reports, index rebuilds, archive queries, and candidate inspection. When a non-baseline candidate has passed, the dashboard selects it by default; otherwise it selects the first non-baseline candidate before falling back to the baseline. The candidate table is the picker for candidate-specific actions, so inspecting the selected candidate runs directly from the table instead of asking for an ID. The new-run form defaults to `run --auto`, so typing the optimization request and pressing Enter is enough to create the run, generate and validate an evaluator, record baseline metrics, and return to a leaderboard. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
 
 Create a tournament run from inside an existing project:
 
@@ -707,6 +707,7 @@ Current priorities:
 - [x] Add prompt and TUI actions for evaluator generation on existing runs
 - [x] Fail fast with clear guidance when a selected agent executable is unavailable
 - [x] Add CLI and TUI candidate promotion back into the source project with dry-run previews and archived promotion reports
+- [x] Make TUI candidate inspection act on the selected row without requiring candidate ID entry
 
 Deferred roadmap:
 

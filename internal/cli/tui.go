@@ -203,10 +203,11 @@ func loadTUIDashboard(projectDir, runSelector string) (tuiDashboardData, error) 
 
 func newTUIDashboardModel(data tuiDashboardData, message string) tuiDashboardModel {
 	m := tuiDashboardModel{
-		data:    data,
-		width:   100,
-		message: message,
-		spinner: spinner.New(),
+		data:     data,
+		selected: defaultTUISelectedIndex(data.Results),
+		width:    100,
+		message:  message,
+		spinner:  spinner.New(),
 	}
 	m.configureBubbles()
 	return m
@@ -323,7 +324,12 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "s":
 			m.openForm(tuiActionQuery)
 		case "p":
-			m.openForm(tuiActionInspect)
+			if m.selectedCandidateID() == "" {
+				m.message = "No candidate is selected."
+				return m, nil
+			}
+			m.form = m.newForm(tuiActionInspect)
+			return m.submitForm()
 		case "up", "down", "k", "j", "home", "end", "pgup", "pgdown":
 			var cmd tea.Cmd
 			m.table, cmd = m.table.Update(msg)
@@ -1390,6 +1396,20 @@ func (m tuiDashboardModel) selectedCandidateID() string {
 	}
 	selected := clampInt(m.selected, 0, len(m.data.Results)-1)
 	return m.data.Results[selected].Candidate.ID
+}
+
+func defaultTUISelectedIndex(results []model.CandidateResult) int {
+	for i, result := range results {
+		if result.Status == model.CandidateStatusPassed && !result.Candidate.Baseline {
+			return i
+		}
+	}
+	for i, result := range results {
+		if !result.Candidate.Baseline {
+			return i
+		}
+	}
+	return 0
 }
 
 func tuiStatusCounts(results []model.CandidateResult) (passed, failed, canceled, pending int) {

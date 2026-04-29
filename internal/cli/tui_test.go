@@ -91,6 +91,8 @@ func TestTUIDashboardNavigationChangesSelectedCandidate(t *testing.T) {
 			{Candidate: model.Candidate{ID: "candidate-0001"}},
 		},
 	}, "")
+	dashboard.selected = 0
+	dashboard.configureBubbles()
 
 	updated, _ := dashboard.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	navigated := updated.(tuiDashboardModel)
@@ -105,6 +107,64 @@ func TestTUIDashboardNavigationChangesSelectedCandidate(t *testing.T) {
 	navigated = updated.(tuiDashboardModel)
 	if navigated.selected != 0 {
 		t.Fatalf("selected after k = %d, want 0", navigated.selected)
+	}
+}
+
+func TestTUIDashboardDefaultsToFirstNonBaselinePassedCandidate(t *testing.T) {
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		Config: model.RunConfig{ID: "run-1"},
+		Results: []model.CandidateResult{
+			{
+				Candidate: model.Candidate{ID: "candidate-0000-baseline", Baseline: true},
+				Status:    model.CandidateStatusPassed,
+				Score:     100,
+			},
+			{
+				Candidate: model.Candidate{ID: "candidate-0001"},
+				Status:    model.CandidateStatusPassed,
+				Score:     95,
+			},
+		},
+	}, "")
+
+	if dashboard.selected != 1 {
+		t.Fatalf("selected = %d, want first non-baseline passed candidate", dashboard.selected)
+	}
+	if got := dashboard.selectedCandidateID(); got != "candidate-0001" {
+		t.Fatalf("selected candidate = %q, want candidate-0001", got)
+	}
+}
+
+func TestTUIInspectKeyRunsSelectedCandidateDirectly(t *testing.T) {
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		ProjectDir: "/tmp/code crucible fixture",
+		Config: model.RunConfig{
+			ID: "run-1",
+		},
+		Results: []model.CandidateResult{
+			{
+				Candidate: model.Candidate{ID: "candidate-0000-baseline", Baseline: true},
+				Status:    model.CandidateStatusPassed,
+			},
+			{
+				Candidate: model.Candidate{ID: "candidate-0001"},
+				Status:    model.CandidateStatusPassed,
+			},
+		},
+	}, "")
+
+	updated, cmd := dashboard.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	running := updated.(tuiDashboardModel)
+	if cmd == nil {
+		t.Fatal("inspect key did not start an action")
+	}
+	if !running.busy {
+		t.Fatal("inspect key did not enter busy action state")
+	}
+	for _, want := range []string{"crucible inspect", "--run run-1", "candidate-0001"} {
+		if !strings.Contains(running.actionCmd, want) {
+			t.Fatalf("inspect command did not contain %q:\n%s", want, running.actionCmd)
+		}
 	}
 }
 
