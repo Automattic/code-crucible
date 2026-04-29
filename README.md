@@ -466,6 +466,8 @@ Use `--require-passed` in smoke tests or CI when the shell command should fail i
 
 Code Crucible also records resource metrics for each evaluator invocation in `resource-metrics.json` and merges them into `metrics.json` before updating `leaderboard.json`. These include wall time, user CPU time, system CPU time, CPU percent, max RSS, context switches, block I/O counts, and `resource_metric_source`. Evaluator scripts should still emit domain-specific metrics such as benchmark latency, allocations, external calls, and correctness verdicts. When an evaluator reports `p95_latency_ms`, it should be a true 95th percentile value for the sampled benchmark or request timings, not an average or median.
 
+Evaluators should measure the real optimization target rather than a repeated-fixture shortcut. Unless cache performance is explicitly part of the optimization request, benchmark iterations should use varied deterministic inputs or fresh process/context isolation so in-process memoization cannot skip the work being optimized. When caching is intentionally in scope, evaluators should report cache-cold and cache-warm metrics separately and document which metric drives the score.
+
 Evaluator execution is local by default. For containerized evaluation, pass `--sandbox-engine docker` or `--sandbox-engine podman` with an image that contains `bash` and the required project toolchain:
 
 ```bash
@@ -656,6 +658,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](
 
 Current priorities:
 
+- [x] Add evaluator-generation guidance for cache-resistant benchmark design
 - [x] Suppress placeholder-evaluator guidance after a run already has passing evaluator results
 - [x] Treat empty external allowlists as "allow no live hosts" instead of failing every candidate
 - [x] Add provider setup templates and a dry-run CLI path for Claude

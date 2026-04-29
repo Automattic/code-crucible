@@ -84,6 +84,11 @@ func BuildGenerationPrompt(req GenerationPromptRequest) string {
 	fmt.Fprintf(&b, "- Higher values should reserve more variants for structurally different approaches.\n")
 	fmt.Fprintf(&b, "- Keep all competitors compatible with the evaluator and external policy.\n\n")
 
+	fmt.Fprintf(&b, "## Benchmark-Aware Optimization\n\n")
+	fmt.Fprintf(&b, "- Optimize the documented real workload, not an accidental repeated-fixture or cache-hit shortcut in the evaluator.\n")
+	fmt.Fprintf(&b, "- Caching and memoization are valid only when they preserve the drop-in contract and plausibly match the requested workload. Disclose cache keys, invalidation behavior, memory tradeoffs, and cache-cold performance in design.md.\n")
+	fmt.Fprintf(&b, "- If a variant depends on cache-warm behavior, include that as an explicit risk and verify that non-cached or varied inputs remain competitive.\n\n")
+
 	fmt.Fprintf(&b, "## Evolution Strategy\n\n")
 	fmt.Fprintf(&b, "- Preferred parent candidates: `%s`\n", strings.Join(parentIDs, "`, `"))
 	fmt.Fprintf(&b, "- Create candidates starting at `%s` and continue sequentially.\n", nextCandidateID)

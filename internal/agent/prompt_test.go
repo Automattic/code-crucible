@@ -69,6 +69,31 @@ func TestBuildGenerationPromptIncludesScoreExplanation(t *testing.T) {
 	}
 }
 
+func TestBuildGenerationPromptIncludesCacheCaution(t *testing.T) {
+	prompt := BuildGenerationPrompt(GenerationPromptRequest{
+		RunConfig: model.RunConfig{
+			Optimize: "make image generation faster",
+			Variants: 1,
+			External: model.ExternalPolicy{Mode: "deny"},
+		},
+		InterfaceDocPath:  "interfaces/contract.md",
+		RunDir:            ".crucible/runs/run",
+		RoundDir:          ".crucible/runs/run/round-0001",
+		BaselineSourceDir: ".crucible/runs/run/round-0001/candidate-0000-baseline/src",
+	})
+
+	for _, want := range []string{
+		"## Benchmark-Aware Optimization",
+		"not an accidental repeated-fixture or cache-hit shortcut",
+		"Disclose cache keys",
+		"cache-cold performance",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("generation prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func TestBuildGenerationPromptUsesSelectedAgentPlaceholder(t *testing.T) {
 	prompt := BuildGenerationPrompt(GenerationPromptRequest{
 		RunConfig: model.RunConfig{

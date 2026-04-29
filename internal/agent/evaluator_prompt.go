@@ -57,6 +57,14 @@ func BuildEvaluatorPrompt(req EvaluatorPromptRequest) string {
 	fmt.Fprintf(&b, "- `memory_peak_bytes`\n")
 	fmt.Fprintf(&b, "- `external_call_count`\n\n")
 
+	fmt.Fprintf(&b, "## Benchmark Validity\n\n")
+	fmt.Fprintf(&b, "Design the benchmark so it measures the requested real work, not an accidental cache hit or repeated-fixture shortcut. Unless the optimization request explicitly asks for cache performance:\n\n")
+	fmt.Fprintf(&b, "- Use varied deterministic inputs across measured iterations, or isolate each measured operation in a fresh process/context when the language runtime can retain in-process caches.\n")
+	fmt.Fprintf(&b, "- Warmups may prepare the runtime, but measured iterations must not all reuse one identical request in a way that lets candidates skip the optimized work entirely.\n")
+	fmt.Fprintf(&b, "- Include at least one cache-cold or cache-varied path when a competitor could memoize by file path, object identity, request key, URL, SQL query, parsed input, or serialized payload.\n")
+	fmt.Fprintf(&b, "- If caching is part of the intended optimization target, report cache-warm and cache-cold metrics separately and make the scoring metric explicit.\n")
+	fmt.Fprintf(&b, "- Document benchmark cache behavior and any remaining limits in the evaluator design notes.\n\n")
+
 	fmt.Fprintf(&b, "## External Policy\n\n")
 	fmt.Fprintf(&b, "- Mode: `%s`\n", cfg.External.Mode)
 	if len(cfg.External.Allowlist) > 0 {
