@@ -377,7 +377,7 @@ func (m tuiDashboardModel) dashboardView() string {
 	for _, action := range m.nextActions() {
 		fmt.Fprintf(&b, "%s\n", action)
 	}
-	b.WriteString("\nKeys: n new run, d discover, g generate, v evaluator, e evaluate, r report, s query, j/k select, q quit\n")
+	b.WriteString("\nKeys: n auto run, d discover, g generate, v evaluator, e evaluate, r report, s query, j/k select, q quit\n")
 	return b.String()
 }
 
@@ -548,13 +548,15 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 	case tuiActionRun:
 		return tuiForm{
 			Action: action,
-			Title:  "Create Run",
+			Title:  "Auto Run",
 			Fields: []tuiFormField{
 				{Name: "optimize", Label: "Optimization request", Required: true},
+				{Name: "auto", Label: "Auto setup", Value: "true"},
+				{Name: "generate", Label: "Generate competitors", Value: "false"},
+				{Name: "evaluate", Label: "Evaluate after generation", Value: "false"},
 				{Name: "source_path", Label: "Source path"},
 				{Name: "agent", Label: "Agent", Value: agent},
 				{Name: "variants", Label: "Variants", Value: strconv.Itoa(variants)},
-				{Name: "generate", Label: "Generate now", Value: "false"},
 			},
 		}
 	case tuiActionDiscover:
@@ -628,10 +630,12 @@ func runTUIFormAction(controller WorkflowController, form tuiForm) int {
 		variants := parsePositiveInt(form.value("variants"), defaultVariantCount)
 		return controller.Run(RunWorkflowOptions{
 			Optimize:   form.value("optimize"),
+			Auto:       parseTUIBool(form.value("auto")),
 			SourcePath: form.value("source_path"),
 			Agent:      form.value("agent"),
 			Variants:   variants,
 			Generate:   parseTUIBool(form.value("generate")),
+			Evaluate:   parseTUIBool(form.value("evaluate")),
 		})
 	case tuiActionDiscover:
 		return controller.Discover(DiscoverWorkflowOptions{
@@ -760,6 +764,9 @@ func (f tuiForm) commandPreview(projectDir, runID string) string {
 		if sourcePath := strings.TrimSpace(f.value("source_path")); sourcePath != "" {
 			args = append(args, "--source-path", shellQuote(sourcePath))
 		}
+		if parseTUIBool(f.value("auto")) {
+			args = append(args, "--auto")
+		}
 		if agent := strings.TrimSpace(f.value("agent")); agent != "" {
 			args = append(args, "--agent", shellQuote(agent))
 		}
@@ -768,6 +775,9 @@ func (f tuiForm) commandPreview(projectDir, runID string) string {
 		}
 		if parseTUIBool(f.value("generate")) {
 			args = append(args, "--generate")
+		}
+		if parseTUIBool(f.value("evaluate")) {
+			args = append(args, "--evaluate")
 		}
 		args = append(args, shellQuote(f.value("optimize")))
 		return strings.Join(args, " ")
@@ -1148,27 +1158,26 @@ func (m tuiDashboardModel) candidateDetail() string {
 
 func (m tuiDashboardModel) nextActions() []string {
 	runID := m.data.Config.ID
-	project := shellQuote(m.data.ProjectDir)
 	if strings.TrimSpace(runID) == "" {
 		return []string{
-			"New run form:       press n",
-			"Discovery form:     press d",
+			"Auto run:           press n, type the request, Enter starts setup",
+			"Discovery:          press d for source/interface discovery only",
 		}
 	}
 	actions := []string{}
 	if !runConfigHasEvaluator(&m.data.Config) {
-		actions = append(actions, fmt.Sprintf("Generate evaluator:   crucible evaluator generate --project-dir %s --run %s", project, shellQuote(runID)))
+		actions = append(actions, "Generate evaluator:   press v")
 	}
 	actions = append(actions,
-		fmt.Sprintf("Generate competitors: crucible generate --project-dir %s --run %s", project, shellQuote(runID)),
-		fmt.Sprintf("Evaluate candidates:  crucible evaluate --project-dir %s --run %s", project, shellQuote(runID)),
-		fmt.Sprintf("Open leaderboard:     crucible leaderboard --project-dir %s --run %s", project, shellQuote(runID)),
-		fmt.Sprintf("Write HTML report:    crucible report --project-dir %s --run %s", project, shellQuote(runID)),
-		fmt.Sprintf("Prepare next round:   crucible next-round --project-dir %s --run %s", project, shellQuote(runID)),
+		"Generate competitors: press g",
+		"Evaluate candidates:  press e",
+		"Write HTML report:    press r",
+		"Query archive:        press s",
+		"Prepare next round:   use CLI next-round",
 	)
 	if len(m.data.Results) > 0 {
 		candidateID := m.data.Results[m.selected].Candidate.ID
-		actions = append(actions, fmt.Sprintf("Inspect selected:     crucible inspect --project-dir %s --run %s %s", project, shellQuote(runID), shellQuote(candidateID)))
+		actions = append(actions, fmt.Sprintf("Inspect selected:     use CLI inspect %s", candidateID))
 	}
 	return actions
 }

@@ -81,7 +81,7 @@ crucible tui
 crucible tui --run previous
 ```
 
-The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and basic forms for creating runs, discovery, evaluator generation, competitor generation, evaluation, reports, and archive queries. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
+The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and forms for auto run setup, discovery, evaluator generation, competitor generation, evaluation, reports, and archive queries. The new-run form defaults to `run --auto`, so typing the optimization request and pressing Enter is enough to create the run, generate and validate an evaluator, record baseline metrics, and return to a leaderboard. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
 
 Create a tournament run from inside an existing project:
 
@@ -672,6 +672,8 @@ Current priorities:
 
 - [x] Add a low-prompt `run --auto` path that infers setup and records baseline results
 - [x] Archive provider logs without streaming raw agent output during `run --auto`
+- [x] Default TUI new-run setup to the low-prompt `run --auto` flow
+- [x] Replace noisy TUI next-action shell commands with key-first actions where forms exist
 - [x] Add evaluator-generation guidance for cache-resistant benchmark design
 - [x] Record generated-evaluator baseline validation in the leaderboard
 - [x] Suppress placeholder-evaluator guidance after a run already has passing evaluator results

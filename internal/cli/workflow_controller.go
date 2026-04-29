@@ -16,10 +16,12 @@ type WorkflowController struct {
 
 type RunWorkflowOptions struct {
 	Optimize   string
+	Auto       bool
 	SourcePath string
 	Agent      string
 	Variants   int
 	Generate   bool
+	Evaluate   bool
 	ExtraArgs  []string
 }
 
@@ -91,6 +93,9 @@ func (c WorkflowController) Run(opts RunWorkflowOptions) int {
 	if strings.TrimSpace(opts.SourcePath) != "" {
 		args = append(args, "--source-path", strings.TrimSpace(opts.SourcePath))
 	}
+	if opts.Auto {
+		args = append(args, "--auto")
+	}
 	if strings.TrimSpace(opts.Agent) != "" {
 		args = append(args, "--agent", strings.TrimSpace(opts.Agent))
 	}
@@ -99,6 +104,9 @@ func (c WorkflowController) Run(opts RunWorkflowOptions) int {
 	}
 	if opts.Generate {
 		args = append(args, "--generate")
+	}
+	if opts.Evaluate {
+		args = append(args, "--evaluate")
 	}
 	args = append(args, opts.ExtraArgs...)
 	args = append(args, opts.Optimize)

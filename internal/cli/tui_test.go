@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,8 +10,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Automattic/code-crucible/internal/agent"
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/project"
 	"github.com/Automattic/code-crucible/internal/run"
 )
 
@@ -66,8 +69,9 @@ func TestTUIDashboardViewShowsRunCandidatesAndCommands(t *testing.T) {
 		"make ranking faster",
 		"candidate-0001",
 		"Candidate Detail",
-		"Generate competitors: crucible generate --project-dir",
-		"Inspect selected:     crucible inspect --project-dir",
+		"Generate competitors: press g",
+		"Evaluate candidates:  press e",
+		"Inspect selected:     use CLI inspect candidate-0001",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("dashboard view did not contain %q:\n%s", want, view)
@@ -110,7 +114,7 @@ func TestTUIStartsWithoutExistingRun(t *testing.T) {
 		t.Fatalf("initial run ID = %q, want empty", data.Config.ID)
 	}
 	view := newTUIDashboardModel(data, message).View()
-	for _, want := range []string{"No run is loaded yet", "New run form", "Discovery form"} {
+	for _, want := range []string{"No run is loaded yet", "Auto run:", "Discovery:"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("empty dashboard did not contain %q:\n%s", want, view)
 		}
@@ -147,7 +151,7 @@ func TestTUIFormsBuildCommandPreviews(t *testing.T) {
 	setTUIFormValue(&dashboard.form, "optimize", "make search faster")
 	setTUIFormValue(&dashboard.form, "generate", "yes")
 	preview = dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
-	for _, want := range []string{"crucible run", "--variants 3", "--generate", "'make search faster'"} {
+	for _, want := range []string{"crucible run", "--auto", "--variants 3", "--generate", "'make search faster'"} {
 		if !strings.Contains(preview, want) {
 			t.Fatalf("run preview did not contain %q:\n%s", want, preview)
 		}
@@ -306,6 +310,107 @@ func TestTUIRunFormCreatesRun(t *testing.T) {
 	}
 	if _, err := loadTUIDashboard(projectDir, "latest"); err != nil {
 		t.Fatalf("new run dashboard load failed: %v", err)
+	}
+}
+
+func TestTUIAutoRunFormCreatesBaselineResult(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceDir := filepath.Join(projectDir, "internal", "search")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "rank.go"), []byte("package search\n\nfunc Rank() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	providerScript := filepath.Join(t.TempDir(), "provider.sh")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+cat > "$CRUCIBLE_RUN_DIR/evaluator/evaluator.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+metrics_out="${3:?metrics path required}"
+verdict_out="${4:?verdict path required}"
+cat > "$metrics_out" <<'JSON'
+{
+  "runtime_mean_ms": 2,
+  "p95_latency_ms": 3,
+  "memory_peak_bytes": 2048
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+SH
+printf 'tui auto provider output\n'
+`
+	if err := os.WriteFile(providerScript, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := project.Init(projectDir, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DefaultAgent = "custom"
+	cfg.AgentProviders = map[string]agent.ProviderDefinition{
+		"custom": {
+			Name:    "custom",
+			Kind:    "command",
+			Command: []string{providerScript},
+			Capabilities: agent.ProviderCapabilities{
+				SupportsGeneration: true,
+			},
+		},
+	}
+	if err := project.Save(projectDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		ProjectDir: projectDir,
+		Config: model.RunConfig{
+			Variants: 2,
+		},
+	}, "")
+	form := dashboard.newForm(tuiActionRun)
+	setTUIFormValue(&form, "optimize", "make rank faster")
+
+	var stdout, stderr bytes.Buffer
+	code := runTUIFormAction(WorkflowController{
+		ProjectDir: projectDir,
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+	}, form)
+	if code != 0 {
+		t.Fatalf("auto run form returned %d, stderr: %s\nstdout:\n%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		"Auto source path: internal/search/rank.go",
+		"Baseline evaluated: candidate-0000-baseline",
+		"candidate-0000-baseline  passed",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "tui auto provider output") {
+		t.Fatalf("TUI auto run streamed provider stdout instead of archiving it:\n%s", stdout.String())
+	}
+	data, err := loadTUIDashboard(projectDir, "latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.Config.SourcePath != "internal/search/rank.go" {
+		t.Fatalf("source path = %q, want auto-selected source", data.Config.SourcePath)
+	}
+	if len(data.Results) != 1 || data.Results[0].Status != model.CandidateStatusPassed {
+		t.Fatalf("results = %#v, want passed baseline", data.Results)
 	}
 }
 
