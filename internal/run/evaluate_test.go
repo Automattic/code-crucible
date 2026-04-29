@@ -420,6 +420,81 @@ JSON
 	}
 }
 
+func TestEvaluateCandidatesAllowsEmptyAllowlistWhenNoExternalCalls(t *testing.T) {
+	projectDir, created := createEvaluationFixtureWithExternalMode(t, "allowlist")
+	gatewayAddr := freeTCPAddr(t)
+	gatewayHost, gatewayPort, err := net.SplitHostPort(gatewayAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	evaluator := `#!/usr/bin/env bash
+set -euo pipefail
+metrics_out="$3"
+verdict_out="$4"
+if [[ "${CRUCIBLE_EXTERNAL_MODE:-}" != "allowlist" ]]; then
+  echo "missing CRUCIBLE_EXTERNAL_MODE" >&2
+  exit 3
+fi
+if [[ "${CRUCIBLE_ALLOWED_HOSTS+x}" != "x" ]]; then
+  echo "missing CRUCIBLE_ALLOWED_HOSTS" >&2
+  exit 3
+fi
+if [[ -n "${CRUCIBLE_ALLOWED_HOSTS:-}" ]]; then
+  echo "CRUCIBLE_ALLOWED_HOSTS should be empty" >&2
+  exit 3
+fi
+if ! (: >"/dev/tcp/__GATEWAY_HOST__/__GATEWAY_PORT__") >/dev/null 2>&1; then
+  echo "local mock gateway is not reachable" >&2
+  exit 3
+fi
+cat > "$metrics_out" <<'JSON'
+{
+  "runtime_mean_ms": 1
+}
+JSON
+cat > "$verdict_out" <<'JSON'
+{
+  "correctness_passed": true,
+  "benchmark_passed": true,
+  "external_policy_passed": true
+}
+JSON
+`
+	evaluator = strings.ReplaceAll(evaluator, "__GATEWAY_HOST__", gatewayHost)
+	evaluator = strings.ReplaceAll(evaluator, "__GATEWAY_PORT__", gatewayPort)
+	if err := os.WriteFile(filepath.Join(created.RunDir, "evaluator", "evaluator.sh"), []byte(evaluator), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCandidates(EvaluationOptions{
+		ProjectDir:  projectDir,
+		RunID:       created.ID,
+		CandidateID: "candidate-0000-baseline",
+		Adopt:       false,
+		Env:         []string{"CRUCIBLE_MOCK_GATEWAY_ADDR=" + gatewayAddr},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("evaluated results = %d, want one", len(report.Results))
+	}
+	result := report.Results[0]
+	if result.Status != "passed" {
+		t.Fatalf("status = %q, want passed; errors = %#v", result.Status, result.Errors)
+	}
+	if result.ExternalPolicy == nil {
+		t.Fatal("external policy report is nil")
+	}
+	if len(result.ExternalPolicy.Errors) != 0 {
+		t.Fatalf("external policy errors = %#v, want none", result.ExternalPolicy.Errors)
+	}
+	if !containsWarning(result.ExternalPolicy.Warnings, "no hosts") {
+		t.Fatalf("external policy warnings = %#v, want empty allowlist warning", result.ExternalPolicy.Warnings)
+	}
+}
+
 func TestExternalEvaluationEnvAddsFixtureGatewayDefaults(t *testing.T) {
 	runDir := t.TempDir()
 	externalDir := filepath.Join(runDir, "external")
@@ -500,6 +575,14 @@ func TestExternalEvaluationEnvAddsAllowlistGatewayDefaults(t *testing.T) {
 		if !containsArg(env, want) {
 			t.Fatalf("env missing %q: %#v", want, env)
 		}
+	}
+
+	emptyEnv := externalEvaluationEnv(model.ExternalPolicy{
+		Mode:     model.ExternalModeAllowlist,
+		Fixtures: fixturesPath,
+	}, runDir, nil)
+	if !containsArg(emptyEnv, "CRUCIBLE_ALLOWED_HOSTS=") {
+		t.Fatalf("env missing empty CRUCIBLE_ALLOWED_HOSTS: %#v", emptyEnv)
 	}
 }
 
@@ -803,6 +886,9 @@ func TestSandboxResourceWrapperStartsMockGateway(t *testing.T) {
 			t.Fatalf("resource wrapper missing %q", want)
 		}
 	}
+	if strings.Contains(script, "CRUCIBLE_ALLOWED_HOSTS is required") {
+		t.Fatal("resource wrapper should allow an empty allowlist")
+	}
 }
 
 func TestEnsureSandboxMockGatewayBinaryUsesPackagedBinary(t *testing.T) {
@@ -848,18 +934,29 @@ func TestStartLocalMockGatewayRejectsUsedAddress(t *testing.T) {
 	}
 }
 
-func TestStartLocalMockGatewayRequiresAllowlistHosts(t *testing.T) {
+func TestStartLocalMockGatewayAllowsEmptyAllowlistHosts(t *testing.T) {
+	dir := t.TempDir()
+	gatewaySource := filepath.Join(dir, externalfixtures.MockGatewayName)
+	if err := externalfixtures.WriteMockGateway(gatewaySource); err != nil {
+		t.Fatal(err)
+	}
+	fixturesPath := filepath.Join(dir, externalfixtures.HTTPFixturesName)
+	if err := externalfixtures.SaveHTTPFixtureSet(fixturesPath, externalfixtures.EmptyHTTPFixtureSet()); err != nil {
+		t.Fatal(err)
+	}
+	addr := freeTCPAddr(t)
 	cleanup, err := startLocalMockGateway(context.Background(), []string{
 		"CRUCIBLE_EXTERNAL_MODE=allowlist",
-		"CRUCIBLE_MOCK_GATEWAY_SOURCE=/tmp/mock-gateway.go",
-		"CRUCIBLE_HTTP_FIXTURES=/tmp/http-fixtures.json",
+		"CRUCIBLE_MOCK_GATEWAY_SOURCE=" + filepath.ToSlash(gatewaySource),
+		"CRUCIBLE_HTTP_FIXTURES=" + filepath.ToSlash(fixturesPath),
+		"CRUCIBLE_MOCK_GATEWAY_ADDR=" + addr,
 	}, filepath.Join(t.TempDir(), "gateway.log"))
-	cleanup()
-	if err == nil {
-		t.Fatal("expected missing allowlist hosts error")
+	defer cleanup()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "CRUCIBLE_ALLOWED_HOSTS") {
-		t.Fatalf("error = %v, want missing allowed hosts", err)
+	if !tcpAddressOpen(addr) {
+		t.Fatalf("gateway is not reachable on %s", addr)
 	}
 }
 
@@ -912,8 +1009,11 @@ func TestExternalPolicyEnforcement(t *testing.T) {
 	}
 
 	enforcement = externalPolicyEnforcement(model.ExternalPolicy{Mode: model.ExternalModeAllowlist}, SandboxOptions{})
-	if enforcement.Status != "failed" || len(enforcement.Errors) == 0 {
-		t.Fatalf("empty allowlist enforcement = %#v, want failed with error", enforcement)
+	if enforcement.Status != "partial" || len(enforcement.Errors) != 0 {
+		t.Fatalf("empty allowlist enforcement = %#v, want partial with no errors", enforcement)
+	}
+	if !containsWarning(enforcement.Warnings, "no hosts") {
+		t.Fatalf("empty allowlist warnings = %#v, want no-hosts warning", enforcement.Warnings)
 	}
 
 	enforcement = externalPolicyEnforcement(model.ExternalPolicy{

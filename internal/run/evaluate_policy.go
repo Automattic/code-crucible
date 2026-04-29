@@ -165,12 +165,11 @@ func externalPolicyEnforcement(policy model.ExternalPolicy, sandbox SandboxOptio
 		enforcement.Warnings = append(enforcement.Warnings, "fixture gateway and proxy environment are available when fixtures are archived, but network isolation requires a container sandbox with --sandbox-network none")
 		appendLocalRawSocketWarning(&enforcement, sandbox)
 	case model.ExternalModeAllowlist:
-		if len(normalizedAllowlist(policy.Allowlist)) == 0 {
-			enforcement.Status = "failed"
-			enforcement.Errors = append(enforcement.Errors, "external policy allowlist requires at least one --allow-hosts entry")
-			return enforcement
-		}
+		allowlist := normalizedAllowlist(policy.Allowlist)
 		enforcement.Status = "partial"
+		if len(allowlist) == 0 {
+			enforcement.Warnings = append(enforcement.Warnings, "external policy allowlist has no hosts; no live outbound hosts are allowed through the gateway")
+		}
 		if sandboxEnabled(sandbox) && sandbox.ExternalRouting == ExternalRoutingGatewayNetwork {
 			enforcement.Mechanism = sandbox.Engine + "-gateway-network"
 			enforcement.Warnings = append(enforcement.Warnings, "allowlist policy routes declared hosts through the gateway sidecar, but undeclared live hosts may remain reachable when the evaluator network allows upstream access")
@@ -399,9 +398,6 @@ func startLocalMockGateway(ctx context.Context, env []string, logPath string) (f
 	}
 	if mode == string(model.ExternalModeAllowlist) {
 		allowedHosts := envValue(env, "CRUCIBLE_ALLOWED_HOSTS")
-		if allowedHosts == "" {
-			return func() {}, fmt.Errorf("CRUCIBLE_ALLOWED_HOSTS is required in allowlist mode")
-		}
 		args = append(args, "-allow-hosts", allowedHosts, "-passthrough")
 	}
 	if mode == string(model.ExternalModeRecord) {

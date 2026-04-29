@@ -180,8 +180,8 @@ func buildGatewaySidecarCommand(sandbox SandboxOptions, networkName, gatewayName
 	if tracePath := envValue(env, "CRUCIBLE_EXTERNAL_TRACE"); tracePath != "" {
 		args = append(args, "-trace", tracePath)
 	}
-	if allowed := envValue(env, "CRUCIBLE_ALLOWED_HOSTS"); allowed != "" {
-		args = append(args, "-allow-hosts", allowed, "-passthrough")
+	if mode := envValue(env, "CRUCIBLE_EXTERNAL_MODE"); mode == string(model.ExternalModeAllowlist) {
+		args = append(args, "-allow-hosts", envValue(env, "CRUCIBLE_ALLOWED_HOSTS"), "-passthrough")
 	}
 	if recordPath := envValue(env, "CRUCIBLE_RECORD_FIXTURES"); recordPath != "" {
 		args = append(args, "-record-fixtures", recordPath, "-passthrough")

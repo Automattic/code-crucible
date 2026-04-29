@@ -249,11 +249,7 @@ if [[ -n "${CRUCIBLE_MOCK_GATEWAY_SOURCE:-}" || -n "${CRUCIBLE_MOCK_GATEWAY_BIN:
     gateway_args+=(-trace "$CRUCIBLE_EXTERNAL_TRACE")
   fi
   if [[ "${CRUCIBLE_EXTERNAL_MODE:-}" == "allowlist" ]]; then
-    if [[ -z "${CRUCIBLE_ALLOWED_HOSTS:-}" ]]; then
-      echo "CRUCIBLE_ALLOWED_HOSTS is required in allowlist mode" >&2
-      exit 126
-    fi
-    gateway_args+=(-allow-hosts "$CRUCIBLE_ALLOWED_HOSTS" -passthrough)
+    gateway_args+=(-allow-hosts "${CRUCIBLE_ALLOWED_HOSTS:-}" -passthrough)
   fi
   if [[ "${CRUCIBLE_EXTERNAL_MODE:-}" == "record" ]]; then
     if [[ -z "${CRUCIBLE_RECORD_FIXTURES:-}" ]]; then
