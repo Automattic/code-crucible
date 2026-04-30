@@ -112,6 +112,9 @@ func ValidateProviderDefinition(provider ProviderDefinition) error {
 	if provider.Name == "" {
 		return fmt.Errorf("provider name is required")
 	}
+	if err := validateProviderName(provider.Name); err != nil {
+		return err
+	}
 	switch provider.Kind {
 	case "codex", "local":
 		if builtin, ok := Provider(provider.Name); ok && builtin.Kind == provider.Kind {
@@ -134,6 +137,19 @@ func ValidateProviderDefinition(provider ProviderDefinition) error {
 	default:
 		return fmt.Errorf("provider %q has unsupported kind %q", provider.Name, provider.Kind)
 	}
+}
+
+func validateProviderName(name string) error {
+	for i, r := range name {
+		allowed := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.'
+		if !allowed {
+			return fmt.Errorf("provider name %q must contain only lowercase letters, digits, dots, underscores, or hyphens", name)
+		}
+		if i == 0 && !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') {
+			return fmt.Errorf("provider name %q must start with a lowercase letter or digit", name)
+		}
+	}
+	return nil
 }
 
 func (p ProviderDefinition) Supports(capability string) bool {

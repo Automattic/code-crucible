@@ -53,8 +53,8 @@ Use this checklist before pushing to a remote, tagging, or preparing a public re
 
 ## Repository Metadata
 
-- Confirm `README.md` reflects current commands and limitations.
-- Confirm `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md` are present.
+- Confirm `README.md` reflects the current product story and links to the detailed docs.
+- Confirm `LICENSE`, `.github/SECURITY.md`, and `.github/CONTRIBUTING.md` are present.
 - Confirm GitHub Actions exists under `.github/workflows/ci.yml` and includes both Go checks and the regression tournament job.
 - Confirm `.github/workflows/gateway-network.yml` remains manual-only unless the Docker/Podman smoke tests are stable enough for every pull request.
 - Confirm the remote target is intentional before the first push:
