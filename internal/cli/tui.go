@@ -48,10 +48,12 @@ type tuiDashboardModel struct {
 	actionCmd    string
 	actionCancel context.CancelFunc
 	canceling    bool
+	history      []tuiCommandHistoryEntry
 	spinner      spinner.Model
 	table        table.Model
 	detail       viewport.Model
 	result       viewport.Model
+	historyView  viewport.Model
 }
 
 type tuiMode int
@@ -60,6 +62,7 @@ const (
 	tuiModeDashboard tuiMode = iota
 	tuiModeForm
 	tuiModeActionResult
+	tuiModeHistory
 )
 
 type tuiAction string
@@ -106,6 +109,30 @@ type tuiActionDoneMsg struct {
 	Canceled    bool
 	CancelEvent *cruciblerun.CancellationEvent
 	CancelErr   error
+	History     int
+	FinishedAt  time.Time
+}
+
+type tuiCommandHistoryEntry struct {
+	Title             string
+	Action            tuiAction
+	Options           []tuiCommandHistoryOption
+	Command           string
+	StartedAt         time.Time
+	FinishedAt        time.Time
+	Code              int
+	Error             string
+	Canceled          bool
+	StdoutBytes       int
+	StderrBytes       int
+	CancelEventPath   string
+	UpdatedCandidates []string
+	CancelError       string
+}
+
+type tuiCommandHistoryOption struct {
+	Label string
+	Value string
 }
 
 func runTUI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -228,28 +255,17 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.actionStart = time.Time{}
 		m.actionCancel = nil
 		m.canceling = false
-		m.mode = tuiModeActionResult
+		m.mode = tuiModeDashboard
 		m.actionTitle = msg.Title
 		m.actionOutput = msg.Stdout
 		m.actionError = msg.Stderr
+		m.finishHistoryEntry(msg)
 		if msg.Canceled {
 			m.message = fmt.Sprintf("%s canceled", msg.Title)
 			if msg.CancelEvent != nil {
 				if len(msg.CancelEvent.UpdatedCandidates) > 0 {
 					m.message += fmt.Sprintf("; marked canceled: %s", strings.Join(msg.CancelEvent.UpdatedCandidates, ", "))
 				}
-				if strings.TrimSpace(msg.CancelEvent.EventPath) != "" {
-					if strings.TrimSpace(m.actionOutput) != "" {
-						m.actionOutput += "\n"
-					}
-					m.actionOutput += "Cancellation event: " + msg.CancelEvent.EventPath + "\n"
-				}
-			}
-			if msg.CancelErr != nil {
-				if strings.TrimSpace(m.actionError) != "" {
-					m.actionError += "\n"
-				}
-				m.actionError += "Cancellation artifact update failed: " + msg.CancelErr.Error() + "\n"
 			}
 		} else if msg.Err != nil {
 			m.message = msg.Err.Error()
@@ -262,6 +278,7 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = clampInt(m.selected, 0, len(m.data.Results)-1)
 			}
 		}
+		m.message = tuiCommandHistoryHint(m.message)
 		m.configureBubbles()
 	case spinner.TickMsg:
 		if m.busy {
@@ -295,10 +312,23 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.result, cmd = m.result.Update(msg)
 			return m, cmd
+		case tuiModeHistory:
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "b", "esc", "h":
+				m.mode = tuiModeDashboard
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.historyView, cmd = m.historyView.Update(msg)
+			return m, cmd
 		}
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			return m, tea.Quit
+		case "h":
+			m.mode = tuiModeHistory
 		case "n":
 			m.openForm(tuiActionRun)
 		case "d":
@@ -351,6 +381,8 @@ func (m tuiDashboardModel) View() string {
 		return m.formView()
 	case tuiModeActionResult:
 		return m.actionResultView()
+	case tuiModeHistory:
+		return m.commandHistoryView()
 	}
 	if m.busy {
 		return m.actionProgressView()
@@ -403,7 +435,7 @@ func (m tuiDashboardModel) dashboardView() string {
 	}
 	b.WriteString("\nKeys: n run, d discover, g generate, v evaluator, e evaluate\n")
 	b.WriteString("      a adopt, m promote, x next, o evolve, r report\n")
-	b.WriteString("      i index, s query, p inspect, j/k select, q quit\n")
+	b.WriteString("      i index, s query, p inspect, h history, j/k select, q quit\n")
 	return b.String()
 }
 
@@ -455,13 +487,17 @@ func (m tuiDashboardModel) submitForm() (tea.Model, tea.Cmd) {
 	title := m.form.Title
 	form := m.form
 	projectDir := m.data.ProjectDir
-	m.mode = tuiModeActionResult
+	startedAt := time.Now()
+	command := form.commandPreview(projectDir, m.data.Config.ID)
+	m.history = append(m.history, newTUICommandHistoryEntry(form, command, startedAt))
+	historyIndex := len(m.history) - 1
+	m.mode = tuiModeDashboard
 	m.busy = true
 	m.actionTitle = title
 	m.actionOutput = ""
 	m.actionError = ""
-	m.actionStart = time.Now()
-	m.actionCmd = form.commandPreview(projectDir, m.data.Config.ID)
+	m.actionStart = startedAt
+	m.actionCmd = command
 	ctx, cancel := context.WithCancel(context.Background())
 	m.actionCancel = cancel
 	m.canceling = false
@@ -501,6 +537,8 @@ func (m tuiDashboardModel) submitForm() (tea.Model, tea.Cmd) {
 			Canceled:    canceled,
 			CancelEvent: cancelEvent,
 			CancelErr:   cancelErr,
+			History:     historyIndex,
+			FinishedAt:  time.Now(),
 		}
 	}
 	return m, tea.Batch(runCmd, tuiSpinnerTick(m.spinner))
@@ -544,6 +582,17 @@ func (m tuiDashboardModel) actionResultView() string {
 	return b.String()
 }
 
+func (m tuiDashboardModel) commandHistoryView() string {
+	m.syncHistoryViewport()
+	var b strings.Builder
+	fmt.Fprintf(&b, "Code Crucible\n\nCommand History\n")
+	if strings.TrimSpace(m.historyView.View()) != "" {
+		fmt.Fprintf(&b, "\n%s\n", m.historyView.View())
+	}
+	b.WriteString("\nKeys: j/k scroll, pgup/pgdown page, b back to dashboard, q quit\n")
+	return b.String()
+}
+
 func (m tuiDashboardModel) actionProgressView() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Code Crucible\n\n")
@@ -551,10 +600,16 @@ func (m tuiDashboardModel) actionProgressView() string {
 	if !m.actionStart.IsZero() {
 		fmt.Fprintf(&b, "Elapsed: %s\n", formatTUIDuration(time.Since(m.actionStart)))
 	}
-	if strings.TrimSpace(m.actionCmd) != "" {
-		fmt.Fprintf(&b, "\nCommand\n%s\n", m.actionCmd)
+	if len(m.history) > 0 {
+		entry := m.history[len(m.history)-1]
+		if len(entry.Options) > 0 {
+			b.WriteString("\nSelected Options\n")
+			for _, option := range entry.Options {
+				fmt.Fprintf(&b, "%s: %s\n", option.Label, displayValue(option.Value))
+			}
+		}
 	}
-	b.WriteString("\nOutput will appear when the action finishes.\n")
+	b.WriteString("\nThe dashboard will refresh when this finishes. Press h there for command history.\n")
 	if m.canceling {
 		b.WriteString("Cancel requested; waiting for action cleanup.\n")
 	} else {
@@ -1146,6 +1201,24 @@ func formatTUIDuration(d time.Duration) string {
 	return fmt.Sprintf("%dh%02dm", hours, minutes)
 }
 
+func formatTUITimestamp(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Format("2006-01-02 15:04:05")
+}
+
+func tuiCommandHistoryHint(message string) string {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return "Press h for command history."
+	}
+	if strings.Contains(message, "command history") {
+		return message
+	}
+	return message + " Press h for command history."
+}
+
 func (m *tuiDashboardModel) configureBubbles() {
 	if m == nil {
 		return
@@ -1153,6 +1226,7 @@ func (m *tuiDashboardModel) configureBubbles() {
 	m.configureCandidateTable()
 	m.syncDetailViewport()
 	m.syncResultViewport()
+	m.syncHistoryViewport()
 }
 
 func (m *tuiDashboardModel) configureCandidateTable() {
@@ -1321,6 +1395,133 @@ func (m *tuiDashboardModel) syncResultViewport() {
 	m.result.Width = width
 	m.result.Height = height
 	m.result.SetContent(b.String())
+}
+
+func (m *tuiDashboardModel) syncHistoryViewport() {
+	if m == nil {
+		return
+	}
+	width := m.width
+	if width <= 0 {
+		width = 100
+	}
+	height := m.height - 6
+	if height < 10 {
+		height = 18
+	}
+	m.historyView.Width = width
+	m.historyView.Height = height
+	m.historyView.SetContent(m.commandHistoryContent())
+}
+
+func (m tuiDashboardModel) commandHistoryContent() string {
+	if len(m.history) == 0 {
+		return "No TUI commands have run in this session."
+	}
+	var b strings.Builder
+	for i := len(m.history) - 1; i >= 0; i-- {
+		entry := m.history[i]
+		fmt.Fprintf(&b, "%d. %s  %s\n", len(m.history)-i, entry.Title, entry.status())
+		fmt.Fprintf(&b, "Started: %s", formatTUITimestamp(entry.StartedAt))
+		if !entry.FinishedAt.IsZero() {
+			fmt.Fprintf(&b, "  Duration: %s", formatTUIDuration(entry.FinishedAt.Sub(entry.StartedAt)))
+		}
+		b.WriteString("\n")
+		if len(entry.Options) > 0 {
+			b.WriteString("Options\n")
+			for _, option := range entry.Options {
+				fmt.Fprintf(&b, "  %s: %s\n", option.Label, displayValue(option.Value))
+			}
+		}
+		if strings.TrimSpace(entry.Command) != "" {
+			fmt.Fprintf(&b, "Command\n  %s\n", entry.Command)
+		}
+		if entry.StdoutBytes > 0 || entry.StderrBytes > 0 {
+			fmt.Fprintf(&b, "Captured output: stdout %d B, stderr %d B\n", entry.StdoutBytes, entry.StderrBytes)
+		}
+		if entry.CancelEventPath != "" {
+			fmt.Fprintf(&b, "Cancellation event: %s\n", entry.CancelEventPath)
+		}
+		if len(entry.UpdatedCandidates) > 0 {
+			fmt.Fprintf(&b, "Marked canceled: %s\n", strings.Join(entry.UpdatedCandidates, ", "))
+		}
+		if entry.CancelError != "" {
+			fmt.Fprintf(&b, "Cancellation artifact update failed: %s\n", entry.CancelError)
+		}
+		if i > 0 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+func newTUICommandHistoryEntry(form tuiForm, command string, startedAt time.Time) tuiCommandHistoryEntry {
+	return tuiCommandHistoryEntry{
+		Title:     form.Title,
+		Action:    form.Action,
+		Options:   tuiFormHistoryOptions(form),
+		Command:   command,
+		StartedAt: startedAt,
+	}
+}
+
+func tuiFormHistoryOptions(form tuiForm) []tuiCommandHistoryOption {
+	options := make([]tuiCommandHistoryOption, 0, len(form.Fields))
+	for _, field := range form.Fields {
+		label := strings.TrimSpace(field.Label)
+		if label == "" {
+			label = field.Name
+		}
+		value := strings.TrimSpace(field.Value)
+		if field.Input.Width > 0 {
+			value = strings.TrimSpace(field.Input.Value())
+		}
+		options = append(options, tuiCommandHistoryOption{
+			Label: label,
+			Value: value,
+		})
+	}
+	return options
+}
+
+func (m *tuiDashboardModel) finishHistoryEntry(msg tuiActionDoneMsg) {
+	if m == nil || msg.History < 0 || msg.History >= len(m.history) {
+		return
+	}
+	entry := &m.history[msg.History]
+	entry.FinishedAt = msg.FinishedAt
+	if entry.FinishedAt.IsZero() {
+		entry.FinishedAt = time.Now()
+	}
+	entry.Code = msg.Code
+	entry.StdoutBytes = len([]byte(msg.Stdout))
+	entry.StderrBytes = len([]byte(msg.Stderr))
+	entry.Canceled = msg.Canceled
+	if msg.Err != nil {
+		entry.Error = msg.Err.Error()
+	} else if msg.Code != 0 {
+		entry.Error = fmt.Sprintf("exit status %d", msg.Code)
+	}
+	if msg.CancelEvent != nil {
+		entry.CancelEventPath = msg.CancelEvent.EventPath
+		entry.UpdatedCandidates = append([]string(nil), msg.CancelEvent.UpdatedCandidates...)
+	}
+	if msg.CancelErr != nil {
+		entry.CancelError = msg.CancelErr.Error()
+	}
+}
+
+func (entry tuiCommandHistoryEntry) status() string {
+	if entry.FinishedAt.IsZero() {
+		return "(running)"
+	}
+	if entry.Canceled {
+		return "(canceled)"
+	}
+	if strings.TrimSpace(entry.Error) != "" {
+		return "(failed: " + entry.Error + ")"
+	}
+	return "(complete)"
 }
 
 func (m tuiDashboardModel) candidateDetail() string {

@@ -73,7 +73,7 @@ cd /path/to/your/project
 crucible
 ```
 
-The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and forms for auto run setup, discovery, evaluator generation, competitor generation, adoption, promotion, evaluation, next-round preparation, evolution, reports, index rebuilds, archive queries, and candidate inspection. When a non-baseline candidate has passed, the dashboard selects it by default; otherwise it selects the first non-baseline candidate before falling back to the baseline. The candidate table is the picker for candidate-specific actions, so inspecting the selected candidate runs directly from the table instead of asking for an ID. The new-run form defaults to `run --auto`, so typing the optimization request and pressing Enter is enough to create the run, generate and validate an evaluator, record baseline metrics, and return to a leaderboard. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and show captured command output when the action finishes. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
+The TUI loads the selected run archive directly from `.crucible/runs/`, shows run status, leaderboard rows, selected candidate details, and forms for auto run setup, discovery, evaluator generation, competitor generation, adoption, promotion, evaluation, next-round preparation, evolution, reports, index rebuilds, archive queries, and candidate inspection. When a non-baseline candidate has passed, the dashboard selects it by default; otherwise it selects the first non-baseline candidate before falling back to the baseline. The candidate table is the picker for candidate-specific actions, so inspecting the selected candidate runs directly from the table instead of asking for an ID. The new-run form defaults to `run --auto`, so typing the optimization request and pressing Enter is enough to create the run, generate and validate an evaluator, record baseline metrics, and return to a leaderboard. The forms execute the same command paths as the shell CLI, show a live spinner with elapsed time while actions run, allow cancellation requests for long-running actions, and return to the dashboard when the action finishes. Press `h` to open the in-session command history, which records the selected options before each generated command plus completion status and captured output byte counts. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
 
 `crucible tui` remains an explicit alias for launching the same dashboard with options:
 
@@ -716,12 +716,13 @@ Current priorities:
 - [x] Make TUI candidate inspection act on the selected row without requiring candidate ID entry
 - [x] Make prompt-mode candidate inspection use a numbered selector with non-baseline defaults
 - [x] Make bare `crucible` launch the TUI and move the prompt workflow to `crucible prompt`
+- [x] Add a TUI command history screen and return to the dashboard after actions instead of showing raw output
 
 Deferred roadmap:
 
 - [ ] Add project or user preference presets for common low-prompt workflow defaults
 - [ ] Add a full provider install or marketplace flow after provider templates prove useful
-- [ ] Add a full TUI job manager with logs, history, parallel jobs, cancellation, and richer progress displays
+- [ ] Add a full TUI job manager with logs, parallel jobs, cancellation, and richer progress displays
 - [ ] Revisit pre-release planning after stability work has run for a few days
 - [ ] Revisit a gRPC external routing adapter when a concrete target project needs protocol-specific routing
 

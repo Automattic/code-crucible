@@ -313,7 +313,7 @@ func TestTUIFormEditingAcceptsSpacesAndBackspace(t *testing.T) {
 	}
 }
 
-func TestTUIActionProgressViewShowsElapsedAndCommand(t *testing.T) {
+func TestTUIActionProgressViewShowsElapsedAndSelectedOptions(t *testing.T) {
 	projectDir := t.TempDir()
 	dashboard := newTUIDashboardModel(tuiDashboardData{
 		ProjectDir: projectDir,
@@ -334,14 +334,80 @@ func TestTUIActionProgressViewShowsElapsedAndCommand(t *testing.T) {
 	for _, want := range []string{
 		"Running Generate Competitors",
 		"Elapsed: 1m30s",
-		"crucible generate",
-		"--run run-1",
-		"Output will appear when the action finishes.",
+		"Selected Options",
+		"Run: run-1",
+		"The dashboard will refresh when this finishes. Press h there for command history.",
 		"Keys: c or esc request cancellation",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("progress view did not contain %q:\n%s", want, view)
 		}
+	}
+}
+
+func TestTUICommandHistoryShowsOptionsBeforeCommand(t *testing.T) {
+	projectDir := t.TempDir()
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		ProjectDir: projectDir,
+		Config: model.RunConfig{
+			ID:       "run-1",
+			Agent:    "codex",
+			Variants: 2,
+		},
+	}, "")
+	dashboard.openForm(tuiActionRun)
+	setTUIFormValue(&dashboard.form, "optimize", "make ranking faster")
+	setTUIFormValue(&dashboard.form, "generate", "true")
+
+	updated, cmd := dashboard.submitForm()
+	if cmd == nil {
+		t.Fatal("submitForm did not return an async command")
+	}
+	running := updated.(tuiDashboardModel)
+	if len(running.history) != 1 {
+		t.Fatalf("history entries = %d, want 1", len(running.history))
+	}
+
+	updated, _ = running.Update(tuiActionDoneMsg{
+		Title:      "Auto Run",
+		Code:       0,
+		Stdout:     "created run\n",
+		Data:       running.data,
+		History:    0,
+		FinishedAt: running.history[0].StartedAt.Add(2 * time.Second),
+	})
+	done := updated.(tuiDashboardModel)
+	if done.mode != tuiModeDashboard {
+		t.Fatalf("mode after action done = %v, want dashboard", done.mode)
+	}
+
+	updated, _ = done.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	history := updated.(tuiDashboardModel)
+	view := history.View()
+	for _, want := range []string{
+		"Command History",
+		"Auto Run  (complete)",
+		"Options",
+		"Optimization request: make ranking faster",
+		"  Generate competitors: true",
+		"Command",
+		"crucible run",
+		"--generate",
+		"Captured output: stdout 12 B, stderr 0 B",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("history view did not contain %q:\n%s", want, view)
+		}
+	}
+	optionsIndex := strings.Index(view, "Options")
+	commandIndex := -1
+	if optionsIndex >= 0 {
+		if offset := strings.Index(view[optionsIndex:], "Command"); offset >= 0 {
+			commandIndex = optionsIndex + offset
+		}
+	}
+	if optionsIndex < 0 || commandIndex < 0 || optionsIndex > commandIndex {
+		t.Fatalf("history did not list options before command:\n%s", view)
 	}
 }
 
@@ -381,19 +447,32 @@ func TestTUIBusyCancelRequestsCancellation(t *testing.T) {
 }
 
 func TestTUIActionDoneCanceledShowsArtifactUpdate(t *testing.T) {
-	dashboard := newTUIDashboardModel(tuiDashboardData{}, "")
-	updated, _ := dashboard.Update(tuiActionDoneMsg{
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		Config: model.RunConfig{ID: "run-1"},
+	}, "")
+	dashboard.openForm(tuiActionEvaluate)
+	updated, cmd := dashboard.submitForm()
+	if cmd == nil {
+		t.Fatal("submitForm did not return an async command")
+	}
+	running := updated.(tuiDashboardModel)
+	updated, _ = running.Update(tuiActionDoneMsg{
 		Title:    "Evaluate Candidates",
 		Canceled: true,
 		CancelEvent: &run.CancellationEvent{
 			EventPath:         "/tmp/run/events/cancellations.jsonl",
 			UpdatedCandidates: []string{"candidate-0001"},
 		},
+		History:    0,
+		FinishedAt: running.history[0].StartedAt.Add(time.Second),
 	})
 	done := updated.(tuiDashboardModel)
-	view := done.View()
+	if done.mode != tuiModeDashboard {
+		t.Fatalf("mode after cancel = %v, want dashboard", done.mode)
+	}
+	view := done.commandHistoryContent()
 	for _, want := range []string{
-		"Evaluate Candidates canceled",
+		"Evaluate Candidates  (canceled)",
 		"candidate-0001",
 		"Cancellation event: /tmp/run/events/cancellations.jsonl",
 	} {
