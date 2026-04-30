@@ -66,6 +66,9 @@ func TestTUIDashboardViewShowsRunCandidatesAndCommands(t *testing.T) {
 	view := newTUIDashboardModel(data, "").View()
 	for _, want := range []string{
 		"Code Crucible",
+		"Tournament:",
+		"Goal: make ranking faster",
+		"AI agent:",
 		"make ranking faster",
 		"candidate-0001",
 		"Candidate Detail",
@@ -195,6 +198,49 @@ func TestTUIApplyKeyOpensSelectedCandidateForm(t *testing.T) {
 	}
 }
 
+func TestTUINeedsEvaluatorDashboardGuidesToTestHarness(t *testing.T) {
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		ProjectDir: "/tmp/code crucible fixture",
+		Config:     model.RunConfig{ID: "run-1"},
+		Results: []model.CandidateResult{
+			{
+				Candidate: model.Candidate{ID: "candidate-0000-baseline", Baseline: true},
+				Status:    model.CandidateStatusNeedsEvaluator,
+			},
+		},
+	}, "")
+
+	view := dashboard.View()
+	for _, want := range []string{
+		"[T] Create test harness: scoring needs an evaluator first",
+		"[G] Create candidates after the harness exists",
+		"[R] Review selected candidate (candidate-0000-baseline)",
+		"Keys: [T] create test harness, [G] create candidates, [R] review",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("needs-evaluator dashboard did not contain %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "[A] Apply selected candidate") || strings.Contains(view, "[A] apply") {
+		t.Fatalf("needs-evaluator dashboard offered applying baseline:\n%s", view)
+	}
+
+	updated, _ := dashboard.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	form := updated.(tuiDashboardModel)
+	if form.mode != tuiModeForm || form.form.Action != tuiActionEvaluator {
+		t.Fatalf("T key mode/action = %v/%v, want evaluator form", form.mode, form.form.Action)
+	}
+	if !strings.Contains(form.View(), "Create a test harness before scoring candidates.") {
+		t.Fatalf("test harness form did not explain why it opened:\n%s", form.View())
+	}
+
+	updated, _ = dashboard.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	blocked := updated.(tuiDashboardModel)
+	if !strings.Contains(blocked.View(), "Apply is available after a non-baseline candidate is selected.") {
+		t.Fatalf("apply key did not explain baseline restriction:\n%s", blocked.View())
+	}
+}
+
 func TestTUIStartsWithoutExistingRun(t *testing.T) {
 	projectDir := t.TempDir()
 	data, message, autoStart, err := loadInitialTUIDashboard(projectDir, "latest")
@@ -211,7 +257,17 @@ func TestTUIStartsWithoutExistingRun(t *testing.T) {
 	dashboard.openForm(tuiActionRun)
 	dashboard.form.Message = message
 	view := dashboard.View()
-	for _, want := range []string{"Start Tournament", "No tournaments found yet", "What do you want to improve?"} {
+	for _, want := range []string{
+		"Start Tournament",
+		"No tournaments found yet",
+		"What do you want to improve?",
+		"reduce p95 latency in checkout pricing",
+		"Code to optimize: auto-detect when blank",
+		"AI agent: project default",
+		"CLI Equivalent",
+		"'<improvement request>'",
+		"ctrl+c quit",
+	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("empty project startup view did not contain %q:\n%s", want, view)
 		}
@@ -223,7 +279,7 @@ func TestTUIStartsWithoutExistingRun(t *testing.T) {
 		t.Fatalf("mode after esc = %v, want dashboard", emptyDashboard.mode)
 	}
 	view = emptyDashboard.View()
-	for _, want := range []string{"No run is loaded yet", "[S] Start tournament:", "[?] Advanced:"} {
+	for _, want := range []string{"No tournament is loaded yet", "[S] Start tournament:", "[?] Advanced:"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("empty dashboard did not contain %q after esc:\n%s", want, view)
 		}
@@ -247,7 +303,7 @@ func TestTUIStartupKeepsDashboardForBrokenRun(t *testing.T) {
 		t.Fatalf("initial run ID = %q, want empty for broken run", data.Config.ID)
 	}
 	view := newTUIDashboardModel(data, message).View()
-	for _, want := range []string{"No run loaded yet", "broken-run", "[S] Start tournament:"} {
+	for _, want := range []string{"No tournament loaded yet", "broken-run", "[S] Start tournament:"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("broken-run dashboard did not contain %q:\n%s", want, view)
 		}
@@ -433,11 +489,46 @@ func TestTUIActionProgressViewShowsElapsedAndSelectedOptions(t *testing.T) {
 		"Elapsed: 1m30s",
 		"Selected Options",
 		"Tournament: run-1",
-		"The dashboard will refresh when this finishes. Press h there for command history.",
+		"Expected Steps",
+		"Ask the AI agent to create candidate code",
+		"Import generated candidates into the tournament archive",
+		"The dashboard will refresh when this finishes. Press h there for command history and captured output summaries.",
 		"Keys: c or esc request cancellation",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("progress view did not contain %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestTUIRunProgressViewExplainsFullTournamentFlow(t *testing.T) {
+	projectDir := t.TempDir()
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		ProjectDir: projectDir,
+		Config: model.RunConfig{
+			Variants: 2,
+		},
+	}, "")
+	dashboard.openForm(tuiActionRun)
+	setTUIFormValue(&dashboard.form, "optimize", "make ranking faster")
+
+	updated, cmd := dashboard.submitForm()
+	if cmd == nil {
+		t.Fatal("submitForm did not return an async command")
+	}
+	running := updated.(tuiDashboardModel)
+	view := running.View()
+	for _, want := range []string{
+		"Running Start Tournament",
+		"Expected Steps",
+		"Find source code, interfaces, and test setup",
+		"Create the tournament archive and baseline candidate",
+		"Create candidate code with the selected AI agent",
+		"Test and score the baseline and candidates",
+		"Refresh the leaderboard",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("run progress view did not contain %q:\n%s", want, view)
 		}
 	}
 }

@@ -95,11 +95,12 @@ type tuiForm struct {
 }
 
 type tuiFormField struct {
-	Name     string
-	Label    string
-	Value    string
-	Required bool
-	Input    textinput.Model
+	Name        string
+	Label       string
+	Value       string
+	Placeholder string
+	Required    bool
+	Input       textinput.Model
 }
 
 type tuiActionDoneMsg struct {
@@ -207,7 +208,7 @@ func loadInitialTUIDashboard(projectDir, runSelector string) (tuiDashboardData, 
 	if tuiProjectHasNoRuns(absProject) {
 		return data, "No tournaments found yet. Enter an improvement request to start.", true, nil
 	}
-	return data, fmt.Sprintf("No run loaded yet: %v", err), false, nil
+	return data, fmt.Sprintf("No tournament loaded yet: %v", err), false, nil
 }
 
 func tuiProjectHasNoRuns(projectDir string) bool {
@@ -412,6 +413,10 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = "No candidate is selected."
 				return m, nil
 			}
+			if m.selectedCandidateIsBaseline() {
+				m.message = "Apply is available after a non-baseline candidate is selected."
+				return m, nil
+			}
 			m.openForm(tuiActionPromote)
 		case "c":
 			if !m.hasLoadedRun() {
@@ -423,6 +428,11 @@ func (m tuiDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.hasLoadedRun() {
 				m.message = "Start a tournament first."
 				return m, nil
+			}
+			if m.needsEvaluator() {
+				m.openForm(tuiActionEvaluator)
+				m.form.Message = "Create a test harness before scoring candidates."
+				break
 			}
 			m.openForm(tuiActionEvaluate)
 		case "g":
@@ -482,12 +492,12 @@ func (m tuiDashboardModel) dashboardView() string {
 		fmt.Fprintf(&b, "Status: %s\n", m.message)
 	}
 	if strings.TrimSpace(m.data.Config.ID) == "" {
-		b.WriteString("\nNo run is loaded yet.\n\n")
+		b.WriteString("\nNo tournament is loaded yet.\n\n")
 	} else {
-		fmt.Fprintf(&b, "Run: %s\n", m.data.Config.ID)
+		fmt.Fprintf(&b, "Tournament: %s\n", m.data.Config.ID)
 		fmt.Fprintf(&b, "Created: %s\n", m.data.Config.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
-		fmt.Fprintf(&b, "Optimize: %s\n", shorten(m.data.Config.Optimize, maxInt(24, width-10)))
-		fmt.Fprintf(&b, "Agent: %s  Round: %s  Variants: %d  External: %s\n",
+		fmt.Fprintf(&b, "Goal: %s\n", shorten(m.data.Config.Optimize, maxInt(24, width-10)))
+		fmt.Fprintf(&b, "AI agent: %s  Round: %s  Candidates/request: %d  External requests: %s\n",
 			displayValue(m.data.Config.Agent),
 			filepath.Base(filepath.FromSlash(m.data.Config.RoundDir)),
 			m.data.Config.Variants,
@@ -498,7 +508,7 @@ func (m tuiDashboardModel) dashboardView() string {
 	}
 
 	if len(m.data.Results) == 0 {
-		b.WriteString("No candidates are archived for this run.\n\n")
+		b.WriteString("No candidates have been created for this tournament yet.\n\n")
 	} else {
 		b.WriteString("Leaderboard\n")
 		b.WriteString(m.table.View())
@@ -512,8 +522,7 @@ func (m tuiDashboardModel) dashboardView() string {
 	for _, action := range m.nextActions() {
 		fmt.Fprintf(&b, "%s\n", action)
 	}
-	b.WriteString("\nKeys: [S] start, [R] review, [A] apply, [C] continue, [T] test\n")
-	b.WriteString("      [G] create candidates, [E] export, [H] history, [?] advanced, [Q] quit\n")
+	b.WriteString(m.dashboardKeyHelp())
 	return b.String()
 }
 
@@ -640,8 +649,8 @@ func (m tuiDashboardModel) formView() string {
 		}
 		fmt.Fprintf(&b, "%s %s%s: %s\n", marker, field.Label, required, field.Input.View())
 	}
-	fmt.Fprintf(&b, "\nCommand Preview\n%s\n", m.form.commandPreview(m.data.ProjectDir, m.data.Config.ID))
-	b.WriteString("\nKeys: type/edit, tab/down next field, up previous field, ctrl+u clear, enter submit, esc cancel\n")
+	fmt.Fprintf(&b, "\nCLI Equivalent\n%s\n", m.form.commandPreview(m.data.ProjectDir, m.data.Config.ID))
+	b.WriteString("\nKeys: type/edit, tab/down next field, up previous field, ctrl+u clear, enter submit, esc cancel, ctrl+c quit\n")
 	return b.String()
 }
 
@@ -709,8 +718,14 @@ func (m tuiDashboardModel) actionProgressView() string {
 				fmt.Fprintf(&b, "%s: %s\n", option.Label, displayValue(option.Value))
 			}
 		}
+		if steps := tuiActionProgressSteps(entry); len(steps) > 0 {
+			b.WriteString("\nExpected Steps\n")
+			for i, step := range steps {
+				fmt.Fprintf(&b, "%d. %s\n", i+1, step)
+			}
+		}
 	}
-	b.WriteString("\nThe dashboard will refresh when this finishes. Press h there for command history.\n")
+	b.WriteString("\nThe dashboard will refresh when this finishes. Press h there for command history and captured output summaries.\n")
 	if m.canceling {
 		b.WriteString("Cancel requested; waiting for action cleanup.\n")
 	} else {
@@ -733,12 +748,12 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 			Action: action,
 			Title:  "Start Tournament",
 			Fields: []tuiFormField{
-				{Name: "optimize", Label: "What do you want to improve?", Required: true},
+				{Name: "optimize", Label: "What do you want to improve?", Placeholder: "reduce p95 latency in checkout pricing", Required: true},
 				{Name: "auto", Label: "Find code and tests automatically", Value: "true"},
 				{Name: "generate", Label: "Create candidate code", Value: "true"},
 				{Name: "evaluate", Label: "Test and score candidates", Value: "true"},
-				{Name: "source_path", Label: "Code to optimize"},
-				{Name: "agent", Label: "AI agent", Value: agent},
+				{Name: "source_path", Label: "Code to optimize", Placeholder: "auto-detect when blank"},
+				{Name: "agent", Label: "AI agent", Value: agent, Placeholder: "project default"},
 				{Name: "variants", Label: "Candidates to create", Value: strconv.Itoa(variants)},
 			},
 		}
@@ -747,7 +762,7 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 			Action: action,
 			Title:  "Discovery Only",
 			Fields: []tuiFormField{
-				{Name: "request", Label: "What do you want to improve?", Required: true},
+				{Name: "request", Label: "What do you want to improve?", Placeholder: "find the code behind checkout pricing", Required: true},
 				{Name: "agent", Label: "Discovery agent", Value: "local"},
 			},
 		}
@@ -757,7 +772,7 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 			Title:  "Create Candidates",
 			Fields: []tuiFormField{
 				{Name: "run", Label: "Tournament", Value: runID, Required: true},
-				{Name: "agent", Label: "AI agent", Value: agent},
+				{Name: "agent", Label: "AI agent", Value: agent, Placeholder: "run or project default"},
 			},
 		}
 	case tuiActionEvaluator:
@@ -766,7 +781,7 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 			Title:  "Create Test Harness",
 			Fields: []tuiFormField{
 				{Name: "run", Label: "Tournament", Value: runID, Required: true},
-				{Name: "agent", Label: "AI agent", Value: agent},
+				{Name: "agent", Label: "AI agent", Value: agent, Placeholder: "run or project default"},
 				{Name: "validation_timeout", Label: "Validation timeout", Value: "60s"},
 			},
 		}
@@ -776,9 +791,9 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 			Title:  "Test & Score Candidates",
 			Fields: []tuiFormField{
 				{Name: "run", Label: "Tournament", Value: runID, Required: true},
-				{Name: "candidate", Label: "Only test this candidate"},
+				{Name: "candidate", Label: "Only test this candidate", Placeholder: "all candidates"},
 				{Name: "jobs", Label: "Parallel tests", Value: "1"},
-				{Name: "external_routing", Label: "Container network routing"},
+				{Name: "external_routing", Label: "Container network routing", Placeholder: "default routing"},
 			},
 		}
 	case tuiActionAdopt:
@@ -787,7 +802,7 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 			Title:  "Import Generated Candidates",
 			Fields: []tuiFormField{
 				{Name: "run", Label: "Tournament", Value: runID, Required: true},
-				{Name: "model", Label: "Model"},
+				{Name: "model", Label: "Model", Placeholder: "provider default"},
 				{Name: "json", Label: "Machine-readable output", Value: "false"},
 			},
 		}
@@ -830,7 +845,7 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 			Title:  "Export Report",
 			Fields: []tuiFormField{
 				{Name: "run", Label: "Tournament", Value: runID, Required: true},
-				{Name: "output", Label: "Output path"},
+				{Name: "output", Label: "Output path", Placeholder: "default report path"},
 				{Name: "json", Label: "Machine-readable output", Value: "false"},
 			},
 		}
@@ -851,7 +866,7 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 				{Name: "kind", Label: "Kind", Value: "runs", Required: true},
 				{Name: "limit", Label: "Limit", Value: "10"},
 				{Name: "run", Label: "Tournament for candidates", Value: runID},
-				{Name: "status", Label: "Candidate status"},
+				{Name: "status", Label: "Candidate status", Placeholder: "any status"},
 			},
 		}
 	case tuiActionInspect:
@@ -1079,10 +1094,18 @@ func (f tuiForm) commandPreview(projectDir, runID string) string {
 		if parseTUIBool(f.value("evaluate")) {
 			args = append(args, "--evaluate")
 		}
-		args = append(args, shellQuote(f.value("optimize")))
+		task := f.value("optimize")
+		if strings.TrimSpace(task) == "" {
+			task = "<improvement request>"
+		}
+		args = append(args, shellQuote(task))
 		return strings.Join(args, " ")
 	case tuiActionDiscover:
-		return fmt.Sprintf("crucible discover --project-dir %s --agent %s %s", project, shellQuote(defaultString(f.value("agent"), "local")), shellQuote(f.value("request")))
+		request := f.value("request")
+		if strings.TrimSpace(request) == "" {
+			request = "<improvement request>"
+		}
+		return fmt.Sprintf("crucible discover --project-dir %s --agent %s %s", project, shellQuote(defaultString(f.value("agent"), "local")), shellQuote(request))
 	case tuiActionGenerate:
 		args := []string{"crucible", "generate", "--project-dir", project, "--run", shellQuote(defaultString(f.value("run"), runID))}
 		if agent := strings.TrimSpace(f.value("agent")); agent != "" {
@@ -1222,7 +1245,7 @@ func (f *tuiForm) configureInputs(width int) {
 		if field.Input.Width == 0 {
 			input := textinput.New()
 			input.Prompt = ""
-			input.Placeholder = field.Label
+			input.Placeholder = field.Placeholder
 			input.SetValue(field.Value)
 			input.SetCursor(len([]rune(field.Value)))
 			field.Input = input
@@ -1556,6 +1579,119 @@ func (m tuiDashboardModel) commandHistoryContent() string {
 	return b.String()
 }
 
+func tuiActionProgressSteps(entry tuiCommandHistoryEntry) []string {
+	switch entry.Action {
+	case tuiActionRun:
+		steps := []string{}
+		if tuiHistoryOptionBool(entry.Options, "Find code and tests automatically") {
+			steps = append(steps, "Find source code, interfaces, and test setup")
+		} else {
+			steps = append(steps, "Use the supplied code path and run settings")
+		}
+		steps = append(steps, "Create the tournament archive and baseline candidate")
+		if tuiHistoryOptionBool(entry.Options, "Create candidate code") {
+			steps = append(steps, "Create candidate code with the selected AI agent")
+		}
+		if tuiHistoryOptionBool(entry.Options, "Test and score candidates") {
+			steps = append(steps, "Test and score the baseline and candidates")
+		}
+		steps = append(steps, "Refresh the leaderboard")
+		return steps
+	case tuiActionDiscover:
+		return []string{
+			"Search for likely source files and interfaces",
+			"Write a discovery plan into the work area",
+			"Refresh the dashboard",
+		}
+	case tuiActionGenerate:
+		return []string{
+			"Ask the AI agent to create candidate code",
+			"Import generated candidates into the tournament archive",
+			"Refresh the leaderboard",
+		}
+	case tuiActionEvaluator:
+		return []string{
+			"Ask the AI agent to draft the test harness",
+			"Validate the harness against the baseline candidate",
+			"Record baseline metrics and refresh the leaderboard",
+		}
+	case tuiActionEvaluate:
+		return []string{
+			"Run the test harness for selected candidates",
+			"Record correctness, timing, memory, CPU, and external-call results",
+			"Update scores and refresh the leaderboard",
+		}
+	case tuiActionAdopt:
+		return []string{
+			"Scan generated candidate directories",
+			"Validate candidate metadata and required files",
+			"Add valid candidates to the leaderboard",
+		}
+	case tuiActionPromote:
+		applyStep := "Apply the candidate code to the project"
+		if tuiHistoryOptionBool(entry.Options, "Preview only") {
+			applyStep = "Preview the project files that would change"
+		}
+		return []string{
+			"Validate the selected candidate and target source path",
+			applyStep,
+			"Write a promotion report into the run archive",
+		}
+	case tuiActionNextRound:
+		return []string{
+			"Select leading candidates to carry forward",
+			"Create the next-round work area and prompt",
+			"Refresh the dashboard",
+		}
+	case tuiActionEvolve:
+		return []string{
+			"Carry forward the strongest candidates",
+			"Create and import new candidate code",
+			"Test, score, and refresh the leaderboard",
+		}
+	case tuiActionReport:
+		return []string{
+			"Render the tournament report",
+			"Write the report artifact",
+			"Refresh command history",
+		}
+	case tuiActionIndex:
+		return []string{
+			"Scan tournament archives",
+			"Rebuild the archive index",
+			"Refresh command history",
+		}
+	case tuiActionQuery:
+		return []string{
+			"Read the archive index",
+			"Filter matching records",
+			"Show the results",
+		}
+	case tuiActionInspect:
+		return []string{
+			"Read selected candidate artifacts",
+			"Summarize metrics, verdicts, and source paths",
+			"Refresh command history",
+		}
+	default:
+		return nil
+	}
+}
+
+func tuiHistoryOptionBool(options []tuiCommandHistoryOption, label string) bool {
+	value, ok := tuiHistoryOptionValue(options, label)
+	return ok && parseTUIBool(value)
+}
+
+func tuiHistoryOptionValue(options []tuiCommandHistoryOption, label string) (string, bool) {
+	for _, option := range options {
+		if strings.EqualFold(strings.TrimSpace(option.Label), strings.TrimSpace(label)) {
+			return option.Value, true
+		}
+	}
+	return "", false
+}
+
 func newTUICommandHistoryEntry(form tuiForm, command string, startedAt time.Time) tuiCommandHistoryEntry {
 	return tuiCommandHistoryEntry{
 		Title:     form.Title,
@@ -1670,6 +1806,20 @@ func (m tuiDashboardModel) nextActions() []string {
 			"[?] Advanced: Discovery only and lower-frequency tools",
 		}
 	}
+	if m.needsEvaluator() {
+		actions := []string{
+			"[T] Create test harness: scoring needs an evaluator first",
+			"[G] Create candidates after the harness exists",
+			"[S] Start new tournament",
+			"[H] Command history",
+			"[?] Advanced tools",
+		}
+		if len(m.data.Results) > 0 {
+			selected := clampInt(m.selected, 0, len(m.data.Results)-1)
+			actions = append(actions, fmt.Sprintf("[R] Review selected candidate (%s)", m.data.Results[selected].Candidate.ID))
+		}
+		return actions
+	}
 	actions := []string{
 		"[S] Start new tournament",
 		"[G] Create more candidates",
@@ -1681,12 +1831,31 @@ func (m tuiDashboardModel) nextActions() []string {
 	}
 	if len(m.data.Results) > 0 {
 		candidateID := m.data.Results[m.selected].Candidate.ID
-		actions = append(actions,
-			fmt.Sprintf("[R] Review selected candidate (%s)", candidateID),
-			fmt.Sprintf("[A] Apply selected candidate (%s)", candidateID),
-		)
+		actions = append(actions, fmt.Sprintf("[R] Review selected candidate (%s)", candidateID))
+		if !m.selectedCandidateIsBaseline() {
+			actions = append(actions, fmt.Sprintf("[A] Apply selected candidate (%s)", candidateID))
+		}
 	}
 	return actions
+}
+
+func (m tuiDashboardModel) dashboardKeyHelp() string {
+	if !m.hasLoadedRun() {
+		return "\nKeys: [S] start, [?] advanced, [Q] quit\n"
+	}
+	if m.needsEvaluator() {
+		if len(m.data.Results) > 0 {
+			return "\nKeys: [T] create test harness, [G] create candidates, [R] review\n" +
+				"      [S] start, [H] history, [?] advanced, [Q] quit\n"
+		}
+		return "\nKeys: [T] create test harness, [S] start, [H] history, [?] advanced, [Q] quit\n"
+	}
+	if m.selectedCandidateIsBaseline() {
+		return "\nKeys: [S] start, [R] review, [C] continue, [T] test\n" +
+			"      [G] create candidates, [E] export, [H] history, [?] advanced, [Q] quit\n"
+	}
+	return "\nKeys: [S] start, [R] review, [A] apply, [C] continue, [T] test\n" +
+		"      [G] create candidates, [E] export, [H] history, [?] advanced, [Q] quit\n"
 }
 
 func (m tuiDashboardModel) advancedActions() []tuiAdvancedAction {
@@ -1744,6 +1913,27 @@ func (m tuiDashboardModel) selectedCandidateID() string {
 	}
 	selected := clampInt(m.selected, 0, len(m.data.Results)-1)
 	return m.data.Results[selected].Candidate.ID
+}
+
+func (m tuiDashboardModel) selectedCandidateIsBaseline() bool {
+	if len(m.data.Results) == 0 {
+		return false
+	}
+	selected := clampInt(m.selected, 0, len(m.data.Results)-1)
+	return m.data.Results[selected].Candidate.Baseline
+}
+
+func (m tuiDashboardModel) needsEvaluator() bool {
+	needsEvaluator := false
+	for _, result := range m.data.Results {
+		if result.Status == model.CandidateStatusNeedsEvaluator {
+			needsEvaluator = true
+		}
+		if result.Status == model.CandidateStatusPassed || result.Status == model.CandidateStatusFailed {
+			return false
+		}
+	}
+	return needsEvaluator
 }
 
 func defaultCandidateSelectionIndex(results []model.CandidateResult) int {
