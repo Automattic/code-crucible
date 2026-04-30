@@ -197,17 +197,59 @@ func TestTUIApplyKeyOpensSelectedCandidateForm(t *testing.T) {
 
 func TestTUIStartsWithoutExistingRun(t *testing.T) {
 	projectDir := t.TempDir()
-	data, message, err := loadInitialTUIDashboard(projectDir, "latest")
+	data, message, autoStart, err := loadInitialTUIDashboard(projectDir, "latest")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if data.Config.ID != "" {
 		t.Fatalf("initial run ID = %q, want empty", data.Config.ID)
 	}
-	view := newTUIDashboardModel(data, message).View()
+	if !autoStart {
+		t.Fatal("empty project did not request Start Tournament on launch")
+	}
+	dashboard := newTUIDashboardModel(data, message)
+	dashboard.openForm(tuiActionRun)
+	dashboard.form.Message = message
+	view := dashboard.View()
+	for _, want := range []string{"Start Tournament", "No tournaments found yet", "What do you want to improve?"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("empty project startup view did not contain %q:\n%s", want, view)
+		}
+	}
+
+	updated, _ := dashboard.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	emptyDashboard := updated.(tuiDashboardModel)
+	if emptyDashboard.mode != tuiModeDashboard {
+		t.Fatalf("mode after esc = %v, want dashboard", emptyDashboard.mode)
+	}
+	view = emptyDashboard.View()
 	for _, want := range []string{"No run is loaded yet", "[S] Start tournament:", "[?] Advanced:"} {
 		if !strings.Contains(view, want) {
-			t.Fatalf("empty dashboard did not contain %q:\n%s", want, view)
+			t.Fatalf("empty dashboard did not contain %q after esc:\n%s", want, view)
+		}
+	}
+}
+
+func TestTUIStartupKeepsDashboardForBrokenRun(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectDir, ".crucible", "runs", "broken-run"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	data, message, autoStart, err := loadInitialTUIDashboard(projectDir, "latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if autoStart {
+		t.Fatal("broken run archive requested Start Tournament instead of showing status")
+	}
+	if data.Config.ID != "" {
+		t.Fatalf("initial run ID = %q, want empty for broken run", data.Config.ID)
+	}
+	view := newTUIDashboardModel(data, message).View()
+	for _, want := range []string{"No run loaded yet", "broken-run", "[S] Start tournament:"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("broken-run dashboard did not contain %q:\n%s", want, view)
 		}
 	}
 }

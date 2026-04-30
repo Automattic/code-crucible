@@ -20,6 +20,7 @@ import (
 
 	"github.com/Automattic/code-crucible/internal/archive"
 	"github.com/Automattic/code-crucible/internal/model"
+	"github.com/Automattic/code-crucible/internal/project"
 	cruciblerun "github.com/Automattic/code-crucible/internal/run"
 	"github.com/Automattic/code-crucible/internal/scoring"
 )
@@ -156,10 +157,15 @@ func runTUI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		stdin = os.Stdin
 	}
 
-	data, message, err := loadInitialTUIDashboard(*projectDir, *runID)
+	data, message, autoStart, err := loadInitialTUIDashboard(*projectDir, *runID)
 	if err != nil {
 		fmt.Fprintf(stderr, "tui failed: %v\n", err)
 		return 1
+	}
+	model := newTUIDashboardModel(data, message)
+	if autoStart {
+		model.openForm(tuiActionRun)
+		model.form.Message = message
 	}
 
 	programOptions := []tea.ProgramOption{
@@ -169,7 +175,7 @@ func runTUI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if !*noAltScreen {
 		programOptions = append(programOptions, tea.WithAltScreen())
 	}
-	program := tea.NewProgram(newTUIDashboardModel(data, message), programOptions...)
+	program := tea.NewProgram(model, programOptions...)
 	if _, err := program.Run(); err != nil {
 		fmt.Fprintf(stderr, "tui failed: %v\n", err)
 		return 1
@@ -177,27 +183,48 @@ func runTUI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func loadInitialTUIDashboard(projectDir, runSelector string) (tuiDashboardData, string, error) {
+func loadInitialTUIDashboard(projectDir, runSelector string) (tuiDashboardData, string, bool, error) {
 	data, err := loadTUIDashboard(projectDir, runSelector)
 	if err == nil {
-		return data, "", nil
+		return data, "", false, nil
 	}
 	selector := strings.TrimSpace(runSelector)
 	if selector != "" && selector != "latest" {
-		return tuiDashboardData{}, "", err
+		return tuiDashboardData{}, "", false, err
 	}
 	absProject, absErr := filepath.Abs(defaultString(projectDir, "."))
 	if absErr != nil {
-		return tuiDashboardData{}, "", absErr
+		return tuiDashboardData{}, "", false, absErr
 	}
-	return tuiDashboardData{
+	data = tuiDashboardData{
 		ProjectDir: absProject,
 		Config: model.RunConfig{
 			ID:       "",
 			Variants: defaultVariantCount,
 			External: model.ExternalPolicy{Mode: model.ExternalModeDeny},
 		},
-	}, fmt.Sprintf("No run loaded yet: %v", err), nil
+	}
+	if tuiProjectHasNoRuns(absProject) {
+		return data, "No tournaments found yet. Enter an improvement request to start.", true, nil
+	}
+	return data, fmt.Sprintf("No run loaded yet: %v", err), false, nil
+}
+
+func tuiProjectHasNoRuns(projectDir string) bool {
+	runsDir := filepath.Join(project.WorkDir(projectDir), "runs")
+	entries, err := os.ReadDir(runsDir)
+	if os.IsNotExist(err) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 func loadTUIDashboard(projectDir, runSelector string) (tuiDashboardData, error) {
