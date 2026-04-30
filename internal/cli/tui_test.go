@@ -69,13 +69,15 @@ func TestTUIDashboardViewShowsRunCandidatesAndCommands(t *testing.T) {
 		"make ranking faster",
 		"candidate-0001",
 		"Candidate Detail",
-		"Generate competitors: press g",
-		"Evaluate candidates:  press e",
-		"Adopt generated:      press a",
-		"Prepare next round:   press x",
-		"Rebuild index:        press i",
-		"Promote selected:    press m (candidate-0001)",
-		"Inspect selected:     press p (candidate-0001)",
+		"[S] Start new tournament",
+		"[G] Create more candidates",
+		"[T] Test & score candidates",
+		"[C] Continue tournament",
+		"[E] Export report",
+		"[?] Advanced tools",
+		"[R] Review selected candidate (candidate-0001)",
+		"[A] Apply selected candidate (candidate-0001)",
+		"[S] start, [R] review, [A] apply",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("dashboard view did not contain %q:\n%s", want, view)
@@ -135,7 +137,7 @@ func TestTUIDashboardDefaultsToFirstNonBaselinePassedCandidate(t *testing.T) {
 	}
 }
 
-func TestTUIInspectKeyRunsSelectedCandidateDirectly(t *testing.T) {
+func TestTUIReviewKeyRunsSelectedCandidateDirectly(t *testing.T) {
 	dashboard := newTUIDashboardModel(tuiDashboardData{
 		ProjectDir: "/tmp/code crucible fixture",
 		Config: model.RunConfig{
@@ -153,18 +155,43 @@ func TestTUIInspectKeyRunsSelectedCandidateDirectly(t *testing.T) {
 		},
 	}, "")
 
-	updated, cmd := dashboard.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	updated, cmd := dashboard.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	running := updated.(tuiDashboardModel)
 	if cmd == nil {
-		t.Fatal("inspect key did not start an action")
+		t.Fatal("review key did not start an action")
 	}
 	if !running.busy {
-		t.Fatal("inspect key did not enter busy action state")
+		t.Fatal("review key did not enter busy action state")
 	}
 	for _, want := range []string{"crucible inspect", "--run run-1", "candidate-0001"} {
 		if !strings.Contains(running.actionCmd, want) {
-			t.Fatalf("inspect command did not contain %q:\n%s", want, running.actionCmd)
+			t.Fatalf("review command did not contain %q:\n%s", want, running.actionCmd)
 		}
+	}
+}
+
+func TestTUIApplyKeyOpensSelectedCandidateForm(t *testing.T) {
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		ProjectDir: "/tmp/code crucible fixture",
+		Config:     model.RunConfig{ID: "run-1"},
+		Results: []model.CandidateResult{
+			{
+				Candidate: model.Candidate{ID: "candidate-0001"},
+				Status:    model.CandidateStatusPassed,
+			},
+		},
+	}, "")
+
+	updated, _ := dashboard.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	form := updated.(tuiDashboardModel)
+	if form.mode != tuiModeForm {
+		t.Fatalf("mode after apply key = %v, want form", form.mode)
+	}
+	if form.form.Title != "Apply Selected Candidate" {
+		t.Fatalf("form title = %q, want apply form", form.form.Title)
+	}
+	if got := form.form.value("candidate"); got != "candidate-0001" {
+		t.Fatalf("candidate value = %q, want selected candidate", got)
 	}
 }
 
@@ -178,10 +205,39 @@ func TestTUIStartsWithoutExistingRun(t *testing.T) {
 		t.Fatalf("initial run ID = %q, want empty", data.Config.ID)
 	}
 	view := newTUIDashboardModel(data, message).View()
-	for _, want := range []string{"No run is loaded yet", "Auto run:", "Discovery:"} {
+	for _, want := range []string{"No run is loaded yet", "[S] Start tournament:", "[?] Advanced:"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("empty dashboard did not contain %q:\n%s", want, view)
 		}
+	}
+}
+
+func TestTUIAdvancedMenuOpensSelectedAction(t *testing.T) {
+	dashboard := newTUIDashboardModel(tuiDashboardData{
+		Config: model.RunConfig{ID: "run-1"},
+	}, "")
+
+	updated, _ := dashboard.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	menu := updated.(tuiDashboardModel)
+	if menu.mode != tuiModeAdvanced {
+		t.Fatalf("mode after ? = %v, want advanced", menu.mode)
+	}
+	view := menu.View()
+	for _, want := range []string{"Advanced", "Create test harness", "Import generated candidates", "Refresh archive index"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("advanced view did not contain %q:\n%s", want, view)
+		}
+	}
+
+	updated, _ = menu.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	menu = updated.(tuiDashboardModel)
+	updated, _ = menu.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	form := updated.(tuiDashboardModel)
+	if form.mode != tuiModeForm {
+		t.Fatalf("mode after advanced enter = %v, want form", form.mode)
+	}
+	if form.form.Title != "Import Generated Candidates" {
+		t.Fatalf("advanced form title = %q, want import generated candidates", form.form.Title)
 	}
 }
 
@@ -331,10 +387,10 @@ func TestTUIActionProgressViewShowsElapsedAndSelectedOptions(t *testing.T) {
 	running.actionStart = time.Now().Add(-90 * time.Second)
 	view := running.View()
 	for _, want := range []string{
-		"Running Generate Competitors",
+		"Running Create Candidates",
 		"Elapsed: 1m30s",
 		"Selected Options",
-		"Run: run-1",
+		"Tournament: run-1",
 		"The dashboard will refresh when this finishes. Press h there for command history.",
 		"Keys: c or esc request cancellation",
 	} {
@@ -368,7 +424,7 @@ func TestTUICommandHistoryShowsOptionsBeforeCommand(t *testing.T) {
 	}
 
 	updated, _ = running.Update(tuiActionDoneMsg{
-		Title:      "Auto Run",
+		Title:      "Start Tournament",
 		Code:       0,
 		Stdout:     "created run\n",
 		Data:       running.data,
@@ -385,11 +441,11 @@ func TestTUICommandHistoryShowsOptionsBeforeCommand(t *testing.T) {
 	view := history.View()
 	for _, want := range []string{
 		"Command History",
-		"Auto Run  (complete)",
+		"Start Tournament  (complete)",
 		"Options",
-		"Optimization request: make ranking faster",
-		"  Generate competitors: true",
-		"  Evaluate after generation: true",
+		"What do you want to improve?: make ranking faster",
+		"  Create candidate code: true",
+		"  Test and score candidates: true",
 		"Command",
 		"crucible run",
 		"--generate",
@@ -415,7 +471,7 @@ func TestTUICommandHistoryShowsOptionsBeforeCommand(t *testing.T) {
 func TestTUISpinnerTickContinuesWhileBusy(t *testing.T) {
 	dashboard := newTUIDashboardModel(tuiDashboardData{}, "")
 	dashboard.busy = true
-	dashboard.actionTitle = "Evaluate Candidates"
+	dashboard.actionTitle = "Test & Score Candidates"
 
 	updated, cmd := dashboard.Update(dashboard.spinner.Tick())
 	running := updated.(tuiDashboardModel)
@@ -430,7 +486,7 @@ func TestTUISpinnerTickContinuesWhileBusy(t *testing.T) {
 func TestTUIBusyCancelRequestsCancellation(t *testing.T) {
 	dashboard := newTUIDashboardModel(tuiDashboardData{}, "")
 	dashboard.busy = true
-	dashboard.actionTitle = "Evaluate Candidates"
+	dashboard.actionTitle = "Test & Score Candidates"
 	canceled := false
 	dashboard.actionCancel = func() { canceled = true }
 
@@ -458,7 +514,7 @@ func TestTUIActionDoneCanceledShowsArtifactUpdate(t *testing.T) {
 	}
 	running := updated.(tuiDashboardModel)
 	updated, _ = running.Update(tuiActionDoneMsg{
-		Title:    "Evaluate Candidates",
+		Title:    "Test & Score Candidates",
 		Canceled: true,
 		CancelEvent: &run.CancellationEvent{
 			EventPath:         "/tmp/run/events/cancellations.jsonl",
@@ -473,7 +529,7 @@ func TestTUIActionDoneCanceledShowsArtifactUpdate(t *testing.T) {
 	}
 	view := done.commandHistoryContent()
 	for _, want := range []string{
-		"Evaluate Candidates  (canceled)",
+		"Test & Score Candidates  (canceled)",
 		"candidate-0001",
 		"Cancellation event: /tmp/run/events/cancellations.jsonl",
 	} {
@@ -490,7 +546,7 @@ func TestTUIRunFormCreatesRun(t *testing.T) {
 		Title:  "Create Run",
 		Fields: []tuiFormField{
 			{Name: "optimize", Label: "Optimization request", Value: "make ranking faster", Required: true},
-			{Name: "variants", Label: "Variants", Value: "2"},
+			{Name: "variants", Label: "Candidates to create", Value: "2"},
 			{Name: "generate", Label: "Generate now", Value: "false"},
 		},
 	}
