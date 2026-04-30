@@ -634,8 +634,8 @@ func (m tuiDashboardModel) newForm(action tuiAction) tuiForm {
 			Fields: []tuiFormField{
 				{Name: "optimize", Label: "Optimization request", Required: true},
 				{Name: "auto", Label: "Auto setup", Value: "true"},
-				{Name: "generate", Label: "Generate competitors", Value: "false"},
-				{Name: "evaluate", Label: "Evaluate after generation", Value: "false"},
+				{Name: "generate", Label: "Generate competitors", Value: "true"},
+				{Name: "evaluate", Label: "Evaluate after generation", Value: "true"},
 				{Name: "source_path", Label: "Source path"},
 				{Name: "agent", Label: "Agent", Value: agent},
 				{Name: "variants", Label: "Variants", Value: strconv.Itoa(variants)},
@@ -1565,7 +1565,7 @@ func (m tuiDashboardModel) nextActions() []string {
 	runID := m.data.Config.ID
 	if strings.TrimSpace(runID) == "" {
 		return []string{
-			"Auto run:           press n, type the request, Enter starts setup",
+			"Auto run:           press n, type the request, Enter starts tournament",
 			"Discovery:          press d for source/interface discovery only",
 		}
 	}

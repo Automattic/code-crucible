@@ -213,9 +213,8 @@ func TestTUIFormsBuildCommandPreviews(t *testing.T) {
 
 	dashboard.openForm(tuiActionRun)
 	setTUIFormValue(&dashboard.form, "optimize", "make search faster")
-	setTUIFormValue(&dashboard.form, "generate", "yes")
 	preview = dashboard.form.commandPreview(dashboard.data.ProjectDir, dashboard.data.Config.ID)
-	for _, want := range []string{"crucible run", "--auto", "--variants 3", "--generate", "'make search faster'"} {
+	for _, want := range []string{"crucible run", "--auto", "--variants 3", "--generate", "--evaluate", "'make search faster'"} {
 		if !strings.Contains(preview, want) {
 			t.Fatalf("run preview did not contain %q:\n%s", want, preview)
 		}
@@ -390,9 +389,11 @@ func TestTUICommandHistoryShowsOptionsBeforeCommand(t *testing.T) {
 		"Options",
 		"Optimization request: make ranking faster",
 		"  Generate competitors: true",
+		"  Evaluate after generation: true",
 		"Command",
 		"crucible run",
 		"--generate",
+		"--evaluate",
 		"Captured output: stdout 12 B, stderr 0 B",
 	} {
 		if !strings.Contains(view, want) {
@@ -524,7 +525,7 @@ func TestTUIAutoRunFormCreatesBaselineResult(t *testing.T) {
 	providerScript := filepath.Join(t.TempDir(), "provider.sh")
 	script := `#!/usr/bin/env bash
 set -euo pipefail
-cat >/dev/null
+prompt="$(cat)"
 cat > "$CRUCIBLE_RUN_DIR/evaluator/evaluator.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -545,6 +546,25 @@ cat > "$verdict_out" <<'JSON'
 }
 JSON
 SH
+bt=$'\140'
+round_dir="$(awk -v bt="$bt" 'index($0, "Current round directory:") { split($0, a, bt); print a[2]; exit }' <<< "$prompt")"
+candidate="$(awk -v bt="$bt" 'index($0, "Create candidates starting at") { split($0, a, bt); print a[2]; exit }' <<< "$prompt")"
+if [[ -n "$round_dir" && -n "$candidate" ]]; then
+  mkdir -p "$round_dir/$candidate/src"
+  printf 'package search\n\nfunc Rank() int { return 2 }\n' > "$round_dir/$candidate/src/rank.go"
+  printf '# Candidate\n' > "$round_dir/$candidate/design.md"
+  cat > "$round_dir/$candidate/candidate.json" <<JSON
+{
+  "id": "$candidate",
+  "name": "generated $candidate",
+  "round": 1,
+  "parent_ids": ["candidate-0000-baseline"],
+  "agent": "$CRUCIBLE_PROVIDER_NAME",
+  "source_path": "src",
+  "baseline": false
+}
+JSON
+fi
 printf 'tui auto provider output\n'
 `
 	if err := os.WriteFile(providerScript, []byte(script), 0o755); err != nil {
@@ -591,7 +611,10 @@ printf 'tui auto provider output\n'
 	for _, want := range []string{
 		"Auto source path: internal/search/rank.go",
 		"Baseline evaluated: candidate-0000-baseline",
+		"custom generation complete",
+		"Added: candidate-0001",
 		"candidate-0000-baseline  passed",
+		"candidate-0001           passed",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout did not include %q:\n%s", want, stdout.String())
@@ -607,8 +630,13 @@ printf 'tui auto provider output\n'
 	if data.Config.SourcePath != "internal/search/rank.go" {
 		t.Fatalf("source path = %q, want auto-selected source", data.Config.SourcePath)
 	}
-	if len(data.Results) != 1 || data.Results[0].Status != model.CandidateStatusPassed {
-		t.Fatalf("results = %#v, want passed baseline", data.Results)
+	if len(data.Results) != 2 {
+		t.Fatalf("results = %#v, want baseline and generated candidate", data.Results)
+	}
+	for _, result := range data.Results {
+		if result.Status != model.CandidateStatusPassed {
+			t.Fatalf("result %s status = %q, want passed", result.Candidate.ID, result.Status)
+		}
 	}
 }
 
