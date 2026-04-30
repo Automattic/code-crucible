@@ -20,14 +20,20 @@ var ignoredBaselineDirs = map[string]bool{
 }
 
 func CopyPath(src, dst string) error {
-	info, err := os.Stat(src)
+	info, err := os.Lstat(src)
 	if err != nil {
 		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to copy symlink %s", src)
 	}
 	if info.IsDir() {
 		return copyDir(src, dst)
 	}
-	return copyFile(src, dst, info.Mode())
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("refusing to copy non-regular file %s", src)
+	}
+	return copyFile(src, dst, info.Mode().Perm())
 }
 
 func copyDir(src, dst string) error {
@@ -50,12 +56,18 @@ func copyDir(src, dst string) error {
 		if entry.IsDir() {
 			return os.MkdirAll(target, 0o755)
 		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to copy symlink %s", path)
+		}
 
 		info, err := entry.Info()
 		if err != nil {
 			return err
 		}
-		return copyFile(path, target, info.Mode())
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("refusing to copy non-regular file %s", path)
+		}
+		return copyFile(path, target, info.Mode().Perm())
 	})
 }
 

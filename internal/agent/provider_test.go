@@ -46,6 +46,20 @@ func TestValidateProvider(t *testing.T) {
 	}
 }
 
+func TestValidateProviderDefinitionRejectsUnsafeProviderName(t *testing.T) {
+	provider := ProviderDefinition{
+		Name:    "../outside",
+		Kind:    "command",
+		Command: []string{"provider"},
+		Capabilities: ProviderCapabilities{
+			SupportsGeneration: true,
+		},
+	}
+	if err := ValidateProviderDefinition(provider); err == nil {
+		t.Fatal("ValidateProviderDefinition accepted unsafe provider name")
+	}
+}
+
 func TestValidateProviderCapability(t *testing.T) {
 	if err := ValidateProviderCapability("codex", "generation"); err != nil {
 		t.Fatalf("ValidateProviderCapability(codex, generation) returned error: %v", err)

@@ -3,6 +3,7 @@ package archive
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -104,5 +105,51 @@ func TestRunDirAmbiguousPrefix(t *testing.T) {
 
 	if _, err := RunDir(projectDir, "20260428-10"); err == nil {
 		t.Fatal("RunDir succeeded for ambiguous prefix")
+	}
+}
+
+func TestCopyPathRejectsSymlinkSource(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	if err := os.WriteFile(target, []byte("outside\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	err := CopyPath(link, filepath.Join(dir, "out.txt"))
+	if err == nil {
+		t.Fatal("CopyPath succeeded for symlink source")
+	}
+	if !strings.Contains(err.Error(), "refusing to copy symlink") {
+		t.Fatalf("CopyPath error = %v, want symlink refusal", err)
+	}
+}
+
+func TestCopyPathRejectsSymlinkInsideDirectory(t *testing.T) {
+	dir := t.TempDir()
+	sourceDir := filepath.Join(dir, "source")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "regular.txt"), []byte("ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "target.txt")
+	if err := os.WriteFile(target, []byte("outside\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(sourceDir, "link.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	err := CopyPath(sourceDir, filepath.Join(dir, "out"))
+	if err == nil {
+		t.Fatal("CopyPath succeeded for directory containing symlink")
+	}
+	if !strings.Contains(err.Error(), "refusing to copy symlink") {
+		t.Fatalf("CopyPath error = %v, want symlink refusal", err)
 	}
 }

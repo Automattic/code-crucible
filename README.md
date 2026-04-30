@@ -1,51 +1,58 @@
 # Code Crucible
 
-Code Crucible is a model-agnostic CLI framework for generating, evaluating, benchmarking, and evolving competing implementations of selected project code.
+**A tournament runner for code optimization work.**
 
-It is designed to run inside an existing project directory. You describe what should be optimized, Code Crucible creates a tournament work area, extracts or documents the baseline code, captures the required drop-in interfaces, prepares evaluator and external-call policy scaffolds, and builds prompt packages for the selected coding agent.
+AI agents are good at producing one implementation. Code Crucible turns that
+into a measured competition: capture the baseline, generate drop-in
+competitors, test them with deterministic evaluators, archive the evidence, and
+rank what actually wins.
 
-Status: early scaffold. The CLI can initialize projects, create reproducible run archives, invoke Codex CLI as the first concrete agent provider, ask a selected agent to draft run evaluators, print command-provider setup templates, evaluate candidates locally or in Docker/Podman, launch fixture-backed mock gateways for sandboxed evaluators, package gateway binaries for container sandboxes, route standard HTTP/HTTPS proxy and declared raw socket traffic to fixtures, prepare and automate follow-up rounds, archive leaderboard metrics, promote passed candidates back into the source project, rebuild a SQLite index from filesystem artifacts, write static HTML run reports, and open a TUI dashboard with basic action forms. Reporting and the TUI are still under active development.
-
-## Why
-
-AI coding tools are good at producing one implementation. Code Crucible treats code as a competitive artifact:
+The core loop is intentionally small:
 
 ```text
-Generate -> Execute -> Benchmark -> Score -> Archive -> Evolve -> Repeat
+baseline -> competitors -> evaluator -> metrics -> leaderboard -> next round
 ```
 
-The goal is not just "does it work", but which implementation works best under measured constraints such as latency, memory, CPU, I/O, external calls, and cost.
+Code Crucible runs inside the project you want to improve. It creates a local
+`.crucible/` work area with prompts, interface contracts, evaluator scripts,
+candidate source, external-call policy data, metrics, reports, and promotion
+records. The archive stays inspectable, reproducible, and easy to commit or
+ignore.
 
-## Current Features
+## Why This Matters
 
-- Local git-friendly Go CLI
-- Bare `crucible` TUI dashboard for reviewing run status, candidates, leaderboard data, and action forms
-- Explicit `crucible prompt` line-oriented workflow for creating runs and acting on existing project data
-- `crucible discover` for reviewable source-path, interface, evaluator, and external-policy discovery plans
-- Automatic `.crucible/` work area setup when `crucible run` is used in an existing project
-- `crucible run "..."`, `--optimize ...`, or `--task-file ...` for creating a tournament archive
-- Baseline competitor extraction from an optional `--source-path`
-- Interface discovery document scaffold
-- External policy scaffold for `deny`, `allowlist`, `mock`, `replay`, and `record`
-- Evaluator shell scaffold
-- `crucible evaluator generate` for agent-drafted evaluator scripts and design notes
-- Agent generation prompt scaffold
-- Codex CLI generation adapter through `codex exec`
-- Candidate adoption from generated `candidate-NNNN` artifacts into `leaderboard.json`
-- Candidate promotion from passed tournament results back into the original source path
-- Local evaluator execution through `crucible evaluate`
-- Docker and Podman evaluator sandboxing with in-container resource metrics
-- Gateway startup, proxy wiring, direct-routed URLs, container gateway-network routing, allowlist checks, replay, and record capture for external-call policies
-- `crucible next-round` for preparing follow-up generation prompts from passed candidates
-- `crucible evolve` for chaining generation, evaluation, and next-round preparation
-- Ranked human-readable leaderboard output for passed candidates
-- Machine-readable score explanations in `leaderboard.json`
-- File-backed leaderboard and candidate metadata
-- Rebuildable `.crucible/index.sqlite` summary for runs and candidates
-- Static HTML run reports through `crucible report`
-- Core Go interfaces and types for agents, evaluation, scoring, metrics, and archive data
+| Audience | What Gets Better |
+|---|---|
+| Engineers | Optimization proposals come with runnable source, verdicts, metrics, and archived logs instead of a loose chat transcript. |
+| Teams reviewing AI output | Candidates compete against the same baseline and evaluator, so reviews can focus on evidence and tradeoffs. |
+| Performance-minded maintainers | Leaderboards track latency, benchmark cost, memory, resource usage, and external-call behavior in one place. |
+| Tool builders | Agent providers are pluggable; Codex is the first built-in generation provider, not a hard-coded assumption. |
+| Risk-sensitive projects | Evaluators can run locally or in Docker/Podman sandboxes with explicit external-call policies and replayable fixtures. |
 
-## Install From Source
+## What It Does
+
+- Opens a TUI dashboard from bare `crucible` for starting tournaments,
+  reviewing candidates, applying winners, continuing rounds, exporting reports,
+  and checking command history.
+- Creates reproducible tournament archives under `.crucible/runs/`.
+- Discovers likely source paths and can ask an agent for a structured handoff
+  before a run starts.
+- Captures baseline source and interface docs so generated competitors have a
+  clear drop-in contract.
+- Generates or accepts deterministic evaluator scripts, then validates generated
+  evaluators against the baseline.
+- Runs local evaluators, repeated measurements, semantic prechecks, and optional
+  Docker/Podman sandboxed evaluation.
+- Tracks external-call policy modes: `deny`, `allowlist`, `mock`, `replay`, and
+  `record`.
+- Archives metrics, verdicts, traces, provider invocations, reports, promotion
+  records, and a rebuildable SQLite index.
+- Promotes the best passing candidate back into the original source path only
+  when you choose to apply it.
+
+## Try It Locally
+
+Build the CLI from source:
 
 ```bash
 git clone https://github.com/Automattic/code-crucible.git
@@ -53,777 +60,56 @@ cd code-crucible
 go build -o bin/crucible ./cmd/crucible
 ```
 
-## Requirements
-
-- Go 1.22 or newer
-- Linux for process resource metrics
-- `taskset` when using `crucible evaluate --cpu-limit` in local mode
-- Codex CLI on `PATH` when using `crucible generate --agent codex`, `crucible evaluator generate --agent codex`, or interactive agent generation. Use `--codex-bin` when the binary is installed outside `PATH`.
-- Docker or Podman when using containerized evaluator sandboxes
-- A pure-Go SQLite driver is included for `crucible index`
-
-Run creation, adoption, promotion, inspection, and filesystem archive workflows keep JSON files as the source of truth. The SQLite index is derivative and can be rebuilt at any time.
-
-## Quick Start
-
-For the guided TUI workflow, run Code Crucible without arguments:
+Run it from a project you want to optimize:
 
 ```bash
 cd /path/to/your/project
-crucible
+/path/to/code-crucible/bin/crucible
 ```
 
-The TUI loads the selected run archive directly from `.crucible/runs/`, shows tournament status, leaderboard rows, selected candidate details, and uses goal-oriented actions for the normal workflow: `[S] Start tournament`, `[R] Review selected candidate`, `[A] Apply selected candidate`, `[C] Continue tournament`, `[T] Test & score candidates`, `[G] Create more candidates`, `[E] Export report`, `[H] Command history`, and `[?] Advanced`. In a new project, or in a project with a `.crucible/` work area but no runs, bare `crucible` opens directly into Start Tournament. Press Esc to return to the empty dashboard. The selected leaderboard row drives candidate-specific actions, so reviewing or applying a candidate uses the highlighted row instead of asking for an ID. The new-run form defaults to `run --auto --generate --evaluate`, so typing the improvement request and pressing Enter is enough to create the run, generate and validate a test harness, record baseline metrics, create candidates, test and score them, and return to a leaderboard. Lower-frequency actions such as Discovery Only, Create Test Harness, Import Generated Candidates, Create Next Round, Refresh Archive Index, and Browse Archive live in Advanced. The forms execute the same command paths as the shell CLI, label that command as the CLI equivalent, show a live spinner with elapsed time and expected workflow steps while actions run, allow cancellation requests for long-running actions, and return to the dashboard when the action finishes. Press `h` to open the in-session command history, which records the selected options before each generated command plus completion status and captured output byte counts. Canceled evaluation work records an event and marks affected unevaluated candidates as `canceled` without overwriting completed `passed` or `failed` results. Canceled generation also records valid unadopted candidate artifacts as `canceled` and records partial candidate directories in the cancellation event.
-
-`crucible tui` remains an explicit alias for launching the same dashboard with options:
-
-```bash
-crucible tui
-crucible tui --run previous
-```
-
-For the older line-oriented prompt workflow:
-
-```bash
-crucible prompt
-```
-
-The prompt flow confirms the project directory, initializes `.crucible/` when needed, creates discovery plans, asks for optimization request details, and offers menu actions for existing run data. It remains useful in limited terminals or scripted IO tests, but the TUI is the default interactive surface.
-
-Create a tournament run from inside an existing project:
-
-```bash
-cd /path/to/your/project
-crucible run "reduce p95 latency of the search ranking function"
-```
-
-`run` creates `.crucible/` automatically when the project does not have one yet.
-
-To initialize explicitly and set the project default generation agent:
-
-```bash
-crucible init --default-agent codex
-```
-
-The default is stored in `.crucible/config.json` as `default_agent`. Built-in providers currently include `codex` for discovery, generation, and evolution, plus `local` for heuristic discovery that does not invoke a model.
-
-Commands that invoke an agent accept `--agent`. `run`, `generate`, and `evolve` resolve the provider from the command flag, then the run archive's `agent`, then the project `default_agent`. `discover` defaults to `local` unless `--agent codex` is supplied, so source-path discovery can stay offline by default.
-
-Additional local command providers can be configured in `.crucible/config.json`:
-
-```json
-{
-  "default_agent": "custom-agent",
-  "agent_providers": {
-    "custom-agent": {
-      "name": "custom-agent",
-      "kind": "command",
-      "command": ["custom-agent", "run", "--stdin"],
-      "capabilities": {
-        "supports_discovery": true,
-        "supports_generation": true,
-        "supports_evolution": true,
-        "supports_json_output": false,
-        "requires_git_repo": false
-      }
-    }
-  }
-}
-```
-
-Command providers receive the prompt on stdin. Code Crucible also exports `CRUCIBLE_PROVIDER_NAME`, `CRUCIBLE_PROJECT_DIR`, `CRUCIBLE_RUN_DIR`, `CRUCIBLE_PROMPT_PATH`, `CRUCIBLE_OUTPUT_LAST_MESSAGE`, and `CRUCIBLE_MODEL` when a model override is supplied. If the provider does not write the final response file itself, stdout is archived as the final response.
-
-The repository includes a Claude Code command-provider example at [examples/agent-providers/claude-code-config.json](examples/agent-providers/claude-code-config.json). You can also print the same config fragment from the CLI without changing the project config:
-
-```bash
-crucible provider template claude
-crucible provider template claude --json
-```
-
-The template uses Claude Code print mode with the Code Crucible prompt supplied on stdin:
-
-```json
-{
-  "default_agent": "claude",
-  "agent_providers": {
-    "claude": {
-      "name": "claude",
-      "kind": "command",
-      "description": "Claude Code CLI provider using print mode with the Code Crucible prompt supplied on stdin.",
-      "command": [
-        "claude",
-        "--bare",
-        "--output-format",
-        "text",
-        "--permission-mode",
-        "acceptEdits",
-        "-p",
-        "Read the Code Crucible prompt from stdin and complete the requested optimization-agent task. Keep generated artifacts inside the run archive unless the prompt explicitly says otherwise."
-      ],
-      "capabilities": {
-        "supports_discovery": true,
-        "supports_generation": true,
-        "supports_evolution": true,
-        "supports_json_output": false,
-        "requires_git_repo": false
-      }
-    }
-  }
-}
-```
-
-Merge the fragment into `.crucible/config.json` when ready, then use `crucible generate --agent claude --dry-run` to inspect the archived command before spending a model run.
-
-If the source path or evaluator boundary is unclear, create a discovery plan first:
-
-```bash
-crucible discover "reduce p95 latency of the search ranking function"
-```
-
-`discover` writes a local plan under `.crucible/discoveries/<discovery-id>/` with source-path suggestions, an agent discovery prompt, and a review checklist. Use `--agent codex --dry-run` to preview Codex discovery, or pass any configured discovery-capable provider with `--agent`. Code Crucible extracts the structured handoff into `agent-plan.json` when the final response includes the requested JSON block.
-
-Use a structured discovery handoff when creating the run to seed interface docs, evaluator scaffold guidance, and the baseline source path:
-
-```bash
-crucible run \
-  "reduce p95 latency of the search ranking function" \
-  --agent-plan .crucible/discoveries/<discovery-id>/agent-plan.json
-```
-
-When you already know the source file or directory involved, pass it as the initial baseline source:
-
-```bash
-crucible run \
-  "reduce p95 latency of the search ranking function" \
-  --source-path internal/search/rank.go \
-  --variants 5 \
-  --rounds 3 \
-  --exploration 0.35 \
-  --external-mode deny
-```
-
-For a low-prompt start from inside the target project, use `--auto`:
-
-```bash
-crucible run "reduce p95 latency of the search ranking function" --auto
-```
-
-`--auto` creates a local discovery plan, uses the top source-path suggestion as the baseline, asks the configured generation provider to draft and validate an evaluator, records the baseline metrics, and prints the leaderboard. Provider output is archived under the run `agents/` directory instead of streamed into the terminal, so the command output stays focused on setup status and results. Add `--generate --evaluate` when you want the same command to also request competitors and evaluate them after setup:
-
-```bash
-crucible run "reduce p95 latency of the search ranking function" --auto --generate --evaluate
-```
-
-For longer tasks, put the request in a Markdown file:
-
-```bash
-crucible run \
-  --task-file crucible-task.md \
-  --source-path internal/search/rank.go
-```
-
-For a full evaluator script instead of a short command, use `--evaluator-script`:
-
-```bash
-crucible run \
-  "reduce p95 latency of the search ranking function" \
-  --source-path internal/search/rank.go \
-  --evaluator-script ./crucible-evaluator.sh
-```
-
-When you do not already have an evaluator, ask the selected agent to draft one for the run:
-
-```bash
-crucible evaluator generate
-```
-
-This writes `prompts/evaluator-generation.md`, asks the configured provider to replace `evaluator/evaluator.sh`, and records design notes under `evaluator/evaluator.md` when the provider supplies them. Code Crucible then runs the generated evaluator against the baseline candidate, writes the validation report to `evaluator/validation.json`, and records the passing baseline result in the normal candidate artifacts and leaderboard. Other candidates that were waiting on evaluator setup move from `needs-evaluator` to `pending`.
-
-This creates a run under:
-
-```text
-.crucible/runs/<run-id>/
-```
-
-Key files in each run:
-
-```text
-run.json
-README.md
-docs/interfaces.md
-evaluator/evaluator.sh
-evaluator/validation.json
-external/policy.json
-prompts/generation-round-0001.md
-round-0001/candidate-0000-baseline/
-leaderboard.json
-```
-
-Generated competitors must follow the [candidate format](docs/candidate-format.md).
-
-Measure the baseline before asking an agent for competitors. Generated evaluators record the baseline during validation, so this is mainly needed for supplied evaluators or when rerunning changed evaluator logic:
-
-```bash
-crucible evaluate --candidate candidate-0000-baseline
-```
-
-View the current standings:
-
-```bash
-crucible leaderboard
-```
-
-The human-readable leaderboard ranks passed candidates by score, then p95 latency. It includes the score-driving metrics such as p95 latency, `ns/op`, speedup versus the baseline, memory, memory usage relative to the baseline, and evaluator CPU time. If any candidate reports external communication, the table also shows `Ext Calls`; no-network runs omit that column. Numeric columns use adaptive precision so close results remain distinguishable and very wide ranges stay readable. Use `--json` when you need archive order, raw result data, and each candidate's machine-readable `score_explanation`.
-
-Rebuild the project-wide SQLite summary from archived JSON artifacts:
-
-```bash
-crucible index
-```
-
-The index lives at `.crucible/index.sqlite` and contains run and candidate summary tables suitable for reports, ad hoc queries, and future UI work. It is not authoritative; delete it or rebuild it whenever the filesystem archive changes. `crucible index` tracks the index schema version and resets the derivative database automatically when the stored schema is stale or missing.
-
-Query indexed runs or candidates for reporting and automation:
-
-```bash
-crucible query runs --json
-crucible query candidates --status passed --limit 10 --json
-```
-
-`query` reads `.crucible/index.sqlite`; run `crucible index` first when archive data changes.
-
-Write a static HTML report for the latest run:
-
-```bash
-crucible report
-```
-
-By default, reports are written to `.crucible/runs/<run-id>/reports/leaderboard.html`. Use `--output report.html` to choose a different path.
-
-Commands that accept `--run` can use a full run ID, a unique run ID prefix, `latest`, or `previous`. Omitting `--run` is the same as `--run latest`.
-
-Inspect a candidate:
-
-```bash
-crucible inspect candidate-0000-baseline
-```
-
-Ask the selected agent to generate competitor implementations for the latest run:
-
-```bash
-crucible generate
-```
-
-`generate` automatically adopts valid generated candidates into `leaderboard.json`. If competitors are added by hand or an external agent, adopt them manually:
-
-```bash
-crucible adopt
-```
-
-Run the evaluator against adopted candidates and update leaderboard metrics, verdicts, status, and score:
-
-```bash
-crucible evaluate
-```
-
-Evaluation runs one candidate at a time by default and starts evaluator processes with `nice -n 10` so tournaments are less likely to overburden the host machine. Use `--jobs` only when you explicitly want parallel candidate evaluation, use `--cpu-limit` when you want CPU affinity control, and use `--nice 0` to disable priority adjustment. Containerized evaluators can also use `--sandbox-profile`, `--memory-limit`, and `--pids-limit` to keep tournament runs bounded.
-
-```bash
-crucible evaluate --jobs 1 --nice 10 --cpu-limit 2 --env GOMAXPROCS=1
-```
-
-Promote the best passing non-baseline candidate back into the original source path recorded in `run.json`:
-
-```bash
-crucible promote
-```
-
-Use `--dry-run` to preview copied files first, or pass a specific candidate when you do not want the current best passed result:
-
-```bash
-crucible promote --dry-run
-crucible promote candidate-0002
-```
-
-Promotion copies from the candidate's archived `src/` directory back to the run `source_path`. File targets replace the matching file; directory targets overlay candidate files without deleting unrelated project files. By default, only `passed` candidates can be promoted. Every real promotion writes a report under `.crucible/runs/<run-id>/promotions/`.
-
-Prepare the next round after at least one candidate has passed:
-
-```bash
-crucible next-round --parents 3
-crucible generate
-```
-
-`next-round` creates the next `round-NNNN/` directory, writes a new generation prompt seeded from the top passed candidates, and updates the run archive so `generate` and `adopt` target that active round.
-
-To automate generation, evaluation, and next-round preparation:
-
-```bash
-crucible evolve --rounds 3 --parents 3
-```
-
-`evolve` runs the active generation prompt, evaluates adopted candidates, and prepares the next prompt between cycles.
-
-Preview the exact provider invocation first:
-
-```bash
-crucible generate --dry-run
-```
-
-When you already trust the generated scaffold for a task, create the run and invoke generation in one command:
-
-```bash
-crucible run \
-  "reduce p95 latency of the search ranking function" \
-  --source-path internal/search/rank.go \
-  --variants 5 \
-  --generate
-```
-
-## Running Without a Known Source Path
-
-If you do not know where the relevant code lives yet, omit `--source-path`:
-
-```bash
-crucible run "reduce checkout API external calls"
-```
-
-The run archive will include:
-
-- A baseline placeholder
-- Interface documentation prompts
-- An agent prompt instructing the selected agent to discover involved code
-- External communication documentation requirements
-
-This supports the intended workflow where the framework runs inside a project and asks an agent to locate the code involved with the requested optimization target.
-
-## Codex Agent Provider
-
-Code Crucible's first live provider targets Codex CLI.
-
-`crucible generate --agent codex` loads the selected run, reads `prompts/generation-round-0001.md`, and invokes:
-
-```bash
-codex --ask-for-approval never exec --cd <project> --sandbox workspace-write --json --output-last-message <run>/agents/codex-final.md -
-```
-
-The prompt is sent through stdin. Codex runs with the host project as its working root so it can inspect source code and write competitor artifacts under `.crucible/runs/<run-id>/round-0001/`.
-
-Generation artifacts are stored under:
-
-```text
-.crucible/runs/<run-id>/agents/
-  codex-<timestamp>-events.jsonl
-  codex-<timestamp>-stderr.log
-  codex-<timestamp>-invocation.json
-  codex-final.md
-```
-
-The invocation JSON archives the selected provider name, model/profile overrides, command, prompt path, stdout/stderr paths, final response path, exit status, and Codex environment policy such as sandbox, approval mode, JSON event mode, and Git-repository check behavior.
-
-After Codex exits successfully, Code Crucible scans the current round directory for valid `candidate-NNNN` artifacts and adds them to `leaderboard.json` with status `generated`.
-
-Useful options:
-
-```bash
-crucible generate \
-  --agent codex \
-  --model gpt-5.5 \
-  --sandbox workspace-write \
-  --approval never \
-  --event-json=true
-```
-
-The same Codex options can be passed through `crucible run --generate`:
-
-```bash
-crucible run \
-  "reduce allocation pressure in the parser" \
-  --source-path internal/parser \
-  --variants 4 \
-  --generate \
-  --model gpt-5.5
-```
-
-The generated prompt explicitly tells Codex to avoid modifying host project source outside `.crucible`. Temporary verification work is directed to the run's `.crucible/runs/<run-id>/tmp/` scratch area, and the prompt tells Codex to avoid destructive cleanup commands so blocked cleanup attempts do not pollute generation logs. Codex generation sandboxing is controlled by Codex CLI; evaluator sandboxing is handled separately by `crucible evaluate --sandbox-engine`.
-
-## Evaluation
-
-Every run includes `evaluator/evaluator.sh`. `crucible evaluate` executes that script once per candidate currently listed in `leaderboard.json`.
-
-Runs seeded from a structured discovery handoff can also include `evaluator/contract-checks.json`. The generated evaluator scaffold uses that file to run deterministic artifact and source-shape checks before benchmarking.
-
-For behavior-level prechecks, add `evaluator/semantic-checks.json`. Each check runs the same command in the baseline `src/` directory and the candidate `src/` directory before the benchmark evaluator starts. By default, the candidate must match the baseline exit code and stdout. Stderr comparison is available when needed.
-
-```json
-{
-  "version": 1,
-  "checks": [
-    {
-      "name": "golden fixture",
-      "command": "go test ./...",
-      "timeout_ms": 30000,
-      "compare_exit_code": true,
-      "compare_stdout": true
-    }
-  ]
-}
-```
-
-Semantic check results are archived beside each candidate as `semantic-contract-results.json`, and failing semantic checks stop evaluation before benchmarking.
-
-The evaluator script receives:
-
-```text
-evaluator.sh <candidate-dir> <run-dir> <metrics-out> <verdict-out>
-```
-
-It must write:
-
-- `metrics.json`
-- `verdict.json`
-
-Evaluation artifacts are stored beside each candidate:
-
-```text
-candidate-NNNN/
-  evaluation.stdout.log
-  evaluation.stderr.log
-  metrics.json
-  resource-metrics.json
-  verdict.json
-```
-
-If the evaluator fails or omits `verdict.json`, Code Crucible marks the candidate as failed. If `metrics.json` is missing or invalid, the candidate can still receive a failed verdict with a warning.
-
-Use `--require-passed` in smoke tests or CI when the shell command should fail if any evaluated candidate does not pass.
-
-Code Crucible also records resource metrics for each evaluator invocation in `resource-metrics.json` and merges them into `metrics.json` before updating `leaderboard.json`. These include wall time, user CPU time, system CPU time, CPU percent, max RSS, context switches, block I/O counts, and `resource_metric_source`. Evaluator scripts should still emit domain-specific metrics such as benchmark latency, allocations, external calls, and correctness verdicts. When an evaluator reports `p95_latency_ms`, it should be a true 95th percentile value for the sampled benchmark or request timings, not an average or median.
-
-Evaluators should measure the real optimization target rather than a repeated-fixture shortcut. Unless cache performance is explicitly part of the optimization request, benchmark iterations should use varied deterministic inputs or fresh process/context isolation so in-process memoization cannot skip the work being optimized. When caching is intentionally in scope, evaluators should report cache-cold and cache-warm metrics separately and document which metric drives the score.
-
-Evaluator execution is local by default. For containerized evaluation, pass `--sandbox-engine docker` or `--sandbox-engine podman` with an image that contains `bash` and the required project toolchain:
-
-```bash
-crucible evaluate \
-  --sandbox-engine podman \
-  --sandbox-image golang:1.22 \
-  --sandbox-profile strict \
-  --cpu-limit 2
-```
-
-Use `--warmups` and `--repetitions` when one evaluator run is too noisy:
-
-```bash
-crucible evaluate \
-  --warmups 1 \
-  --repetitions 5 \
-  --outliers trim-min-max \
-  --sample-stat median
-```
-
-Warmup runs are discarded. Measured repetitions are aggregated into `metrics.json`, with per-sample details archived in `evaluation-samples.json`. Aggregated metrics include runtime mean/min/median/max/stddev, standard error, approximate 95% confidence half-width, the selected sample statistic, and the measured repetition count. `--outliers trim-min-max` removes one low and one high measured sample before aggregation when at least three measured samples exist.
-
-Container sandboxes bind-mount the run archive read/write and the host project read-only at their original absolute paths, run with network isolation by default, and pass `--cpu-limit` through as a container CPU quota. Container runs execute an archived resource wrapper inside the sandbox, so CPU and wall-time resource metrics describe the evaluator process inside the container instead of the host Docker or Podman client.
-
-Evaluator sandbox profiles are:
-
-- `default`: local execution unless `--sandbox-engine docker|podman` is set; container runs default to `--sandbox-network none`.
-- `strict`: Docker/Podman only; defaults to `--sandbox-network none`, `--memory-limit 1g`, and `--pids-limit 256`.
-- `networked`: Docker/Podman only; defaults to `--sandbox-network bridge`, `--memory-limit 1g`, and `--pids-limit 256`.
-
-Use explicit `--sandbox-network`, `--memory-limit`, and `--pids-limit` flags when a profile default needs to be tuned. The `strict` profile always requires `--sandbox-network none`.
-
-For clients that ignore proxy environment variables, container evaluation can route declared external hostnames through a gateway sidecar:
-
-```bash
-crucible evaluate \
-  --sandbox-engine podman \
-  --sandbox-image golang:1.22 \
-  --external-routing gateway-network
-```
-
-`gateway-network` is valid only for Docker or Podman with a non-strict sandbox profile. Code Crucible creates a per-candidate bridge network, starts the archived mock gateway as a sidecar, maps declared hosts from `--allow-hosts` and HTTP fixtures into the evaluator container, captures gateway traces, and archives `external-routing.json` beside the candidate results. If the network, sidecar, privileged gateway ports, or host mappings cannot be established, the candidate fails closed.
-
-Keep all candidates in a tournament on the same sandbox engine. Docker and Podman timings should not be compared as equivalent results because storage drivers, rootless behavior, cache state, and runtime overhead can differ even when both use the same image and wrapper.
-
-## Proof Of Concept Fixture
-
-The repository includes a Go fixture at [examples/go-ranking-poc](examples/go-ranking-poc).
-
-It provides:
-
-- A deliberately slow `ranking.TopN` implementation
-- Golden tests and a benchmark
-- A reusable evaluator script
-- A task prompt for agent generation
-
-Run the local baseline loop:
-
-```bash
-go build -o bin/crucible ./cmd/crucible
-
-./bin/crucible run \
-  --project-dir examples/go-ranking-poc \
-  --task-file task.md \
-  --source-path ranking/rank.go \
-  --evaluator-script evaluator.sh \
-  --variants 2 \
-  --external-mode deny
-
-./bin/crucible evaluate --project-dir examples/go-ranking-poc
-./bin/crucible leaderboard --project-dir examples/go-ranking-poc
-```
-
-## External Call Policy
-
-Code Crucible treats external communication as a first-class part of evaluation.
-
-Supported policy modes:
-
-- `deny`: no external network access should be required
-- `allowlist`: only configured hosts are allowed
-- `mock`: local mock handlers should serve deterministic responses
-- `replay`: recorded fixtures should serve deterministic responses
-- `record`: live responses may be captured for future replay
-
-Example:
-
-```bash
-crucible run \
-  "reduce API cost in enrichment pipeline" \
-  --external-mode allowlist \
-  --allow-hosts api.example.com,auth.example.com
-```
-
-For `deny` mode, container evaluation enforces network isolation with `--sandbox-network none`. A deny-mode container evaluation fails closed if a different sandbox network is requested. Local deny-mode runs are marked advisory because the framework cannot prevent host-network access around an arbitrary local evaluator.
-
-For `allowlist` mode, Code Crucible starts the archived gateway as an HTTP/HTTPS proxy and denies proxied requests to hosts outside `--allow-hosts`. This is partial enforcement unless container `--external-routing gateway-network` is used for declared hosts. Clients can also use direct-routed gateway URLs when their base URL is configurable. Live allowlisted hosts may be unreachable when the container sandbox network is `none`.
-
-Fixture-backed modes archive HTTP fixtures in `external/http-fixtures.json`. Provide an existing fixture file with `--external-fixtures`, or omit it to create an empty template for the run. During `mock`, `replay`, and `record` evaluation, Code Crucible exports gateway and proxy environment variables, then starts the archived gateway before running the evaluator. For container evaluation, Code Crucible builds an archived Linux gateway binary on the host when needed so sandbox images do not need Go just to start the gateway. Record mode captures gateway-routed HTTP responses into each candidate's `recorded-http-fixtures.json` and writes `external-trace.json`. Container `gateway-network` mode also routes declared raw HTTP and HTTPS hostnames through the sidecar gateway and records those events in the same trace file. Local mode still cannot block unrelated host-network access or transparently intercept raw sockets, and evaluation reports warn when this limitation applies. See [docs/external-fixtures.md](docs/external-fixtures.md) for the JSON format, environment variables, and current routing limits.
-
-## Project Work Area
-
-`crucible run` creates the work area automatically when needed. `crucible init` is available when you want explicit preflight setup or a custom project name. The work area contains:
-
-```text
-.crucible/
-  agents/
-  competitors/
-  discoveries/
-  evaluators/
-  fixtures/http/
-  interfaces/
-  runs/
-  tasks/
-  config.json
-  README.md
-```
-
-The work area is intended to be local project metadata. Completed run directories should be reproducible archives containing source, prompts, metrics, external traces, and verdicts. `crucible index` adds `index.sqlite` as a rebuildable summary of those archives.
-
-New run archives store paths relative to the host project where possible. Runtime commands resolve those paths back to absolute locations and pass evaluator scripts the absolute candidate directory, run directory, and `CRUCIBLE_PROJECT_DIR`.
-
-Do not commit `.crucible/` run archives from private projects unless you have reviewed them. They may contain source code, prompts, logs, generated competitors, hostnames, fixtures, or project-specific context.
-
-## Architecture
-
-Core packages:
-
-- `cmd/crucible`: CLI entrypoint
-- `internal/cli`: command parsing and user-facing commands
-- `internal/project`: `.crucible/` initialization and config
-- `internal/run`: tournament run creation and candidate adoption
-- `internal/discovery`: source path inspection, discovery plans, and interface doc generation
-- `internal/agent`: provider contracts, agent prompt construction, and Codex/command provider runners
-- `internal/evaluator`: evaluator scaffold generation
-- `internal/archive`: JSON archive helpers and baseline copying
-- `internal/indexer`: rebuildable SQLite summary index
-- `internal/model`: shared data model
-- `internal/scoring`: starter scoring logic
-
-See [docs/architecture.md](docs/architecture.md) for the current design, [docs/container-raw-socket-routing.md](docs/container-raw-socket-routing.md) for the container-only raw socket routing design, and [docs/tui.md](docs/tui.md) for the TUI framework and implementation notes.
-
-## Development
-
-Run the standard validation suite:
-
-```bash
-make check
-```
-
-Run the end-to-end proof-of-concept smoke test:
+Or start with the included proof-of-concept fixture:
 
 ```bash
 make smoke
 ```
 
-Run the Podman gateway-network proof of concept when sandbox routing changed:
+That smoke test creates a tournament around the sample ranking function,
+evaluates the baseline, and prints a leaderboard.
+
+For a direct CLI run inside another project:
 
 ```bash
-make smoke-gateway-network-podman
+crucible run "reduce p95 latency of the search ranking function" --auto
 ```
 
-Run the equivalent Docker check separately when validating cross-engine behavior:
+Add `--generate --evaluate` when you want the same command to request
+competitors and score them after setup.
 
-```bash
-make smoke-gateway-network-docker
-```
+## Documentation
 
-These targets require a local `golang:1.22` container image and a container runtime that can create user networks. They validate fixture-backed raw HTTP and HTTPS routing through the gateway sidecar; do not compare Podman and Docker timing metrics with each other.
+| Document | Start Here For |
+|---|---|
+| [docs/README.md](docs/README.md) | Complete map of project docs |
+| [docs/getting-started.md](docs/getting-started.md) | Install, requirements, first local tournament, and provider setup |
+| [docs/cli-reference.md](docs/cli-reference.md) | Command examples and workflow reference |
+| [docs/architecture.md](docs/architecture.md) | Archive model, package layout, and design principles |
+| [docs/evaluation.md](docs/evaluation.md) | Evaluators, scoring, sandboxing, resource metrics, and external policies |
+| [docs/candidate-format.md](docs/candidate-format.md) | Candidate directory contract and leaderboard artifacts |
+| [docs/external-fixtures.md](docs/external-fixtures.md) | Fixture-backed HTTP gateway and replay format |
+| [docs/tui.md](docs/tui.md) | TUI design notes and current implementation |
+| [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) | Development workflow and pull request expectations |
+| [.github/SECURITY.md](.github/SECURITY.md) | Security policy and sensitive artifact guidance |
+| [docs/roadmap.md](docs/roadmap.md) | Current priorities and deferred work |
 
-Run the CI-style regression tournament, which extends the smoke test by rebuilding the index, querying passed candidates, and rendering an HTML report:
+## Status
 
-```bash
-make regression-tournament
-```
-
-These targets create ignored artifacts under each example project's `.crucible/` directory.
-
-Remove local build, cache, and smoke-test artifacts with:
-
-```bash
-make clean
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance, [SECURITY.md](SECURITY.md) for security notes, and [docs/release-checklist.md](docs/release-checklist.md) before publishing or tagging.
-
-## Roadmap
-
-Current priorities:
-
-- [x] Add a low-prompt `run --auto` path that infers setup and records baseline results
-- [x] Archive provider logs without streaming raw agent output during `run --auto`
-- [x] Default TUI new-run setup to the low-prompt `run --auto` flow
-- [x] Default TUI new-run setup to generate and evaluate competitors
-- [x] Replace noisy TUI next-action shell commands with key-first actions where forms exist
-- [x] Expose controller-backed adopt, next-round, evolve, index, and inspect actions in the TUI
-- [x] Add evaluator-generation guidance for cache-resistant benchmark design
-- [x] Record generated-evaluator baseline validation in the leaderboard
-- [x] Suppress placeholder-evaluator guidance after a run already has passing evaluator results
-- [x] Treat empty external allowlists as "allow no live hosts" instead of failing every candidate
-- [x] Add provider setup templates and a dry-run CLI path for Claude
-- [x] Add async TUI action progress with spinner, elapsed time, and command preview
-- [x] Add cancellable TUI long-running actions with cancellation events and `canceled` candidate status
-- [x] Add richer cancellation cleanup for partial generation artifacts
-- [x] Clarify `run`/`generate` next steps when a run is waiting on generation or a real evaluator
-- [x] Auto-select the only available run in interactive actions instead of prompting
-- [x] Mark new baselines as `needs-evaluator` when no evaluator is configured
-- [x] Add agent-generated evaluator setup and interactive prompts to generate, supply, or skip the evaluator
-- [x] Validate agent-generated evaluators against the baseline before marking runs evaluator-ready
-- [x] Add prompt and TUI actions for evaluator generation on existing runs
-- [x] Fail fast with clear guidance when a selected agent executable is unavailable
-- [x] Add CLI and TUI candidate promotion back into the source project with dry-run previews and archived promotion reports
-- [x] Make TUI candidate inspection act on the selected row without requiring candidate ID entry
-- [x] Make prompt-mode candidate inspection use a numbered selector with non-baseline defaults
-- [x] Make bare `crucible` launch the TUI and move the prompt workflow to `crucible prompt`
-- [x] Add a TUI command history screen and return to the dashboard after actions instead of showing raw output
-- [x] Rename TUI actions around user goals and move lower-frequency tools behind Advanced
-- [x] Open Start Tournament automatically for new projects or empty work areas
-- [x] Add UX-focused TUI progress steps and replace remaining dashboard run-centric wording
-- [x] Guide `needs-evaluator` tournaments toward test-harness creation before scoring
-
-Deferred roadmap:
-
-- [ ] Add project or user preference presets for common low-prompt workflow defaults
-- [ ] Add a full provider install or marketplace flow after provider templates prove useful
-- [ ] Add a full TUI job manager with logs, parallel jobs, cancellation, and richer progress displays
-- [ ] Revisit pre-release planning after stability work has run for a few days
-- [ ] Revisit a gRPC external routing adapter when a concrete target project needs protocol-specific routing
-
-Completed recent priorities:
-
-- [x] Validate `gateway-network` with a live Podman proof of concept covering declared raw HTTP and HTTPS fixture hosts
-- [x] Make the Podman `gateway-network` proof of concept repeatable from the Makefile and release checklist
-- [x] Run an equivalent Docker `gateway-network` check, while keeping Podman and Docker timing results separate
-- [x] Add a Claude command-provider example to prove the model-agnostic provider contract beyond Codex
-- [x] Perform a public experimental-repo onboarding pass without cutting a tagged release
-- [x] Upgrade TUI forms, candidate selection, and action output to Bubbles widgets
-- [x] Add optional/manual gateway-network CI coverage
-- [x] Run a public experimental-readiness pass after TUI polish
-
-Completed cleanup and infrastructure:
-
-- [x] Start fixture gateways for local `mock` and `replay` evaluation, or stop exporting local proxy variables that point to no running gateway
-- [x] Decide archive path portability: keep absolute runtime paths in `run.json`, or store relative archive paths and resolve absolutes at execution time
-- [x] Refresh stale security and external-policy docs so they match current Docker/Podman and proxy behavior
-- [x] Split large implementation files before adding reporting: CLI commands, evaluator sandbox/resource handling, and generated gateway source
-- [x] Add SQLite schema-version handling for derivative index rebuilds
-- [x] Add a cleanup command or Make target for ignored build, cache, and smoke-test artifacts
-
-Completed feature work:
-
-- [x] Add HTML reports
-- [x] Add richer SQLite queries for reports and automation
-- [x] Expand sandbox profiles and limits
-- [x] Add CI regression tournament jobs
-- [x] Add guided `crucible` interactive startup flow
-- [x] Add `crucible discover` archives with local source-path suggestions
-- [x] Add Codex discovery prompts and structured `agent-plan.json` handoffs
-- [x] Use Codex discovery handoffs in the interactive run wizard
-- [x] Package the fixture gateway for sandbox images without Go
-
-Base functionality roadmap:
-
-- [x] Convert `agent-plan.json` into stronger generated `docs/interfaces.md` sections and evaluator TODOs/scaffolds
-- [x] Add `crucible run --agent-plan` to seed run archives from structured discovery handoffs
-- [x] Automatically generate deterministic evaluator checks from discovery handoff data when enough contract detail is available
-- [x] Add pre-evaluation source-shape contract checks before benchmarking
-- [x] Add pre-evaluation Go function signature checks when discovery names a Go drop-in interface
-- [x] Validate semantic drop-in replacement contracts before benchmarking
-- [x] Improve no-source-path generation so the agent extracts and archives the baseline before creating competitors
-- [x] Add repeated evaluation controls for warmups, repetitions, and runtime spread metrics
-- [x] Add outlier handling, confidence summaries, and configurable statistical score inputs
-- [x] Add run selection helpers so commands do not always imply the latest run
-
-Model-agnostic agent roadmap:
-
-- [x] Define a stable provider contract for discovery, generation, and evolution agents
-- [x] Add a project-level default agent setting in `.crucible/config.json`
-- [x] Add per-run and per-command agent selection flags consistently across `discover`, `run`, `generate`, and `evolve`
-- [x] Archive selected agent name, model, provider command, environment policy, prompt path, stdout/stderr, final response, and exit status for reproducibility
-- [x] Support configurable local command providers in addition to the built-in Codex provider
-- [x] Add provider capability metadata, such as supports-discovery, supports-generation, supports-json-output, and requires-git-repo
-- [x] Add validation and dry-run output for provider command construction
-- [x] Add interactive agent selection and project default-agent management
-- [x] Keep Codex as the first concrete provider while avoiding Codex-specific assumptions in shared prompt, archive, and tournament code
-
-Interactive interface roadmap:
-
-- [x] Add interactive run selection for all actions that currently default to latest run
-- [x] Add standalone interactive discovery flow, including local-only and Codex discovery modes
-- [x] Add interactive `adopt`
-- [x] Add interactive `next-round`
-- [x] Add interactive `query runs` and `query candidates`
-- [x] Add interactive controls for advanced `run` options: evaluator command/script, external mode, fixtures, allow-hosts, rounds, and exploration
-- [x] Add interactive controls for advanced `generate` options: model, profile, sandbox, approval mode, dry-run, and output path
-- [x] Add interactive controls for advanced `evaluate` options: candidate, jobs, timeout, nice, CPU limit, sandbox engine/image/profile/network, memory limit, and PID limit
-- [x] Add interactive controls for report/index JSON and output-path options
-- [x] Add `$EDITOR`-based review/edit prompts for generated interface docs, evaluator scaffold, and discovery handoff before generation
-- [x] Add interactive and TUI evaluator-generation actions for existing runs
-- [x] Add TUI candidate promotion for applying selected competitors back to the source project
-
-Evaluator and external policy roadmap:
-
-- [x] Enforce `allowlist` mode for proxied HTTP and HTTPS traffic
-- [x] Add external trace collection and `record` mode capture
-- [x] Add direct-routed gateway URLs for clients that ignore proxy environment variables
-- [x] Package the fixture gateway for sandbox images without Go
-- [x] Decide raw socket routing scope: no local transparent interception; implement only inside Docker/Podman sandboxes
-- [x] Design container-only raw socket routing with explicit sandbox/network setup
-- [x] Implement container-only raw socket routing through an isolated evaluator network and gateway sidecar
-- [x] Add local-mode warnings when raw socket/transparent routing would be required
-- [x] Extend external trace capture for container-routed raw socket traffic once interception exists
-
-TUI roadmap:
-
-- [x] Select and document a Go TUI framework; selected Bubble Tea from Charmbracelet
-- [x] Decide TUI launch mode: make bare `crucible` launch the TUI and keep `crucible tui` as an explicit alias
-- [x] Extract interactive workflow actions into reusable controller functions shared by prompt mode and TUI mode
-- [x] Build a TUI run dashboard with latest run status, leaderboard, candidate details, and common next actions
-- [x] Build TUI forms for run creation, discovery, evaluator generation, generation, adoption, promotion, evaluation, next-round preparation, evolution, reports, index rebuilds, queries, and inspection
-- [x] Add TUI tests around navigation state and command construction
+Code Crucible is an early Go CLI. The main tournament loop works end to end:
+archive creation, agent generation, evaluator validation, local and container
+evaluation, fixture-backed external policies, leaderboards, reports, indexing,
+promotion, and TUI workflows. The interface is still evolving, so archive
+formats and command names may change before a stable release.
 
 ## License
 
-Code Crucible is licensed under the GNU General Public License version 2. See [LICENSE](LICENSE).
+Code Crucible is licensed under the GNU General Public License version 2. See
+[LICENSE](LICENSE) for details.
